@@ -16,13 +16,13 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 
 ### 2.1 DeepSeek Harness
 
-#### 本机安装版（本机实测，2026-07）
+#### 本机安装版（本机实测，2026-10-16）
 
 - 安装目录 `D:\AI\Deepseek Harness`，Electron 桌面应用，版本号 `44.0.0`（`version` 文件），nightly 更新通道，发布者 Hangzhou DeepSeek Artificial Intelligence Co., Ltd.（`resources/app-update.yml`）。
 - 捆绑运行时：Node.js 24.18.1、pnpm 11.7.0（`resources/runtime/versions.json`）。
 - 家目录 `~/.dsh` 内含：`sessions/`（会话）、`storages/`（存储）、`llm-deepseek/`（DeepSeek 模型适配器目录）、`profiles/`（当前仅初始化 `desktop` 配置文件）、`.credentials.yaml`（凭据文件，内容不读取、不复用）。
 
-#### 官方开源仓库（docs 原文核实，master 分支，2026-07）
+#### 官方开源仓库（docs 原文核实，master 分支，2026-10-16）
 
 - 仓库 <https://github.com/deepseek-ai/deepseek-harness>：默认分支 `master`（非 main），MIT 协议，TypeScript 单仓 monorepo（`apps/`、`docs/`、`packages/` 40+ 包组、`python/`、`native/`、`website/`）。
 - 架构底座：**Cordis 插件框架**，口号 "Everything is a Plugin"。
@@ -35,16 +35,33 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 | 能力 | 机制 | 证据 |
 | --- | --- | --- |
 | 子代理 Subagent | `ctx.subagents` 运行时；provider 为 `spawn`/`fork`/`acp`；官方另有**子代理后端包**：`subagent-codex`（providerName `codex`、全局工具 `subagent_codex`；每次运行为全新 app-server + 一次性临时线程、**无续跑/池化**；运行时固定 `@openai/codex@0.153.4`；本包不登录、不建账号、不改 Codex 设置）、`subagent-claude-code`、`subagent-dsh-sdk`、`subagent-acp`；启动请求字段 `cwd, agentPreset, label, prompt, parent, signal, agentOptions, outputSchema, maxDepth`；结果为 `output / structured / diagnostic / stopReason`；模型工具 `subagent`/`subagent_fork`/`send_message`/`interrupt_agent`/`list_agents` | 宿主工具清单 + docs/subsystems/subagent.md + packages/subagent/*/README.md |
-| Workflow 工作流 | JavaScript 编排脚本（`agent()`/`pipeline()`/`parallel()`/`phase()`/`log()` 钩子 + `args` 全局量，顶层 await 允许，以 `return <json>` 结束）；`meta` 字段与 Claude Code 动态工作流词表一致；结构化结果经子代理 `outputSchema` 校验；错误抛 `WorkflowError`（fatal）；事件 `workflow/start·phase·log·agent-start·agent-end·end` 可观察。⚠️ **`phases` 只是进度词汇**（供观察者分组显示，不构成执行结构）；**无按 phase 覆盖 provider/model 的能力**——官方原文 "Workflow policy is fixed per tool registration"，provider 选择属部署配置而非模型调用参数 | 宿主工具清单 + docs/subsystems/workflow.md |
+| Workflow 工作流 | JavaScript 编排脚本（`agent()`/`pipeline()`/`parallel()`/`phase()`/`log()` 钩子 + `args` 全局量，顶层 await 允许，以 `return <json>` 结束）；`meta` 字段与 Claude Code 动态工作流词表一致；结构化结果经子代理 `outputSchema` 校验；错误抛 `WorkflowError`（fatal）；事件 `workflow/start·phase·log·agent-start·agent-end·end` 可观察。⚠️ **`phase()` 只用于进度展示，不产生真正的执行依赖**（`phases` 是进度词汇，供观察者分组显示，不构成执行结构）；**Agent 的执行顺序与结果在 Agent 之间的传递，必须由 Workflow 脚本的实际编排逻辑保证**（`pipeline` 逐级传递、显式参数与返回值、`parallel` 汇总等），不得依赖 phase 声明；**无按 phase 覆盖 provider/model 的能力**——官方原文 "Workflow policy is fixed per tool registration"，provider 选择属部署配置而非模型调用参数，后续多模型分配必须按已验证的 agent 级机制设计 | 宿主工具清单 + docs/subsystems/workflow.md |
 | 多模型适配 | `ctx.llm` 供应商中立服务；适配器：`llm-deepseek`（官方直连）、`llm-deepseek-api-key`、`llm-pi-ai`（多 provider 目录路由 + 手工声明 OpenAI 兼容/自建网关，`providers` 字典路由，凭据经 `apiKeyEnv` 或 OAuth 登录存入凭据库，详见下节）；**agent 级**覆盖：`SubagentStartRequest.agentOptions` 支持 per-agent 的 provider/model/reasoning-effort/output-token 覆盖；**无 phase 级覆盖** | 宿主工具清单 + packages/llm/*/README.md |
 | 会话持久化与续跑 | `ctx.sessionPersistence`：每会话一个追加式逻辑 JSONL 日志，默认 checksummed Zstandard 分帧存储，崩溃安全原子落盘、分批 fsync、断尾截断；`ctx.agents.resume({ resumeSessionId })` 续跑，崩溃中断的 turn 由 agent-loop 补合成 `turn/end { reason: interrupted }`；`ctx.agents.create({ sessionId, seed, meta: { parentSession, seedLength } })` 在 turn 边界分叉会话；会话元数据含 `cwd?, parentSession?, isSeeded, delegationDepth?`。**无图节点级检查点/时间回溯** | docs/subsystems/persistence.md |
 | 人工审批 | `ctx.approval.request()` → `allowed-once / rejected / cancelled / unavailable`；策略 `ask`（默认）/`never`（无人值守严格模式，一律拒绝）；UI 通道提供人工应答者，**ACP 桥可为自动化代理提供机器决策**；`ask_user_question` 工具支持 blocking（默认）与 timed（超时释放模型继续工作，`{"pending": true, "callId"}` 后续送达回答；超时≠批准） | 宿主工具清单 + docs/subsystems/approval.md |
 | 本地项目接入 | `workspace` 包族：命名项目列表 + 按目录分组会话；`skill-filesystem` 从项目/自定义/用户目录发现并监视 skills；文件工具 + 分级沙箱 + 后台任务 + `present` 交付 | 宿主工具清单 + packages/workspace |
 | 记忆 | Hindsight 仓库级记忆与知识页 | 宿主工具清单 |
 
-#### 第三方模型接入机制（GPT / Codex / GLM 等；官方包 README 原文核实，2026-07）
+#### 人工审批的设计区分与拦截边界（2026-10-16 审核确认）
 
-`ctx.llm` 是供应商中立服务，接入非 DeepSeek 模型有两条官方路径：**pi-ai 目录路由** 与 **手工声明网关路由**（适配器 `@deepseek-ai/dsh-llm-pi-ai`）。证据：`packages/llm/llm-pi-ai/README.md`、`docs/user/guide/providers.md`、`packages/subagent/subagent-codex/README.md`（均为 master 分支原文，2026-07 核实）。
+**必须区分三层，不得混为一谈**：
+
+| 层 | 机制 | 性质与边界 |
+| --- | --- | --- |
+| 用户交互层 | `ask_user_question` 工具：blocking（默认）或 timed；超时返回 `{"pending": true, "callId"}`，**超时≠批准** | 只是**交互手段**（提问、征求意见、收集选择），本身不拦截任何操作 |
+| 宿主审批层 | DSH 审批缝 `ctx.approval.request()` → `allowed-once` / `rejected` / `cancelled` / `unavailable`；策略 `ask`（默认）/ `never`（无人值守严格模式，一律拒绝） | **真正的操作级关卡**：由被保护操作触发，返回值决定该次操作是否执行 |
+| 工程规范层 | `AGENTS.md` §9 的人工确认要求（push、PR、合并 `main`、安装依赖、修改全局配置/系统权限/DSH 源码、接入付费 API、移动删除代码、扩大权限） | **工程约定**：规定「哪些操作必须有真人批准」，其强制力依赖前两层真正落实 |
+
+**拦截边界（关键约束）**：
+
+- **不得假定「在提示词里写一句要求」就能保证所有危险操作被强制拦截**。提示词与 Agent 自觉属于**软约束**，无法穷尽所有危险路径，也不构成可验证的保证。
+- 强制拦截只能来自：宿主沙箱（如 `workspace-write` 与越权审批升级）、审批策略（`ask` / `never`）、以及被保护操作自身的审批点；覆盖范围必须**以负面测试验证**，不能用文档声明代替。
+- **V0.1 必须完成一次安全的拒绝审批测试**（见 `docs/ROADMAP.md` V0.1 验收条件）：对受保护操作发起审批并明确拒绝，确认**没有发生实际副作用**（工作区文件未变、无远端写入、未安装依赖、权限未变），并归档测试记录。
+- 任何「某类操作已被完全拦截」的结论都必须有实测证据；未验证前一律留在 §7 风险清单中（见 #11）。
+
+#### 第三方模型接入机制（GPT / Codex / GLM 等；官方包 README 原文核实，2026-10-16）
+
+`ctx.llm` 是供应商中立服务，接入非 DeepSeek 模型有两条官方路径：**pi-ai 目录路由** 与 **手工声明网关路由**（适配器 `@deepseek-ai/dsh-llm-pi-ai`）。证据：`packages/llm/llm-pi-ai/README.md`、`docs/user/guide/providers.md`、`packages/subagent/subagent-codex/README.md`（均为 master 分支原文，2026-10-16 核实）。
 
 - **配置面**：`providers` 字典即全部配置面，每个键是一个路由名，请求以 `GenerateOptions.provider` 选择。官方示例含 `openai`（`apiKeyEnv: OPENAI_API_KEY`、`baseURL`、`reasoning: high`）、`anthropic`（`apiKeyEnv: ANTHROPIC_API_KEY`、`models: [{ id: claude-sonnet-4-5, contextWindow: 200000 }]`）与手工声明的 `acme-gateway`（`api: openai-completions`、`baseURL`、`compat: { thinkingFormat: deepseek }`、自定义 `models` 含 `reasoningEfforts`）。
 - **凭据**：`apiKeyEnv` 是凭据**引用**，经 harness 凭据缝按请求解析，密钥不写入配置文件（解析为空则请求失败 `MISSING_CREDENTIAL`）；pi-ai 自带登录的 provider 可走 **OAuth 或交互式密钥**登录，凭据存于凭据库 `llm-pi-ai/<provider id>` 并在跨进程锁下刷新；手工声明路由名必须是小写连字符标识符，否则凭据写入被拒（`LlmError('UNSTORABLE_PROVIDER_ID')`）。
@@ -52,6 +69,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 - **Codex**：两条**互不相同且都已文档化**的轴。
   1. **作为模型传输（catalog 路由 `openai-codex`）**：官方 Dev Note 原文 "Bedrock, Vertex, Azure, and Codex authenticate through flows a profile cannot completely describe with a key, an endpoint, and headers; catalog routes still reach them through their own provider, and only an explicit override is refused. **Codex is sign-in-able through the authorization flow's OAuth grant.**"；官方另说明 "Providers without native key authentication, such as `openai-codex`, show no key field unless the profile explicitly names a credential reference." → 走 OAuth 授权登录，**不是**可手写的 `api` 协议；Codex/Azure 传输还会忽略 `supportsMaxOutputTokens` 兼容字段。
   2. **作为外部 Agent 后端（独立包 `subagent-codex`）**：官方原文 "Install `@deepseek-ai/dsh-subagent-codex` into a Profile when delegated work should run in a genuine, unattended Codex session in the parent Session's workspace."；机制为 "Every run spawns a fresh app-server, creates one ephemeral thread, and executes exactly one turn; **there is no continuation, resume, or pooling**."；认证留在原生 Codex 侧（"the Bundle supplies the CLI but does not create an account, log in, trust a project, or rewrite Codex settings"）。
+  - **Codex 委派与 ChatGPT Plus 兼容性（V0.2 独立验收项，尚未验证）**：待验证的目标是「能否经官方 `openai-codex` OAuth 路线或 `subagent-codex` 后端，用**已有的 ChatGPT Plus 订阅**在 DSH 内完成 Codex 任务委派」。约束与前提：① 必须区分 **ChatGPT 订阅权限**与**独立 OpenAI API 计费**——两者互不通用，本机文档已证 `openai` 路由**不接受 ChatGPT 登录**（只接受 API Key），因此订阅权益只能经 OAuth 授权路径尝试，且不构成任何 API 额度；② **不承诺**特定模型一定可用，**不承诺**无限额度；③ 未经用户明确批准，不得安装 Codex、不得授权账户、不得使用付费 API；④ 不得读取、复制或提交 OAuth Token 或其他认证秘密（与 `AGENTS.md` §7 一致）。该项只做「调查 + 实测取证」，不改变 V0.1/V0.2 的运行依赖。
 - **GLM / Kimi 等国产模型**：**官方随附 provider 目录已内置**（官方用户指南原文："pick a provider dsh ships with — the list shows provider ids such as `anthropic`, `openai`, `moonshotai` for Kimi, or `zai` for GLM — enter its API key, and save."）。目录中已证实的 provider id 含 `openai`、`anthropic`、`openai-codex`、`zai`（GLM）、`zai-coding-plan`、`moonshotai`（Kimi）、`minimax`、`bailian`、`qwen-token-plan`、`qwen-token-plan-cn`、`xiaomi`、`deepseek`、`google`、`xai`、`openrouter`、`azure`、`bedrock`、`opencode`、`kilo`、`openai-codex-responses`；**未证实**存在名为 `zhipu`/`stepfun`/`baichuan`/`siliconflow`/独立 `qwen` 的 provider id（见 §7 #9）。
 - **任意 OpenAI 兼容端点（官方文档化的第三入口："Custom model API"）**：官方原文 "Switch the card to **Custom model API** for a relay, a company gateway, a self-hosted server, or any provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model."，落盘为 profile 的 `cordis.patch.yml`，示例：
   ```yaml
@@ -69,7 +87,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 - **其余可调项**：`models`（整体替换目录）/ `modelOverrides`（只调整个别目录模型）/ `compat`（system prompt 归属、输出上限字段、thinking 传输方式）/ `reasoningEfforts`（把档位映射成网关词汇，如 `max: ultra`）/ 路由级 `retryPolicy`（默认 `normal`、5 次）；自建 vLLM 可另设 `thinkingTokenBudgetField`、`vllmPriority`。
 - **官方已知限制（与本项目相关）**：`GenerateOptions.stop` 不支持（`UNSUPPORTED_OPTION`）；登录流程**不跨进程持久**（登录中途刷新页面需重来）；未编目模型必须显式指定路由 `api`；无 Key 的无认证路由仍需占位凭据（OpenAI 兼容实现要求 API Key 或 `Authorization` 头）；错误码稳定（`MISSING_CREDENTIAL`/`INVALID_CREDENTIAL`/`UNKNOWN_MODEL`/`QUOTA`/`RATE_LIMIT`/`IMAGE_OFFLOAD_REQUIRED`）；上游 pi-ai（`@earendil-works/pi-ai` 1.1.0）带本地补丁 `patches/@earendil-works__pi-ai@1.1.0.patch`，**升级 pi-ai 必须重打该补丁**。
 
-#### 外部程序化接口（官方文档核实，2026-07）
+#### 外部程序化接口（官方文档核实，2026-10-16）
 
 - **五类 profile**：`web` / `headless` / `sdk` / `sdk-minimal` / `acp`；基础 bundle `dsh-base`（模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测）之上叠加应用 bundle（`dsh-headless`=无服务器的一次性执行器；`dsh-sdk-app`=SDK JSON-RPC 服务器；`dsh-acp-app`=纯自动化 ACP 服务器）。
 - **`dsh headless`**（一次性 CLI）："Answer one task and exit"——答案到 stdout、诊断到 stderr；选项 `--json`（stdout 输出换行分隔运行事件）、`--session-id`（接管已持久化会话）→ **CLI 层支持会话续跑**。
@@ -81,7 +99,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 
 ### 2.2 历史 LangGraph 环境（F 盘，只读检查结果）
 
-**环境状态（2026-07 只读实测，未做任何修改）**：
+**环境状态（2026-10-16 只读实测，未做任何修改）**：
 
 - 位置：`F:\The university\AI\TLA\Agent System`，仅含 `.venv` 虚拟环境。
 - Python 3.13.12；LangGraph 1.2.15（PyPI 当前最新稳定版，`requires_python >=3.10`）。
@@ -100,7 +118,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 | 预置 Agent | `langgraph.prebuilt.create_react_agent` **在 v1 已弃用**，官方迁移到 `langchain.agents.create_agent`；`langgraph-supervisor` 是独立 PyPI 包（0.0.31），官方 README 自述「多数场景推荐直接用工具实现 supervisor 模式」 |
 | 模型适配 | LangGraph 本身只依赖 `langchain-core`，不依赖完整 `langchain`；模型需单独安装集成包（如 `langchain-deepseek` 的 `ChatDeepSeek`，环境变量 `DEEPSEEK_API_KEY`）；DeepSeek-R1（`deepseek-reasoner`）不支持工具调用与结构化输出，DeepSeek-V3（`deepseek-chat`）支持 |
 
-证据来源：LangGraph 官方文档站（graph-api / checkpointers / persistence / interrupts / use-subgraphs / migrate-langgraph-v1 等页面，已迁移至 `docs.langchain.com/oss/python/langgraph/*`）与 PyPI 元数据，调研时间为本阶段开发期间，逐条带原文引用（完整引用见本阶段调研报告）。
+证据来源：LangGraph 官方文档站（graph-api / checkpointers / persistence / interrupts / use-subgraphs / migrate-langgraph-v1 等页面，已迁移至 `docs.langchain.com/oss/python/langgraph/*`）与 PyPI 元数据，调研时间为 2026-10-16（与本机 git 提交记录 `d218e1a` / `09cfaa6` / `ce98be8` 同日，依据系统时间与提交时间戳记录，非估算），逐条带原文引用（完整引用见本阶段调研报告）。
 
 ## 3. 两项技术的能力对照
 
@@ -146,7 +164,9 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 
 ## 5. 推荐路线与决策记录
 
-**V0.1（含 V0.2 初期）推荐：路线 A — 只使用 DeepSeek Harness。**
+**V0.1（含 V0.2 初期）：路线 A — 只使用 DeepSeek Harness。**（2026-10-16 架构审核正式确认）
+
+> **审核结论（有条件通过，2026-10-16）**：正式确认以 DSH 原生 Subagent、Workflow 与模型适配机制作为 V0.1 核心；**LangGraph 暂不参与实际运行**，仅保留为未来可选的高级编排层（即本文件路线 B 的定位，保持未启用状态；未经启用条件逐项验证与人工批准不得引入）。审核附带条件已落地到本文件与 `docs/ROADMAP.md`：缩小首个 MVP 到三个真实 Agent、明确审批三层区分与拒绝审批测试、新增 Codex/ChatGPT Plus 兼容性验证项、澄清 Workflow 执行语义、修正验证日期。
 
 理由：
 
@@ -170,23 +190,32 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 ## 6. 目标架构视图（V0.1，路线 A）
 
 ```text
-┌──────────────────────── DeepSeek Harness (44.0.0) ────────────────────────┐
-│                                                                            │
-│  Goal（跨轮次持久目标，人工可 pause/resume）                                │
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Goal（跨轮次持久目标，人工可 pause/resume）                               │
 │   │                                                                        │
 │   ▼                                                                        │
-│  Workflow（JS 编排脚本，仓库维护）                                          │
-│   ├─ phase: requirement   需求分析 Agent（subagent）                        │
-│   ├─ phase: discussion    方案讨论：parallel 多视角子代理 → 汇总收敛        │
-│   ├─ phase: coding        编码 Agent（工作区文件工具 + 受限 shell）          │
-│   ├─ phase: review        代码审核 Agent（独立上下文审查 diff/规范/安全）    │
-│   ├─ phase: testing       测试 Agent（生成并执行测试）                      │
-│   └─ 人工审批关卡：ask_user_question / 审批缝（合并、推送、装依赖等）       │
+│  Workflow（JS 编排脚本，仓库维护）                                         │
+│   ├─ phase: requirement   Requirement Agent（整理需求与验收标准）          │
+│   ├─ phase: coding        Coding Agent（实现小型 Python 功能）             │
+│   ├─ phase: review        Review Agent（独立检查实现是否符合需求）         │
+│   ├─ 自动验证：普通测试脚本（V0.1 首个 MVP 不设独立测试 Agent）            │
+│   └─ 人工审批关卡：审批缝 / ask_user_question（合并、推送、装依赖等）      │
 │                                                                            │
-│  基础设施：文件沙箱（workspace-write / 审批升级）· Skills · Hindsight 记忆  │
+│  说明：phase 标签仅用于进度展示，不产生执行依赖；Agent 的执行顺序与结果    │
+│        传递由 Workflow 脚本的实际编排逻辑保证。                            │
+│  后续扩展（非首次运行前提）：加入 discussion、testing → 五角色流水线       │
+│                                                                            │
+│  基础设施：文件沙箱（workspace-write / 审批升级）· Skills · Hindsight 记忆 │
 │            · 会话持久化（JSONL+Zstd，resume/fork 续跑）                    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**首个 MVP 范围（2026-10-16 审核确认）**：
+
+- **三个真实、独立的 Agent**（不是模拟角色文字）：`Requirement Agent` 整理需求与验收标准；`Coding Agent` 接收需求并实现小型 Python 功能；`Review Agent` 独立检查实现是否符合需求。
+- 自动验证允许使用**普通测试脚本**；独立的测试（testing）角色属 V0.1 后续扩展，不是首次运行成功的前提。
+- MVP 成功的判据是**可核验的产物**：三个 Agent 的实际执行记录、任务输入输出、代码产物、测试结果与审核结论；**不接受仅模拟角色文字的演示**。
+- 五角色完整流水线（需求 → 讨论 → 编码 → 审核 → 测试）仍为 V0.1 扩展目标，不取消，但不作为首次运行成功的前提。
 
 仓库侧只维护：角色提示词（`agents/`，规划中）、工作流脚本（`workflows/`，规划中）、测试与文档。不包含任何自研编排运行时。
 
@@ -196,7 +225,7 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 | --- | --- | --- | --- |
 | 1 | 本机 `sdk`/`headless` profile 未初始化（沙箱外写 ~/.dsh 曾报 EPERM）；Python SDK/`dsh headless --session-id` 会话续跑**文档已核实、本机未实测** | 待 spike（V0.2 验证门） | 路线 B 可行性 |
 | 2 | DSH nightly 通道 + 仓库 pre-release 双线均声明破坏性变更 | 每个里程碑锁版本复验 | 工作流脚本兼容性 |
-| 3 | agent 级 `agentOptions` 覆盖在本机是否可指定第三方模型（本机 `~/.dsh` 无 `llm-pi-ai` 目录与凭据，即未配置任何第三方 provider；亦无实测） | 未验证（V0.2 实测） | V0.2 多模型分工 |
+| 3 | agent 级 `agentOptions` 覆盖在本机是否可指定第三方模型（本机 `~/.dsh` 无 `llm-pi-ai` 目录与凭据，即未配置任何第三方 provider；亦无实测）。官方已证实 Workflow **无 phase 级** provider/model 覆盖，故多模型分配只能按 agent 级机制设计 | 未验证（V0.2 实测） | V0.2 多模型分工 |
 | 4 | 官方 docs 未逐页核实项：`llm-streaming.md` 适配器契约细节（message/block 类型、StreamChunk 协议、适配器接口签名）、`tool-catalog.md` 全量工具编目 | 官方文档核实不足（包级 README 已覆盖主要 schema） | 能力盘点完整性 |
 | 5 | DSH SDK 官方限制：无协议版本协商（`serverInfo.version 0.0.1` 不校验）、无取消/会话关闭方法、服务端→客户端请求为 dead capability | 已核实为官方设计现状 | 外部集成稳定性与轮次放弃方式 |
 | 6 | 无第三方 HTTP API（已核实否定）；客户端插件 boot 注入的 `window.__DSH_BOOT__` 字面量未在文档出现（需读源码确认） | 已核实/未确认 | 外部集成方式与客户端插件开发 |
@@ -204,3 +233,5 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 | 8 | 历史 venv 中 `langgraph-sdk 0.4.7` 指向的 LangGraph Platform 服务能力 | 未验证 | 远期可选：DSH 外的托管方案 |
 | 9 | pi-ai 内置 provider 目录的**完整**清单（已证实含 `zai`=GLM、`moonshotai`=Kimi、`openai-codex`、`minimax`、`bailian`、`qwen-token-plan` 等；`provider-data.generated.ts` 全文未取到，仅有目录清单与字符串采集）；**未证实**存在 `zhipu`/`stepfun`/`baichuan`/`siliconflow`/独立 `qwen` 的 provider id | 部分核实（本轮取证；关键结论有用户指南原文背书） | 第三方模型可选范围 |
 | 10 | Codex 是否有比 `packages/subagent/subagent-codex/README.md` 更完整的专题接入文档（`docs/subsystems/README.md` 索引全文未核验）；`codex` 是否作为 wire protocol 存在于 hand-declared `api` 取值中 | 未核实 | Codex 接入方式 |
+| 11 | 审批强制拦截的实际覆盖范围未验证：提示词与 Agent 自觉只是软约束，宿主沙箱/审批策略究竟覆盖哪些危险操作，需以拒绝审批负面测试逐项确认 | 未验证（V0.1 拒绝审批测试） | 「危险操作被拦截」的可信度 |
+| 12 | ChatGPT Plus 订阅经官方 `openai-codex` OAuth 或 `subagent-codex` 在 DSH 内委派 Codex 任务的实际可用性（须区分订阅权益与独立 API 计费；不承诺模型可用性与额度） | 未验证（V0.2 独立验收项） | Codex 委派可行性 |

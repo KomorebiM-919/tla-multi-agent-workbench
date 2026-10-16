@@ -4,7 +4,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 ## V0.1 — 基础骨架与首个多智能体工作流（当前阶段）
 
-**目标**：在 DeepSeek Harness（DSH）原生能力之上建立项目骨架，并跑通第一条多 Agent 协作开发流水线。
+**目标**：在 DeepSeek Harness（DSH）原生能力之上建立项目骨架，并跑通第一条多 Agent 协作开发流水线（**首个 MVP = Requirement / Coding / Review 三个独立 Agent**；五角色完整流水线属本阶段扩展目标）。
 
 ### 已完成
 
@@ -19,18 +19,30 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 ### 待完成（规划）
 
-- 定义角色：需求分析、方案讨论、编码、代码审核、测试五个角色的提示词与分工（`agents/`）。
-- 基于 DSH 原生 Subagent / Workflow 实现第一条工作流：需求 → 讨论 → 编码 → 审核 → 测试。
+**首个 MVP（V0.1 首次运行目标，2026-10-16 审核确认范围）**
+
+- 定义三个真实、独立的 Agent 角色与提示词（`agents/`）：
+  - `Requirement Agent`：整理需求与验收标准；
+  - `Coding Agent`：接收需求并实现小型 Python 功能；
+  - `Review Agent`：独立检查实现是否符合需求。
+- 基于 DSH 原生 Subagent / Workflow 实现首个 MVP 工作流：需求 → 编码 → 审核（执行顺序与结果传递由脚本编排逻辑保证；`phase` 仅用于进度展示，不构成执行依赖）。
+- 自动验证使用**普通测试脚本**（首个 MVP 不设独立测试 Agent）。
 - 关键节点接入人工审批（宿主平台审批机制），如：提交前审核、依赖安装确认。
 - 建立敏感信息提交前检查流程并实际执行。
+
+**后续 V0.1 扩展目标（不取消，但不是首次运行成功的前提）**
+
+- 增加方案讨论（discussion）与测试（testing）两个角色，构成五角色完整流水线：需求 → 讨论 → 编码 → 审核 → 测试。
 
 ### V0.1 验收条件
 
 1. 仓库结构符合 `README.md` 目录说明；所有文档与代码状态一致。
-2. 一次真实任务中，至少 3 个不同角色的 Agent 协作完成，且产出经过审核 Agent 审查。
-3. 人工审批关卡至少触发一次并生效（未批准的操作被阻止）。
+2. 首个 MVP（Requirement / Coding / Review 三个独立 Agent）有一次**真实可核验**的运行记录：三个 Agent 的实际执行记录、任务输入输出、代码产物、测试结果与审核结论齐备；**不接受仅模拟角色文字的演示**。
+3. 人工审批的三层区分（`ask_user_question` 用户交互 / DSH 底层审批缝 / `AGENTS.md` 工程规范的人工确认要求）已文档化；并完成一次**安全的拒绝审批测试**：受保护操作被拒绝后**未发生实际副作用**（工作区文件未变、无远端写入、未安装依赖、权限未变），测试记录归档。
 4. `git log` 无敏感信息提交；`.gitignore` 规则经 `git check-ignore` 验证有效。
 5. `main` 全程无直接提交；功能分支提交历史清晰。
+
+> 五角色完整流水线（需求 → 讨论 → 编码 → 审核 → 测试）是 V0.1 的**扩展目标**，不作为首个 MVP 的验收前提。
 
 ## V0.2 — 多模型分工与状态持久化
 
@@ -38,16 +50,18 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 ### 功能规划
 
-- 多模型适配：利用 DSH **agent 级** `agentOptions` 覆盖 + `llm-pi-ai` 多 provider 适配器，让不同角色使用不同模型（如讨论用 A 模型、编码用 B 模型）。注意：官方已证实 Workflow **无 phase 级** provider/model 覆盖，方案必须按 agent 粒度设计。
+- 多模型适配：利用 DSH **agent 级** `agentOptions` 覆盖 + `llm-pi-ai` 多 provider 适配器，让不同角色使用不同模型（如讨论用 A 模型、编码用 B 模型）。分工必须基于**已验证的 agent 级模型覆盖机制**；官方已证实 `phase()` 只用于进度展示、Workflow **无 phase 级** provider/model 覆盖，因此**不假定**可按 phase 切换模型。
 - 长任务状态管理：优先评估 DSH 会话持久化与续跑（JSONL+Zstd、`resume`/`fork`）与 Goal 机制（跨轮次持久目标）；当且仅当需要图节点级检查点/时间回溯/图内 HITL 时才考虑引入 LangGraph Checkpointer。
 - 若采用 LangGraph（路线 B）：通过官方 Python SDK（`deepseek-harness-sdk`，stdio JSON-RPC：`session/prompt`→`session/wait`→`session/resume`）或 `dsh headless --json --session-id` 桥接 DSH 的 Agent 执行能力；启用条件见 `docs/ARCHITECTURE.md` 第 5 节。
+- **ChatGPT Plus / Codex 兼容性验证（独立验收项）**：调查并**实际验证**经官方 `openai-codex` OAuth 路由或 `subagent-codex` 后端，用**已有的 ChatGPT Plus 订阅**在 DSH 内完成 Codex 任务委派。必须区分 **ChatGPT 订阅权限**与**独立 OpenAI API 计费**（本机文档已证 `openai` 路由不接受 ChatGPT 登录、只接受 API Key）；不承诺特定模型一定可用，不承诺无限额度；未经用户批准不得安装 Codex、不得授权账户、不得使用付费 API；不得读取、复制、提交 OAuth Token 或其他认证秘密。
 
 ### 验收条件
 
 1. 同一工作流中至少两个不同模型协作，角色与模型映射可配置且可复现。
 2. 一个耗时超过单轮的任务可以跨轮次恢复并完成，状态不丢失（Goal 或 Checkpoint 二选一，以实测为准）。
 3. 若引入 LangGraph：必须先用真实环境验证 DSH Python SDK 子进程 / `dsh headless --session-id` 等接口稳定可用（含工作区指定、会话续跑、冷启动开销量化），并完成最小可行桥接 demo；未验证前不得进入主流程。
-4. 性能对比留档：DSH 原生编排 vs LangGraph 编排的启动/调度开销有实测数据。
+4. **仅当路线 B 确实启动实验时**才要求性能对比留档：DSH 原生编排 vs LangGraph 编排的启动/调度开销有实测数据；未启动路线 B 实验时，本项不作为验收条件。
+5. **ChatGPT Plus / Codex 兼容性验证**（独立验收项）：完成上述调查与实测取证并记录结论；结论须明确区分「ChatGPT 订阅权限」与「独立 API 计费」，且不包含任何认证秘密（OAuth Token 等）。若无法验证或不可用，如实记录否定结论即视为该项通过。
 
 ## V0.3 — 质量自动化与流程深化
 

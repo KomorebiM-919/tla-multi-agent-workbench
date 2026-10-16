@@ -33,7 +33,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ### 规划中（未开始）
 
-- [ ] V0.1 剩余工作：首个 DSH 原生多 Agent 工作流（需求分析 → 讨论 → 编码 → 审核 → 测试）
+- [ ] V0.1 剩余工作：首个 DSH 原生多 Agent 工作流 **MVP**（Requirement → Coding → Review 三个独立 Agent，允许用普通测试脚本自动验证；五角色完整流水线为 V0.1 扩展目标，不作为首次运行成功的前提）
 - [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、LangGraph 互补路线评估
 - 详见 [docs/ROADMAP.md](docs/ROADMAP.md)
 
