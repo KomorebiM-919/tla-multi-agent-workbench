@@ -1,0 +1,943 @@
+{
+  "ok": true,
+  "status": "OK",
+  "error": "",
+  "errors": [],
+  "runId": "v0.1-run6-20261016T154400Z",
+  "evidenceDir": "docs/evidence/v0.1-run6-20261016T154400Z",
+  "ownerMarkerPath": "docs/evidence/v0.1-run6-20261016T154400Z/.run-owner.json",
+  "runStartedAt": "2026-10-16T23:44:00+08:00",
+  "pipeline": [
+    "Verifier(preflight)",
+    "Requirement Agent",
+    "Coding Agent",
+    "Verifier(verify)",
+    "Review Agent"
+  ],
+  "targetDir": "examples/text-stats",
+  "testCommand": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+  "maxCodingAttempts": 2,
+  "criteriaIds": [
+    "AC-01",
+    "AC-02",
+    "AC-03",
+    "AC-04",
+    "AC-05",
+    "AC-06",
+    "AC-07",
+    "AC-08",
+    "AC-09",
+    "AC-10",
+    "AC-11",
+    "AC-12",
+    "AC-13",
+    "AC-14",
+    "AC-15",
+    "AC-16",
+    "AC-17",
+    "AC-18",
+    "AC-19",
+    "AC-20",
+    "AC-21",
+    "AC-22",
+    "AC-23"
+  ],
+  "evidenceFiles": [
+    "docs/evidence/v0.1-run6-20261016T154400Z/.run-owner.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/preflight.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/requirement.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/verify.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/review.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json",
+    "docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json"
+  ],
+  "attempts": 2,
+  "originalRequirement": "请为仓库中已有的 Python 文本统计命令行工具（examples/text-stats/text_stats.py）编写需求说明与可检查的验收条件：\n在既有实现基础上改进，不要重写、不要改变交付目录，也不要更改工作流本身。\n工具功能：读取一段文本（命令行给出一个文件路径；未给出路径时读取标准输入），输出四项统计结果：\n1) 总字符数；2) 总行数；3) 非空行数；4) 英文单词数。\n必须明确到可以逐条测试的程度，并消除历史运行中出现过的自相矛盾。以下口径是本次需求的权威定义，\n任何验收条件与边界条件都不得与之冲突：\n（1）行边界：只有 LF（\\n）、CR（\\r）、CRLF（\\r\\n）三种序列构成换行；\n     U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85 一律不构成换行。\n（2）总行数 line_count：按上面的行边界切分后的行数；以换行结尾的文本不产生额外空行\n     （\"a\\n\" 是 1 行，\"a\\nb\" 是 2 行，\"a\\n\\n\" 是 2 行，\"hello world\\nfoo bar\\n\" 是 2 行，空文本是 0 行）；\n     仅含空白字符的行仍然是行：\"  \\n\\t\\n\" 是 2 行（两行都是空白行），其 non_empty_line_count 是 0；\n     任何验收条件与边界条件的示例都必须与上述示例一致，不得把末尾换行之后的空片段另计为一行（该输入不得写成 3 行）。\n     不得把 str.splitlines() 当作唯一实现依据（它会把 U+2028/U+2029 等当作换行）。\n（3）总字符数 char_count：按归一化后的文本长度计数；归一化＝剥除一个前导 BOM（U+FEFF）、把 CRLF 与单独的 CR 统一为 LF。\n（4）非空行数 non_empty_line_count：切分出的行中，去掉首尾空白字符后仍非空的行数。\n（5）英文单词 word_count：按正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 匹配计数；数字、下划线、中文等非 ASCII 字符不算单词的一部分。\n（6）命令行成功路径的输出格式：标准输出恰好 4 行，顺序为 char_count、line_count、non_empty_line_count、word_count，\n     每行形如 \"<名称>: <整数>\"，不输出其他内容。\n（7）作用域区分（权威口径，必须按原意保留，不得改写、不得把两类调用合并）：\n     a) 程序化调用：调用方**显式传入 stdin_text**（传入空串 \"\" 或非空文本都算）时，main() 只返回整数退出码、**不写标准输出**；\n         例如 main([], stdin_text=\"\") 返回 0，且标准输出为空（调用方自己负责打印结果）。\n     b) 命令行调用：程序作为命令行运行（给出 PATH，或未给出 PATH 时读取进程标准输入）时，成功路径必须输出（6）规定的 4 行。\n     c) 因此\"成功路径恰好 4 行\"只约束 b；a 与 b 适用于不同调用方式，不得写成对同一调用的互斥期望，也不得反过来要求 a 也打印 4 行。\n（8）错误路径：文件不存在、文件不可读、编码名非法、位置参数多于 1 个，一律以退出码 1 结束，\n     并在标准错误输出一行以 \"error: \" 开头的说明；不得沿用 argparse 默认的退出码 2；--help 仍为退出码 0。\n（9）已知需要一并修正的既有缺陷：a) 行数口径矛盾（按上面第 2 条统一）；b) 多余位置参数退出码为 2（应为 1）；\n     c) 模块内存在一个仅做单行转发的冗余函数（应删除，命令行入口直接调用主函数）；\n     d) 文档中描述连接符时使用了外观相同、实为 U+2019 的字符（应改为可辨认的写法，例如纯 ASCII 撇号）。\n（10）依赖约束：只允许 Python 标准库，禁止任何第三方依赖；不得在交付目录内新增依赖声明文件。\n（11）实现必须同时提供可被单元测试直接调用的纯函数接口与命令行入口，并提供可在仓库内复制的示例。",
+  "requirement": {
+    "goal": "在既有交付目录 examples/text-stats 内改进（不重写、不换目录、不改工作流）Python 标准库文本统计工具 text_stats.py：按本轮权威口径统一换行边界、字符数、非空行数与英文单词数四项统计，明确区分命令行调用与程序化注入调用两类契约，修正错误退出码与冗余转发函数、修正文档中不可辨认的连接符字符，并给出可复制示例与可被单元测试直接调用的纯函数接口。",
+    "scope_in": [
+      "交付目录仍为 examples/text-stats，交付文件仍为 text_stats.py（同目录可含测试 test_text_stats.py 与 README.md），不新建交付目录、不改动仓库根目录的工作流脚本或 agents 规范文件",
+      "提供纯函数接口 count_text(text)：接收已解码文本，不做解码、不读文件、不读进程流，返回恰好含 char_count/line_count/non_empty_line_count/word_count 四个整数键的映射，不返回额外键",
+      "提供命令行入口 main(argv=None, stdin_text=None) 与 __main__ 守卫：stdin_text 为 None 时按命令行语义（给出 PATH 读该文件，未给出 PATH 读进程标准输入），stdin_text 非 None（含空串 \"\"）时按程序化注入语义（只返回整数退出码、不写标准输出、不读进程流）",
+      "行边界只认 LF(\\n)、CR(\\r)、CRLF(\\r\\n)，U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85 一律不构成换行；实现必须先做归一化再按 LF 切分，不得把 str.splitlines() 当作唯一实现依据，也不得使用其它会把上述字符当换行的切分方式",
+      "char_count 按归一化后文本的码点数计（len(str)，不按字节、不按字形簇、不按显示宽度）：先剥除一个前导 U+FEFF，再把 CRLF 与单独的 CR 统一为 LF，因此 \"a\\r\\nb\" 的 char_count 为 3、\"  \\r\\n \\r\\n\" 的 char_count 为 5",
+      "line_count 按上述行边界切分后的行数计，以换行结尾不产生额外空行（末尾换行之后的空片段不得另计为一行），空文本为 0 行；仅含空白字符的行仍然算行",
+      "non_empty_line_count：对切分出的同一批行逐行 strip()，统计 strip() 后仍非空的行数；行数与非空行数必须出自同一次切分",
+      "word_count：按正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 在归一化文本上匹配计数；数字、下划线、非 ASCII 字母（如 é、中）与组合记号（如 U+0301）都不算单词字符，但也不切断相邻的 ASCII 字母片段",
+      "命令行调用（stdin_text 为 None）成功路径在标准输出恰好写 4 行，顺序为 char_count、line_count、non_empty_line_count、word_count，每行形如 \"<名称>: <整数>\"，不输出任何其他内容",
+      "错误路径（文件不存在、文件不可读或是目录、解码失败、--encoding 编码名非法、位置参数多于 1 个）统一以退出码 1 结束，并在标准错误输出至少一行以 \"error: \" 开头的说明，不得沿用 argparse 默认的退出码 2，不得让 traceback 逃逸；--help 仍以退出码 0 结束",
+      "修正既有实现缺陷：a) 行数口径统一为上述唯一口径；b) 多余位置参数的退出码由 2 改为 1；c) 删除模块内仅做单行转发的冗余函数，命令行入口直接调用主函数；d) 文档中描述连接符时不得出现裸的 U+2019 字符，改为可辨认的写法（ASCII 撇号加 \\u2019 转义，或明确标注 U+2019 码点）",
+      "依赖边界：实现与测试只允许 Python 标准库，禁止任何第三方依赖；不得在交付目录内新增 requirements.txt / pyproject.toml / setup.py / Pipfile 等依赖声明文件",
+      "在交付目录内提供第三方可直接复制的示例（README 命令示例与样例输入文件内容一致），示例中的每一个数值都必须与上述口径逐一自洽"
+    ],
+    "scope_out": [
+      "不重写工具、不更换编程语言、不把交付目录迁出 examples/text-stats，不修改仓库根目录的工作流脚本、编排脚本与 agents 规范文件",
+      "不新增任何第三方依赖，不在交付目录内新增依赖声明文件；不引入网络访问、不读取任何凭据或凭据存储、不写入交付目录之外的路径",
+      "不新增原始需求未要求的统计项（如字节数、中文字数、最长行、唯一词数、行号）与未要求的输出格式（如 JSON、CSV、表格、--output 参数）",
+      "不新增原始需求未要求的命令行选项；既有 --encoding NAME 选项保留且语义不变（默认 utf-8，非法编码名报错退出 1），不得改变其行为，也不得据此新增其他编码相关选项",
+      "不改变四项统计的名称、输出行顺序及 \"<名称>: <整数>\" 的行格式，不改变成功退出码 0 与错误退出码 1 的约定",
+      "不把程序化注入调用改成会写标准输出，也不把命令行调用改成静默返回：两类调用的期望值不同但适用于不同调用方式，不得合并成同一条契约",
+      "不删除交付目录内既有的可复制示例、样例输入文件与单元测试文件，只按本轮口径修正其中与规则矛盾的数值"
+    ],
+    "acceptance_criteria": [
+      "AC-01 行数唯一口径（程序化调用）：count_text(\"a\\n\")[\"line_count\"] == 1；count_text(\"a\\nb\")[\"line_count\"] == 2；count_text(\"a\\n\\n\")[\"line_count\"] == 2；count_text(\"hello world\\nfoo bar\\n\")[\"line_count\"] == 2（同一输入不得再给出 3 行的第二种期望）；count_text(\"\")[\"line_count\"] == 0；count_text(\"  \\n\\t\\n\")[\"line_count\"] == 2。",
+      "AC-02 行边界集合（程序化调用）：count_text(\"a\\r\\nb\")[\"line_count\"] == 2 且 char_count == 3；count_text(\"a\\rb\")[\"line_count\"] == 2；count_text(\"a\\r\\nb\\rc\") 的 line_count == 3 且 char_count == 5；对 c 依次取 \"\\u2028\"、\"\\u2029\"、\"\\x0b\"、\"\\x0c\"、\"\\x1c\"、\"\\x1d\"、\"\\x1e\"、\"\\x85\"，每一个 count_text(\"a\" + c + \"b\")[\"line_count\"] 都等于 1，且该字符被计入 char_count（count_text(\"a\" + c + \"b\")[\"char_count\"] == 3）。",
+      "AC-03 字符数按归一化后码点数（程序化调用）：count_text(\"\")[\"char_count\"] == 0；count_text(\"hello world\\nfoo bar\\n\")[\"char_count\"] == 20；count_text(\"a\\r\\nb\")[\"char_count\"] == 3（CRLF 归一化后只计 1 个字符）；count_text(\"a\\rb\")[\"char_count\"] == 3；count_text(\"\\ufeffabc\")[\"char_count\"] == 3（剥除一个前导 BOM）；count_text(\"\\ufeff\\ufeffabc\")[\"char_count\"] == 4（只剥除一个）；count_text(\"caf\\u00e9\")[\"char_count\"] == 4。",
+      "AC-04 非空行数（程序化调用）：count_text(\"a\\n\\n\")[\"non_empty_line_count\"] == 1；count_text(\"a\\nb\")[\"non_empty_line_count\"] == 2；count_text(\"\\n\\n\")[\"non_empty_line_count\"] == 0；count_text(\"  \\n\\t\\n\")[\"non_empty_line_count\"] == 0；count_text(\"  a  \\n\\t\\n\")[\"non_empty_line_count\"] == 1；count_text(\"\")[\"non_empty_line_count\"] == 0。",
+      "AC-05 CRLF 输入四项统计自洽（程序化调用）：count_text(\"  \\r\\n \\r\\n\") == {\"char_count\": 5, \"line_count\": 2, \"non_empty_line_count\": 0, \"word_count\": 0}，四个数值互相自洽，且行数与非空行数出自同一次切分。",
+      "AC-06 单词基本判定（程序化调用）：count_text(\"hello world\")[\"word_count\"] == 2；count_text(\"Hello hello HELLO\")[\"word_count\"] == 3；count_text(\"well-known\")[\"word_count\"] == 1；count_text(\"don't\")[\"word_count\"] == 1；count_text(\"it\\u2019s\")[\"word_count\"] == 1；count_text(\"a-b-c\")[\"word_count\"] == 1；count_text(\"hello--world\")[\"word_count\"] == 2。",
+      "AC-07 非 ASCII 字符与组合记号的单词数（程序化调用）：count_text(\"cafe\\u0301\")[\"word_count\"] == 1 且 char_count == 5（不得出现 2 的第二种期望）；count_text(\"caf\\u00e9\")[\"word_count\"] == 1 且 char_count == 4；count_text(\"caf\\u00e9-mocha\")[\"word_count\"] == 2。",
+      "AC-08 数字与下划线不算单词字符（程序化调用）：count_text(\"123 456\")[\"word_count\"] == 0；count_text(\"abc123\")[\"word_count\"] == 1；count_text(\"a1b\")[\"word_count\"] == 2；count_text(\"a_b\")[\"word_count\"] == 2；count_text(\"foo_bar baz\")[\"word_count\"] == 3。",
+      "AC-09 连接符两侧必须紧邻 ASCII 字母（程序化调用）：count_text(\" -abc\")[\"word_count\"] == 1；count_text(\"abc- \")[\"word_count\"] == 1；count_text(\"'abc\")[\"word_count\"] == 1；count_text(\"a_b\")[\"word_count\"] == 2。",
+      "AC-10 作用域 a — 程序化注入调用只返回退出码、不写标准输出：以显式 stdin_text 调用 main 时（传空串 \"\" 与非空文本都算），main([], stdin_text=\"\") 返回 0 且标准输出为空；main([], stdin_text=\"hello world\\nfoo bar\\n\") 返回 0 且标准输出为空；main([], stdin_text=\"\") 的标准输出为空字符串而不是 \"True 0 int\" 或任何 4 行文本。",
+      "AC-11 作用域 b — 命令行调用成功路径的输出格式：在交付目录内执行 python text_stats.py sample_input.txt（该文件内容为 \"hello world\\nfoo bar\\n\"），退出码为 0，标准输出恰好 4 行，依次为 \"char_count: 20\"、\"line_count: 2\"、\"non_empty_line_count: 2\"、\"word_count: 4\"，且不含任何其他内容。",
+      "AC-12 作用域 b — 命令行未给出 PATH 时读进程标准输入：执行 printf 'hello world\\n' | python text_stats.py，退出码为 0，标准输出恰好 4 行，依次为 \"char_count: 12\"、\"line_count: 1\"、\"non_empty_line_count: 1\"、\"word_count: 2\"。",
+      "AC-13 作用域 b — 命令行标准输入立即 EOF：执行 printf '' | python text_stats.py，退出码为 0，标准输出恰好 4 行，数值依次为 0、0、0、0，且不阻塞等待输入。",
+      "AC-14 作用域 b — 命令行读取含 CRLF 与单独 CR 的文件：文件内容为 \"a\\r\\nb\\rc\" 时执行 python text_stats.py <该文件>，退出码为 0，标准输出恰好 4 行，依次为 \"char_count: 5\"、\"line_count: 3\"、\"non_empty_line_count: 3\"、\"word_count: 3\"。",
+      "AC-15 错误路径 — 文件不存在：执行 python text_stats.py missing-file.txt，退出码为 1，标准输出为空，标准错误至少一行且以 \"error: \" 开头，且不出现 traceback。",
+      "AC-16 错误路径 — 编码名非法：执行 python text_stats.py sample_input.txt --encoding definitely-not-an-encoding，退出码为 1，标准输出为空，标准错误至少一行且以 \"error: \" 开头，且不出现 traceback。",
+      "AC-17 错误路径 — 位置参数多于 1 个：执行 python text_stats.py a.txt b.txt，退出码为 1（不得为 argparse 默认的 2），标准输出为空，标准错误至少一行且以 \"error: \" 开头。",
+      "AC-18 --help：执行 python text_stats.py --help，退出码为 0，并在标准输出给出用法说明（含 PATH 与 --encoding 的说明文字）。",
+      "AC-19 依赖边界：交付目录 examples/text-stats 内全部 .py 文件只导入 Python 标准库（如 argparse、codecs、re、sys、io、contextlib、unittest、subprocess），不存在任何第三方 import；交付目录内不存在 requirements.txt、pyproject.toml、setup.py、Pipfile 等依赖声明文件（既有 .gitignore 除外）。",
+      "AC-20 冗余转发函数已删除且入口直接调用主函数：模块内不存在函数体只有一句 return 转发到另一个函数的冗余函数（例如仅转发到 main 或仅转发到 count_text 的单行包装），且 __main__ 守卫直接调用 main() 并以返回值作为进程退出码（源码中可见 \"if __name__ == \\\"__main__\\\":\" 与 \"sys.exit(main())\"）。",
+      "AC-21 文档中的连接符字符可辨认：交付目录内的文档与代码注释在描述连接符时，不得出现裸的 U+2019 字符；该字符必须以可辨认写法给出（如正则字面量用 \\u2019 转义、正文明确标注 U+2019 并配 ASCII 撇号），第三方按字面即可分辨所用的是 ASCII 撇号（U+0027）还是 U+2019。",
+      "AC-22 可复制示例与样例输入一致：README.md 中每条示例（含文件示例与标准输入示例）的命令与四个期望数值，与交付目录内样例文件内容及上述各项口径逐一自洽，第三方照抄命令即可得到相同输出；示例中不得出现与 AC-01 至 AC-14 矛盾的数值。",
+      "AC-23 单元测试与纯函数接口：存在可被 unittest 直接导入调用的纯函数 count_text，其返回值为四键整数映射；在仓库根目录执行 python -m unittest discover -s examples/text-stats -p \"test_*.py\" 全部通过，且测试同时覆盖纯函数调用与命令行入口（子进程）两条路径。"
+    ],
+    "boundary_conditions": [
+      "BC-01 行边界集合（权威口径）：只有 LF(\\n)、CR(\\r)、CRLF(\\r\\n) 三种序列构成换行；U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85 一律不构成换行，它们保留在行内容中并计入 char_count。判定方式：以 \"a\" + c + \"b\" 构造输入，line_count 必须为 1；不得把 str.splitlines() 当作唯一实现依据（它会把 U+2028/U+2029 等当作换行）。",
+      "BC-02 归一化顺序（唯一顺序）：先剥除一个前导 U+FEFF，再把所有 CRLF 替换为 LF，最后把剩余的全部单独 CR 替换为 LF；此后只按 LF 切分。顺序颠倒或漏掉单独 CR 的处理都会改变 char_count 与 line_count。",
+      "BC-03 BOM 剥离范围：只剥除一个前导 U+FEFF，且只影响四项统计的统计基准；\"\\ufeffabc\" 的 char_count == 3、line_count == 1；\"\\ufeff\\ufeffabc\" 的 char_count == 4（第二个 BOM 计入字符数）。文档中把 \"已剥除 BOM\" 写成 \"含 BOM\" 的文字一律以本条为准。",
+      "BC-04 空文本：\"\" 的 char_count == 0、line_count == 0、non_empty_line_count == 0、word_count == 0；空文本不产生任何行（把它记成 1 行属错误）。",
+      "BC-05 结尾换行不产生额外空行（唯一口径）：\"a\\n\" 为 1 行；\"a\\n\\nb\" 为 3 行；\"a\\n\\n\" 为 2 行；\"\\n\" 为 1 行；\"hello world\\nfoo bar\\n\" 为 2 行；\"  \\n\\t\\n\" 为 2 行且 non_empty_line_count == 0。任何把以换行结尾的输入在末尾空片段上另计一行的写法（例如把 \"hello world\\nfoo bar\\n\" 或 \"  \\n\\t\\n\" 记为 3 行）均属错误，必须按本条示例改正。",
+      "BC-06 空行与非空行判定：空行指切分出的行内容为空串的行；非空行指该行 strip() 后仍含字符的行。因此 \"\\n\\n\" 为 2 行且 non_empty_line_count == 0；\"  \\n\\t\\n\" 为 2 行且 non_empty_line_count == 0；\"a\\n\\n\" 为 2 行且 non_empty_line_count == 1。",
+      "BC-07 空白定义：判定 non_empty_line_count 时使用 Python str.strip() 的空白集合（含空格、\\t、\\n、\\r、\\x0b、\\x0c、\\u00a0、\\u3000 等），不做自定义扩展也不做缩减。",
+      "BC-08 字符数定义：char_count 为归一化后文本的 Unicode 码点数（len(str)），不按字节、不按字形簇、不按显示宽度；因此 \"caf\\u00e9\" 为 4 个码点，\"cafe\\u0301\"（e 加组合重音 U+0301）为 5 个码点，CRLF 归一化后只计 1 个字符。",
+      "BC-09 单词正则：word_count 为 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 在归一化文本上匹配到的片段个数；只有 ASCII 字母 a-z/A-Z 是单词字符，数字、下划线、非 ASCII 字母与组合记号都不是单词字符，会把字母片段切开。",
+      "BC-10 大小写：不做小写化归并，每个 [A-Za-z]+ 片段各计 1 个词，\"Hello hello HELLO\" 为 3 个词。",
+      "BC-11 连接符规则：只有三种连接符能把两个 ASCII 字母片段连成 1 个词——ASCII 连字符 '-'、ASCII 撇号 '（U+0027）、右单引号 U+2019；连接符两侧必须紧邻 ASCII 字母，且一次只允许一个连接符。因此 \"well-known\" 为 1、\"don't\" 为 1、\"it\\u2019s\" 为 1、\"a-b-c\" 为 1、\"hello--world\" 为 2（连续两个连接符不连接）、\" -abc\" 为 1、\"abc- \" 为 1、\"'abc\" 为 1。",
+      "BC-12 非 ASCII 相邻情形：非 ASCII 字母与组合记号既不能充当连接符，也不能作为单词字符——\"caf\\u00e9-mocha\" 为 2 个词（é 处切断，mocha 单独计数）、\"cafe\\u0301\" 为 1 个词（组合记号只切断、不产生新词）。同一输入 \"cafe\\u0301\" 只允许一个期望值 1，任何给出的 2 均为错误。",
+      "BC-13 读文件方式：读取文件时必须保留原始换行字符（open(..., newline=\"\") 或等价的二进制读取后解码），归一化只在 count_text 一处完成，从而保证文件路径与标准输入路径在同一份原始文本上得到完全相同的四项数值。",
+      "BC-14 编码：默认按 UTF-8 解码，既有选项 --encoding NAME 覆盖之；编码名非法（codecs.lookup 抛 LookupError）属错误路径，退出码 1 并在标准错误输出一行以 \"error: \" 开头的说明；文件读取过程中的解码失败同样属错误路径。",
+      "BC-15 作用域 a（程序化注入调用，权威口径，不得改写、不得与 b 合并）：调用方显式传入 stdin_text 参数（传入空串 \"\" 或非空文本都算）时，main() 只返回整数退出码、不写标准输出、不读进程流；例如 main([], stdin_text=\"\") 返回 0 且标准输出为空，调用方自己负责打印结果。",
+      "BC-16 作用域 b（命令行调用，权威口径，不得改写、不得与 a 合并）：程序作为命令行运行（给出 PATH 时读该文件，未给出 PATH 时读进程标准输入）时，成功路径必须在标准输出写恰好 4 行，顺序为 char_count、line_count、non_empty_line_count、word_count，每行形如 \"<名称>: <整数>\"，不输出其他内容。",
+      "BC-17 两类调用不构成冲突：\"成功路径恰好 4 行\"只约束 BC-16 的命令行调用；BC-15 的程序化注入调用在同一输入下只返回退出码且标准输出为空。二者期望值不同但适用于不同类调用，属于分别适用而非互斥；反向要求（程序化注入也打印 4 行、或命令行静默）均属错误。",
+      "BC-18 错误退出码：文件不存在、文件不可读或是目录、解码失败、--encoding 编码名非法、位置参数多于 1 个，一律以退出码 1 结束，并在标准错误输出至少一行以 \"error: \" 开头的说明；不得使用 argparse 默认的退出码 2，不得让 traceback 逃逸；--help 仍为退出码 0。",
+      "BC-19 输出行格式：命令行成功输出只含四行 \"<名称>: <整数>\"，名称为 char_count、line_count、non_empty_line_count、word_count（全小写、下划线分隔），数值为十进制整数字面量（无引号、无千位分隔符、无前导零、无正号），行尾为单个 LF。",
+      "BC-20 纯函数接口：count_text(text) 接收已解码文本（不做解码、不读文件、不读 stdin），返回恰好含四个整数键的映射；同名键不得有第二种含义，也不得返回额外键。",
+      "BC-21 冗余函数与入口：模块内不得保留仅做单行转发（函数体只有一句 return 转发到另一个函数）的冗余函数；命令行入口在 __main__ 守卫中直接调用主函数 main() 并以返回值作为进程退出码。",
+      "BC-22 依赖与目录边界：实现与测试只允许 Python 标准库（argparse、codecs、re、sys、io、contextlib、subprocess、unittest 等），禁止任何第三方依赖；不得在交付目录内新增依赖声明文件；不写入交付目录之外、也不写入工作区之外的路径。",
+      "BC-23 示例一致性：README 中每条可复制示例（命令行 + 样例文件内容或标准输入内容）的四个期望数值必须与 BC-01 至 BC-19 的规则逐一自洽，样例文件的实际内容与文档所述内容一致；不允许保留与规则矛盾的历史示例值（例如把 \"  \\r\\n \\r\\n\" 的 char_count 写成 6）。",
+      "BC-24 连接符字符可辨认：交付目录内的文档与代码注释在描述正则连接符时，不得出现裸的 U+2019 字符；必须写成可辨认形式（如正则字面量使用 \\u2019 转义并在正文旁标注 U+2019，或同时给出 ASCII 撇号 ' 与 U+2019 的区分说明），使第三方无需目测字形即可判断所用字符。"
+    ],
+    "open_questions": [
+      "sample_input.txt 是否必须保持现有内容 \"hello world\\nfoo bar\\n\"（本需求 AC-11 按此内容给出 20/2/2/4）；若 Coding Agent 需要重写该样例文件，必须同步更新 README 与测试中的期望值，且不得改变上述任何口径。",
+      "错误路径的标准错误只要求\"至少一行以 error: 开头\"，未规定消息正文措辞与语言；不要求与历史文档中的具体错误文本逐字相同。",
+      "既有 --encoding NAME 选项的保留由本需求明确要求（BC-14、AC-16、AC-18），但本需求未要求为它增加短选项、默认值展示或其它编码相关能力。"
+    ],
+    "consistency_check": {
+      "self_checked": true,
+      "conflicts": [],
+      "notes": "已把 AC-01 至 AC-23 与 BC-01 至 BC-24 逐条交叉核对，并对每条数值示例按本轮规则逐字段重算（字符数按归一化后码点、行数按切分规则、非空行数按 strip() 判空、单词数按正则），全部重算一致，未发现同一类调用、同一输入存在两个不可同时成立的期望。重点核对如下：1) 行数口径：AC-01 的 \"a\\n\"=1、\"a\\nb\"=2、\"a\\n\\n\"=2、\"hello world\\nfoo bar\\n\"=2、\"\"=0、\"  \\n\\t\\n\"=2 与 BC-04/BC-05/BC-06 完全一致；\"hello world\\nfoo bar\\n\" 与 \"  \\n\\t\\n\" 都只给 2 行，不存在历史运行中 \"2 行 vs 3 行\" 的互斥期望。2) 字符数示例重算：\"hello world\\nfoo bar\\n\" 归一化后码点为 20；\"a\\r\\nb\"→\"a\\nb\" 为 3；\"a\\r\\nb\\rc\"→\"a\\nb\\nc\" 为 5；\"  \\r\\n \\r\\n\"→\"  \\n \\n\" 为 5（原始 7 个码点归一化后 5 个，AC-05 与 BC-02/BC-08 一致，已修正上一轮 AC-05 误写为 6 的数值）；\"\\ufeffabc\" 为 3、\"\\ufeff\\ufeffabc\" 为 4；\"caf\\u00e9\" 为 4、\"cafe\\u0301\" 为 5。3) 非空行数示例重算：\"a\\n\\n\" 的行集为 [\"a\", \"\"]，非空 1；\"\\n\\n\" 为 [\"\", \"\"]，非空 0；\"  \\n\\t\\n\" 为 [\"  \", \"\\t\"]，非空 0；\"  a  \\n\\t\\n\" 为 [\"  a  \", \"\\t\"]，非空 1；\"  \\r\\n \\r\\n\"→\"  \\n \\n\" 行集为 [\"  \", \" \"]，非空 0，与 AC-04/AC-05 一致。4) 单词示例重算：\"hello world\"=2、\"Hello hello HELLO\"=3、\"well-known\"=1、\"don't\"=1、\"it\\u2019s\"=1、\"a-b-c\"=1、\"hello--world\"=2、\"cafe\\u0301\"=1、\"caf\\u00e9\"=1、\"caf\\u00e9-mocha\"=2、\"123 456\"=0、\"abc123\"=1、\"a1b\"=2、\"a_b\"=2、\"foo_bar baz\"=3、\" -abc\"=1、\"abc- \"=1、\"'abc\"=1，均与 BC-09/BC-10/BC-11/BC-12 唯一推出的值一致；特别是 \"cafe\\u0301\" 只写 1、不写 2，\"a_b\" 只写 2、不写 1。5) 调用作用域：AC-10 只约束作用域 a（程序化注入：main([], stdin_text=\"\") 返回 0 且标准输出为空），AC-11 至 AC-14 只约束作用域 b（命令行：恰好 4 行），BC-15/BC-16/BC-17 明确二者是不同类调用、分别适用、不构成冲突；不存在\"同一次调用既要求空标准输出又要求 4 行\"的组合（历史运行中的 \"True 0 int\" 断言已不复现，AC-10 直接把它排除）。6) 错误路径：AC-15 至 AC-18 与 BC-18 一致（退出码 1 / 标准错误 \"error: \" 开头 / 不用 2 / --help 为 0），AC-17 的退出码 1 不与任何规则冲突。7) \"现有实现与本次需求不一致\"的项已按角色规范写入 scope_in 第 4、5、6、11 条与 AC-19 至 AC-21（行数口径统一、多余位置参数退出码 1、冗余转发函数删除、文档连接符字符可辨认、仅标准库），未误报为 conflicts；\"细节未写明\"的项（空白集合、读文件保留原始换行、输出行格式细节、编码默认值）已分别写成 BC-07、BC-13、BC-19、BC-14，未留待实现者猜测。"
+    },
+    "generated_at": "2026-10-16T23:47:21+08:00"
+  },
+  "requirementSelfCheck": {
+    "self_checked": true,
+    "conflicts": [],
+    "notes": "已把 AC-01 至 AC-23 与 BC-01 至 BC-24 逐条交叉核对，并对每条数值示例按本轮规则逐字段重算（字符数按归一化后码点、行数按切分规则、非空行数按 strip() 判空、单词数按正则），全部重算一致，未发现同一类调用、同一输入存在两个不可同时成立的期望。重点核对如下：1) 行数口径：AC-01 的 \"a\\n\"=1、\"a\\nb\"=2、\"a\\n\\n\"=2、\"hello world\\nfoo bar\\n\"=2、\"\"=0、\"  \\n\\t\\n\"=2 与 BC-04/BC-05/BC-06 完全一致；\"hello world\\nfoo bar\\n\" 与 \"  \\n\\t\\n\" 都只给 2 行，不存在历史运行中 \"2 行 vs 3 行\" 的互斥期望。2) 字符数示例重算：\"hello world\\nfoo bar\\n\" 归一化后码点为 20；\"a\\r\\nb\"→\"a\\nb\" 为 3；\"a\\r\\nb\\rc\"→\"a\\nb\\nc\" 为 5；\"  \\r\\n \\r\\n\"→\"  \\n \\n\" 为 5（原始 7 个码点归一化后 5 个，AC-05 与 BC-02/BC-08 一致，已修正上一轮 AC-05 误写为 6 的数值）；\"\\ufeffabc\" 为 3、\"\\ufeff\\ufeffabc\" 为 4；\"caf\\u00e9\" 为 4、\"cafe\\u0301\" 为 5。3) 非空行数示例重算：\"a\\n\\n\" 的行集为 [\"a\", \"\"]，非空 1；\"\\n\\n\" 为 [\"\", \"\"]，非空 0；\"  \\n\\t\\n\" 为 [\"  \", \"\\t\"]，非空 0；\"  a  \\n\\t\\n\" 为 [\"  a  \", \"\\t\"]，非空 1；\"  \\r\\n \\r\\n\"→\"  \\n \\n\" 行集为 [\"  \", \" \"]，非空 0，与 AC-04/AC-05 一致。4) 单词示例重算：\"hello world\"=2、\"Hello hello HELLO\"=3、\"well-known\"=1、\"don't\"=1、\"it\\u2019s\"=1、\"a-b-c\"=1、\"hello--world\"=2、\"cafe\\u0301\"=1、\"caf\\u00e9\"=1、\"caf\\u00e9-mocha\"=2、\"123 456\"=0、\"abc123\"=1、\"a1b\"=2、\"a_b\"=2、\"foo_bar baz\"=3、\" -abc\"=1、\"abc- \"=1、\"'abc\"=1，均与 BC-09/BC-10/BC-11/BC-12 唯一推出的值一致；特别是 \"cafe\\u0301\" 只写 1、不写 2，\"a_b\" 只写 2、不写 1。5) 调用作用域：AC-10 只约束作用域 a（程序化注入：main([], stdin_text=\"\") 返回 0 且标准输出为空），AC-11 至 AC-14 只约束作用域 b（命令行：恰好 4 行），BC-15/BC-16/BC-17 明确二者是不同类调用、分别适用、不构成冲突；不存在\"同一次调用既要求空标准输出又要求 4 行\"的组合（历史运行中的 \"True 0 int\" 断言已不复现，AC-10 直接把它排除）。6) 错误路径：AC-15 至 AC-18 与 BC-18 一致（退出码 1 / 标准错误 \"error: \" 开头 / 不用 2 / --help 为 0），AC-17 的退出码 1 不与任何规则冲突。7) \"现有实现与本次需求不一致\"的项已按角色规范写入 scope_in 第 4、5、6、11 条与 AC-19 至 AC-21（行数口径统一、多余位置参数退出码 1、冗余转发函数删除、文档连接符字符可辨认、仅标准库），未误报为 conflicts；\"细节未写明\"的项（空白集合、读文件保留原始换行、输出行格式细节、编码默认值）已分别写成 BC-07、BC-13、BC-19、BC-14，未留待实现者猜测。"
+  },
+  "preflight": {
+    "repo_root": "<repo>",
+    "repo_root_realpath": "<repo>",
+    "evidence_dir_state": "missing",
+    "evidence_dir_realpath": "<repo>\\evidence\\v0.1-run6-20261016T154400Z",
+    "evidence_dir_claimed": true,
+    "evidence_dir_entries": [],
+    "owner_marker_path": "docs/evidence/v0.1-run6-20261016T154400Z/.run-owner.json",
+    "link_components": [],
+    "prompt_files": [
+      {
+        "path": "agents/requirement-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/coding-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/review-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/verifier-agent.md",
+        "exists": true
+      }
+    ],
+    "target_dir": "examples/text-stats",
+    "target_dir_state": "present",
+    "target_dir_realpath": "<repo>\\examples\\text-stats",
+    "resolved_paths": [
+      "<repo>",
+      "<repo>\\AGENTS.md",
+      "<repo>",
+      "<repo>\\evidence",
+      "<repo>\\evidence\\v0.1-run6-20261016T154400Z",
+      "<repo>\\evidence\\v0.1-run6-20261016T154400Z\\.run-owner.json",
+      "<repo>\\evidence\\v0.1-run6-20261016T154400Z\\preflight.json",
+      "<repo>\\agents",
+      "<repo>\\agents\\requirement-agent.md",
+      "<repo>\\agents\\coding-agent.md",
+      "<repo>\\agents\\review-agent.md",
+      "<repo>\\agents\\verifier-agent.md",
+      "<repo>\\examples",
+      "<repo>\\examples\\text-stats",
+      "<repo>\\examples\\text-stats\\text_stats.py",
+      "<repo>\\examples\\text-stats\\test_text_stats.py",
+      "<repo>\\tests",
+      "<repo>\\workflows"
+    ],
+    "problems": [],
+    "generated_at": "2026-10-16T23:46:30.5132527+08:00"
+  },
+  "attemptsDetail": [
+    {
+      "attempt": 1,
+      "codingReport": {
+        "files_created": [
+          {
+            "path": "examples/text-stats/text_stats.py",
+            "purpose": "Improved the existing standard-library text statistics tool: count_text() returns exactly the four integer keys under the single authoritative caliber (normalise one leading U+FEFF, CRLF then lone CR to LF, split on LF only, trailing LF opens no extra line, word regex [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*), main(argv, stdin_text) keeps the two call scopes apart (explicit stdin_text returns only an exit code and touches no process stream; stdin_text None runs the CLI and writes exactly four '<key>: <value>' lines), every handled error (missing/unreadable/directory path, decode failure, unknown --encoding, more than one positional argument) exits 1 with an 'error: ' line and no traceback instead of argparse's 2, the redundant single-line forwarding helpers _normalize/_split_lines/_count_lines are gone so count_text and main call the real logic directly, and the dead 'if text is None' branch in main() was removed."
+          },
+          {
+            "path": "examples/text-stats/test_text_stats.py",
+            "purpose": "Unit tests for both contracts (grew 77 -> 81 tests): added a CRLF/lone-CR mixed input (AC-02/AC-14: 'a\\r\\nb\\rc' = 5/3/3/3), a test that a programmatic empty-text call never touches or blocks on sys.stdin (AC-13, via a stdin whose read() raises), a programmatic unknown-encoding error test (AC-19), an AST test that nothing but the __main__ guard calls main() and that no wrapper named run/_main exists (AC-20), plus strengthened the U+2019 readability test (AC-21) and the one-line-forwarder test (BC-21) to walk the module AST instead of doing substring checks."
+          },
+          {
+            "path": "examples/text-stats/README.md",
+            "purpose": "Documentation kept in step with this round's authority: the stale 'unreachable AC-05 value 6 / awaiting human ruling' section was replaced by a worked example fixing \"  \\r\\n \\r\\n\" at char_count 5 (never 6) with a field-by-field basis table and the statement that run 5's recorded conflict is dissolved; added a char-count comparison table (BC-02/03/08) and a priority note that AC-05 is 5. All copy-paste examples still agree with sample_input.txt and with AC-01..AC-14."
+          },
+          {
+            "path": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json",
+            "purpose": "Evidence artifact for this coding stage: envelope (run_id/agent/stage/generated_at) plus the exact result object returned to the pipeline."
+          }
+        ],
+        "implementation_summary": "No behavioural change was needed: a re-run of my independent audit over AC-01..AC-20 (line boundaries, normalisation order, BOM handling, char/line/non-empty/word calibers, both call scopes, all five error paths, --help, standard-library-only imports, guard shape, README example consistency) reported AUDIT FAILURES: 0 both before and after my edits, so the four statistics and the CLI output were already correct. What I fixed were the surviving defects the requirement named: (1) README still described the previous round's AC-05 char_count 6 as an unreachable value awaiting a human ruling, contradicted by this round's authoritative 5 -- rewritten with a worked example and a char-count table; (2) text_stats.py carried a dead branch in main() (an 'if text is None' check after the path/stdin branches that no execution path could reach) -- main() was restructured into path-branch / programmatic-branch / stdin-branch with a single 'if not programmatic' write, preserving the rule that a programmatic call still reports an unreadable PATH or a bad --encoding as an error while writing nothing; (3) the module docstring now states the programmatic-call contract and the AC-05 figure explicitly. Tests were extended from 77 to 81 to cover AC-02/AC-13/AC-19/AC-20 directly and the AC-21/BC-21 checks were made real AST checks instead of substring probes (one self-inflicted failure along the way: 'assertNotIn(\"_main\", source)' matched the \"__main__\" guard, fixed by inspecting parsed top-level function names). No bare U+2019 character exists anywhere in the delivery directory, so AC-21 already held. Dependencies remain Python standard library only and no dependency manifest was added.",
+        "acceptance_criteria_addressed": [
+          "AC-01/AC-04/BC-04/BC-05/BC-06/BC-07 single line-split caliber: trailing LF adds no extra line ('a\\n'=1, 'a\\nb'=2, 'a\\n\\n'=2, 'hello world\\nfoo bar\\n'=2, ''=0, '  \\n\\t\\n'=2 lines with 0 non-empty)",
+          "AC-02/AC-14/BC-01: only LF/CR/CRLF end a line; U+2028, U+2029, \\x0b, \\x0c, \\x1c, \\x1d, \\x1e, \\x85 stay in the line content and count as characters; 'a\\r\\nb\\rc' = char 5 / line 3 / non-empty 3 / word 3",
+          "AC-03/BC-02/BC-03/BC-08 char_count as normalized code points: BOM stripped once ('\\ufeffabc'=3, '\\ufeff\\ufeffabc'=4), CRLF counts 1 char ('a\\r\\nb'=3), '  \\r\\n \\r\\n' = 5",
+          "AC-05: count_text('  \\r\\n \\r\\n') == {char_count 5, line_count 2, non_empty_line_count 0, word_count 0} -- the value once documented as 6 is now fixed at 5 in code, tests and README",
+          "AC-06..AC-09/BC-09..BC-12 word caliber: 'well-known'/'don't'/'it\\u2019s'/'a-b-c' = 1, 'hello--world' = 2, '123 456' = 0, 'abc123' = 1, 'a1b'/'a_b'/'foo_bar baz' = 2/2/3, ' -abc'/'abc- '/'\\'abc' = 1, 'caf\\u00e9-mocha' = 2",
+          "AC-10/AC-13/BC-15/BC-17 programmatic scope: main([], stdin_text='') and main([], stdin_text=REFERENCE_TEXT) return 0 with empty stdout/stderr without reading sys.stdin",
+          "AC-11..AC-13/BC-16/BC-19/BC-13 CLI scope: sample file -> char_count 20/line_count 2/non_empty_line_count 2/word_count 4; piped 'hello world\\n' -> 12/1/1/2; empty stdin -> 0/0/0/0, exactly four '<key>: <value>' lines",
+          "AC-15..AC-18/BC-18 error contract: missing file, unknown --encoding and two positional arguments all exit 1 with a single 'error: ' stderr line, empty stdout, no traceback, never argparse's 2; --help exits 0 with usage text",
+          "AC-19/BC-22 dependency boundary: delivery .py files import only argparse/codecs/re/io/contextlib/subprocess/sys/unittest/ast/os and no dependency manifest exists in the directory",
+          "AC-20/BC-21 no one-line forwarding functions remain and the guard is 'if __name__ == \"__main__\": sys.exit(main())' as the only caller of main()",
+          "AC-21/BC-24 the connector character is identifiable: no bare U+2019 in any delivery file; the regex uses the \\u2019 escape beside an explicit U+2019 code-point note",
+          "AC-22/BC-23 README examples match sample_input.txt and reproduce the CLI output verbatim; AC-23 unittest discovery passes 81/81 covering both the pure function and the subprocess CLI path"
+        ],
+        "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+        "test_succeeded": true,
+        "test_exit_code": "0",
+        "test_output_excerpt": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.160s\n\nOK",
+        "deviations_from_requirement": [],
+        "requirement_conflicts": [],
+        "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json",
+        "generated_at": "2026-10-16T23:52:17+08:00"
+      },
+      "verification": {
+        "command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+        "exit_code": "0",
+        "raw_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.145s\n\nOK\n",
+        "ran_tests": 81,
+        "result_marker": "OK",
+        "artifacts": [
+          {
+            "path": "examples/text-stats/text_stats.py",
+            "sha256": "56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990",
+            "bytes": 11184
+          },
+          {
+            "path": "examples/text-stats/test_text_stats.py",
+            "sha256": "591206d56117670f31104b6f7433533a0c5df61c92f20f5d297c76c19d9b1da3",
+            "bytes": 30875
+          }
+        ],
+        "requirement_conflicts": [],
+        "generated_at": "2026-10-16T23:53:23.933385+08:00",
+        "notes": "命令在仓库根目录原样执行（未改写、未增删参数），退出码 0 由 cmd %errorlevel% 记录。stdout 为空，stderr 含 81 个点号进度行、分隔线、Ran 81 tests in 1.145s 与 OK；raw_output 为 stdout（空）+ stderr 的原样拼接，未删减或改写。artifacts 仅含交付目录中的模块文件与测试文件这两类，哈希为复跑之后二进制重读计算的最新值（未列入 README/.gitignore/样例输入）。requirement_conflicts 为空：AC-01..AC-23 与 BC-01..BC-24 中同一调用、同一输入未出现互斥期望，作用域 a/b 由 BC-17 明确为分别适用。唯一写入为产物文件 docs/evidence/v0.1-run6-20261016T154400Z/verify.json；交付目录 .py 文件 mtime 仍为 23:49-23:50（早于本次复跑），复跑仅由解释器自动生成 __pycache__ 与测试自建的 .test-scratch 运行副产物。仅报告原始事实，不做通过/不通过裁定。"
+      },
+      "review": {
+        "verdict": "CHANGES_REQUESTED",
+        "criteria_check": [
+          {
+            "criterion": "AC-01 行数唯一口径（程序化调用）",
+            "satisfied": true,
+            "evidence": "以 examples/text-stats 为 sys.path 直接调用 examples/text-stats/text_stats.py:85 count_text：count_text('a\\n')['line_count']=1、('a\\nb')=2、('a\\n\\n')=2、('hello world\\nfoo bar\\n')=2、('')=0、('  \\n\\t\\n')=2，全部与 AC-01 一致；实现见 text_stats.py:107-110（split('\\n') 后若末元素为空则 pop）。测试 test_text_stats.py:170-200（test_ac01_*）。"
+          },
+          {
+            "criterion": "AC-02 行边界集合（程序化调用）",
+            "satisfied": true,
+            "evidence": "count_text('a\\r\\nb')→line 2 / char 3；('a\\rb')→line 2；('a\\r\\nb\\rc')→line 3 / char 5；对 c 依次取 U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85，逐一验证 count_text('a'+c+'b')['line_count']==1 且 char_count==3（8/8 PASS，实测输出 '0x2028 1 3 PASS' … '0x85 1 3 PASS'）。实现不使用 str.splitlines()，text_stats.py:99-107 只做 CRLF/CR→LF 后按 LF 切分。测试 test_text_stats.py:245-254。"
+          },
+          {
+            "criterion": "AC-03 字符数按归一化后码点数（程序化调用）",
+            "satisfied": true,
+            "evidence": "count_text('')['char_count']=0；('hello world\\nfoo bar\\n')=20；('a\\r\\nb')=3；('a\\rb')=3；('\\ufeffabc')=3；('\\ufeff\\ufeffabc')=4；('caf\\u00e9')=4，逐条实测一致（见独立脚本 review-check.py 输出 'README/doc table mismatches: 0'）。实现 text_stats.py:97-98 只剥一个前导 BOM，text_stats.py:113 用 len(normalised)。测试 test_text_stats.py:265-278。"
+          },
+          {
+            "criterion": "AC-04 非空行数（程序化调用）",
+            "satisfied": true,
+            "evidence": "count_text('a\\n\\n')['non_empty_line_count']=1；('a\\nb')=2；('\\n\\n')=0；('  \\n\\t\\n')=0；('  a  \\n\\t\\n')=1；('')=0，全部实测一致。实现 text_stats.py:115 对同一次 split 得到的 lines 逐行 strip()。测试 test_text_stats.py:287-302。"
+          },
+          {
+            "criterion": "AC-05 CRLF 输入四项统计自洽（程序化调用）",
+            "satisfied": true,
+            "evidence": "count_text('  \\r\\n \\r\\n') 实测 {'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}，与 AC-05 完全一致（此前争议值 6 已不出现）。同一 dict 由 text_stats.py:107 一次切分同时供给 line_count 与 non_empty_line_count。测试 test_text_stats.py:202-213 断言该 dict；README.md:137-157 同步写明为 5。"
+          },
+          {
+            "criterion": "AC-06 单词基本判定（程序化调用）",
+            "satisfied": true,
+            "evidence": "实测 count_text：'hello world'=2、'Hello hello HELLO'=3、'well-known'=1、\"don't\"=1、'it\\u2019s'=1、'a-b-c'=1、'hello--world'=2（连续连接符不连接），逐条与 AC-06 一致。正则见 text_stats.py:75-82（WORD_JOINERS=\"-'\"+U+2019，WORD_PATTERN=[A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*）。测试 test_text_stats.py:329-343。"
+          },
+          {
+            "criterion": "AC-07 非 ASCII 字符与组合记号的单词数（程序化调用）",
+            "satisfied": true,
+            "evidence": "实测 count_text('cafe\\u0301')→word 1 / char 5；('caf\\u00e9')→word 1 / char 4；('caf\\u00e9-mocha')→word 2，与 AC-07 一致，未出现第二种期望值 2。测试 test_text_stats.py:345-357。"
+          },
+          {
+            "criterion": "AC-08 数字与下划线不算单词字符（程序化调用）",
+            "satisfied": true,
+            "evidence": "实测 count_text('123 456')=0；('abc123')=1；('a1b')=2；('a_b')=2；('foo_bar baz')=3，逐条一致。测试 test_text_stats.py:359-367。"
+          },
+          {
+            "criterion": "AC-09 连接符两侧必须紧邻 ASCII 字母（程序化调用）",
+            "satisfied": true,
+            "evidence": "实测 count_text(' -abc')=1；('abc- ')=1；(\"'abc\")=1；('a_b')=2，逐条一致。正则的连接符分支要求两侧 [A-Za-z]+（text_stats.py:82）。测试 test_text_stats.py:369-379。"
+          },
+          {
+            "criterion": "AC-10 作用域 a — 程序化注入调用只返回退出码、不写标准输出",
+            "satisfied": true,
+            "evidence": "在 io.StringIO 重定向下调用：main([], stdin_text='') → (0, '', '')；main([], stdin_text='hello world\\nfoo bar\\n') → (0, '', '')，标准输出为标准空串，既非 'True 0 int' 也非 4 行文本。实现 text_stats.py:273-275 提前 return EXIT_OK，text_stats.py:283 仅在 not programmatic 时写 stdout。测试 test_text_stats.py:385-410。"
+          },
+          {
+            "criterion": "AC-11 作用域 b — 命令行调用成功路径的输出格式（样例文件）",
+            "satisfied": true,
+            "evidence": "在交付目录内实测 python text_stats.py sample_input.txt（样例字节为 b'hello world\\nfoo bar\\n'）：退出码 0，标准输出恰好 4 行且依次为 'char_count: 20'、'line_count: 2'、'non_empty_line_count: 2'、'word_count: 4'，无其他内容，标准错误为空。测试 test_text_stats.py:469-480 用真实子进程断言 stdout=='char_count: 20\\nline_count: 2\\nnon_empty_line_count: 2\\nword_count: 4\\n'。"
+          },
+          {
+            "criterion": "AC-12 作用域 b — 命令行未给出 PATH 时读进程标准输入",
+            "satisfied": true,
+            "evidence": "以精确字节 stdin=b'hello world\\n' 由子进程运行模块实测：退出码 0，标准输出 4 行 'char_count: 12'、'line_count: 1'、'non_empty_line_count: 1'、'word_count: 2'，标准错误为空。（先用 PowerShell 管道测得的 13/2 是 PowerShell 管道额外补 LF 造成，改用字节级 stdin 后与 AC-12 完全一致。）测试 test_text_stats.py:482-489。"
+          },
+          {
+            "criterion": "AC-13 作用域 b — 命令行标准输入立即 EOF",
+            "satisfied": true,
+            "evidence": "以 stdin=b'' 实测：退出码 0，标准输出 4 行且四值依次为 0/0/0/0，立即返回无阻塞（实测 (0, 'char_count: 0\\r\\nline_count: 0\\r\\nnon_empty_line_count: 0\\r\\nword_count: 0\\r\\n', '')，其中 \\r 由 Windows 管道文本模式注入，文件写入用 \\n；测试以 text=True 断言的 'char_count: 0\\n…' 通过）。另有 test_text_stats.py:412-433 用一个 read() 即抛异常的 sys.stdin 证明程序化调用根本不触碰进程流。"
+          },
+          {
+            "criterion": "AC-14 作用域 b — 命令行读取含 CRLF 与单独 CR 的文件",
+            "satisfied": true,
+            "evidence": "在 examples/text-stats/.test-scratch 内写入字节 b'a\\r\\nb\\rc' 后实测 python text_stats.py <该文件>：退出码 0，标准输出 4 行 'char_count: 5'、'line_count: 3'、'non_empty_line_count: 3'、'word_count: 3'（临时文件用完即删）。实现以 newline='' 读取保留原始换行（text_stats.py:136）。测试 test_text_stats.py:497-505。"
+          },
+          {
+            "criterion": "AC-15 错误路径 — 文件不存在",
+            "satisfied": true,
+            "evidence": "实测 python text_stats.py missing-file.txt：退出码 1，标准输出空，标准错误为 'error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt''（以 error: 开头，无 Traceback）。实现 text_stats.py:268-270。测试 test_text_stats.py:557-561。"
+          },
+          {
+            "criterion": "AC-16 错误路径 — 编码名非法",
+            "satisfied": true,
+            "evidence": "实测 python text_stats.py sample_input.txt --encoding definitely-not-an-encoding：退出码 1，标准输出空，标准错误 'error: unknown encoding: definitely-not-an-encoding'，无 Traceback。实现 codecs.lookup 校验（text_stats.py:149）+ LookupError 分支（text_stats.py:265-267）。测试 test_text_stats.py:563-568。"
+          },
+          {
+            "criterion": "AC-17 错误路径 — 位置参数多于 1 个",
+            "satisfied": true,
+            "evidence": "实测 python text_stats.py a.txt b.txt：退出码 1（非 argparse 默认的 2），标准输出空，标准错误 'error: invalid arguments (unrecognized arguments: b.txt)'。实现 _UsageErrorParser.error/exit 抛 _ParserExit（text_stats.py:185-192），main 捕获后返回 EXIT_ERROR（text_stats.py:253-258）。测试 test_text_stats.py:570-575（并显式断言 returncode != 2）。"
+          },
+          {
+            "criterion": "AC-18 --help",
+            "satisfied": true,
+            "evidence": "实测 python text_stats.py --help：退出码 0，标准输出给出用法：'usage: text_stats.py [-h] [--encoding ENCODING] [path]'，同时含 path（'file to read; omit to read standard input'）与 --encoding（'encoding used to decode the file (default: utf-8)'）说明。测试 test_text_stats.py:577-580。"
+          },
+          {
+            "criterion": "AC-19 依赖边界",
+            "satisfied": true,
+            "evidence": "解析交付目录全部 .py 的 import：text_stats.py 仅 argparse/codecs/re/sys（全部属于 sys.stdlib_module_names）；test_text_stats.py 仅 ast/contextlib/io/os/subprocess/sys/unittest 加同目录模块 text_stats（本地模块，非第三方）。os.listdir('examples/text-stats') = ['.gitignore', '.test-scratch', 'README.md', '__pycache__', 'sample_input.txt', 'test_text_stats.py', 'text_stats.py']，不存在 requirements.txt / pyproject.toml / setup.py / Pipfile。测试 test_text_stats.py:650-673。"
+          },
+          {
+            "criterion": "AC-20 冗余转发函数已删除且入口直接调用主函数",
+            "satisfied": true,
+            "evidence": "AST 解析 text_stats.py：顶层函数为 ['count_text', '_format_stats', '_read_file', '_encoding_for', '_write', '_report_error', '_build_parser', '_read_stdin_text', 'main']，已无 _normalize/_split_lines/_count_lines；不存在函数体只有一句 return 转发到另一函数的函数（唯一的单 return 函数 _format_stats 是 ''.join(...) 表达式，不是转发到另一函数）。任何函数体内都不调用 main；text_stats.py:288-289 为 'if __name__ == \"__main__\":' + 'sys.exit(main())'，是 main 的唯一调用点。测试 test_text_stats.py:444-463、675-706。"
+          },
+          {
+            "criterion": "AC-21 文档中的连接符字符可辨认",
+            "satisfied": true,
+            "evidence": "遍历交付目录（含 README.md、text_stats.py、test_text_stats.py，排除 __pycache__）逐行扫描裸 U+2019：若某行含 U+2019 却既无 '\\\\u2019' 也无 'U+2019' 即报错——实测 0 处命中（脚本输出 'scan done' 无任何 BARE U+2019 行）。text_stats.py:71-76 用 RIGHT_SINGLE_QUOTATION_MARK = '\\u2019' 并按码点命名，README.md:25 同时给出 ASCII 撇号 '（U+0027）与 \\u2019（U+2019）的区分。测试 test_text_stats.py:618-648。"
+          },
+          {
+            "criterion": "AC-22 可复制示例与样例输入一致",
+            "satisfied": true,
+            "evidence": "样例文件字节实测为 b'hello world\\nfoo bar\\n'；README.md:62-68 的文件示例与实测 CLI 输出逐字一致（20/2/2/4）；README.md:72-78 的标准输入示例与 stdin=b'hello world\\n' 的实测一致（12/1/1/2）；README.md:82-88 的 EOF 示例与 stdin=b'' 实测一致（0/0/0/0）；README.md:92-98 的 CRLF/CR 文件示例与 b'a\\r\\nb\\rc' 实测一致（5/3/3/3）；README.md:102-105 的错误示例退出码 1 与实测一致。README.md:19-20、133-137 的判定表与字符数对照表逐项用 count_text 重算，0 处不符（review-check.py 输出 'README/doc table mismatches: 0'）。测试 test_text_stats.py:708-720。"
+          },
+          {
+            "criterion": "AC-23 单元测试与纯函数接口",
+            "satisfied": true,
+            "evidence": "count_text 可被 unittest 直接导入（examples/text-stats/test_text_stats.py:37-38），返回恰为 char_count/line_count/non_empty_line_count/word_count 四键的整数映射（实测 sorted(count_text('x')) == 四键）。我在仓库根目录亲自执行 python -m unittest discover -s examples/text-stats -p \"test_*.py\"：'Ran 81 tests in 1.152s' + 'OK'，退出码 0；测试同时覆盖纯函数调用与真实子进程命令行两条路径（test_text_stats.py:89-98 run_cli 用 subprocess，:385-535 覆盖程序化与命令行两类）。"
+          }
+        ],
+        "issues": [
+          {
+            "file": "examples/text-stats/test_text_stats.py",
+            "location": "test_ac05_line_and_non_empty_counts_come_from_one_split（第 202-213 行，注释块第 204-209 行）",
+            "problem": "测试体本身正确（断言 count_text('  \\r\\n \\r\\n') == {'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}），但紧邻的注释仍写着历史说法：'Its char_count figure of 6 is unreachable ... the conflict is reported in requirement_conflicts of the coding report rather than resolved here'。本轮需求产物 AC-05 给出的就是 5（不存在 6 的期望），且本轮 Coding Agent 报告的 requirement_conflicts 为空数组，因此该注释与需求产物、与该轮交付报告均相矛盾，属于 Coding Agent 报告所称『已用本轮口径替换该段陈旧文字』未覆盖到的残留（README.md 已改，测试注释未改）。它不影响测试通过与四项数值，但会误导后续读者，并使 Coding Agent 自述与我亲眼读到的文件内容不一致。",
+            "suggestion": "把第 204-209 行注释改写为本轮口径，例如：'AC-05 对本输入给出的就是 char_count 5（不是 6）；BC-02 把 7 个原始码点归一化为 \"  \\n \\n\"，BC-08 计为 5 个码点，本轮 requirement_conflicts 为空'，与 README.md:137-157 保持一致；不要保留『AC-05 为 6』或『冲突已记入 requirement_conflicts』的表述。"
+          },
+          {
+            "file": "examples/text-stats/test_text_stats.py",
+            "location": "文件头 3 行（'BC-01 .. BC-23'）、第 616 行（'BC-21, BC-22, BC-23 and AC-19 …'）；同类笔误亦见 examples/text-stats/README.md:122 与 README.md:130",
+            "problem": "test_text_stats.py:3 声明 'every boundary condition BC-01 .. BC-23 has at least one test'，README.md:122/130 亦写 'BC-01 至 BC-23'，但本轮需求产物定义的是 BC-01 至 BC-24（BC-24 为连接符字符可辨认性），属文档计数陈旧（BC-24 实际由 test_text_stats.py:618-648 覆盖，功能上没有缺口）。",
+            "suggestion": "把 test_text_stats.py:3、test_text_stats.py:616、README.md:122、README.md:130 中的 'BC-01 .. BC-23' / 'BC-01 至 BC-23' 更正为 'BC-01 .. BC-24' / 'BC-01 至 BC-24'，与需求产物及实际覆盖一致。"
+          }
+        ],
+        "independent_test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+        "independent_test_exit_code": "0",
+        "independent_test_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.152s\n\nOK\nEXIT=0\n\n（说明：该命令由我在仓库根目录 <repo> 原样执行，未改写参数；stdout 为空，81 个点号进度行、分隔线、'Ran 81 tests' 与 'OK' 出现在 stderr（PowerShell 将其包装为 NativeCommandError 显示），故此处为两者的原样拼接；退出码 $LASTEXITCODE = 0。第二次复跑结果相同：'Ran 81 tests in 1.149s' + 'OK'，EXIT=0。）",
+        "artifacts_after": [
+          {
+            "path": "examples/text-stats/text_stats.py",
+            "sha256": "56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990",
+            "bytes": 11184
+          },
+          {
+            "path": "examples/text-stats/test_text_stats.py",
+            "sha256": "591206d56117670f31104b6f7433533a0c5df61c92f20f5d297c76c19d9b1da3",
+            "bytes": 30875
+          }
+        ],
+        "requirement_conflicts": [],
+        "consistency_note": "需求侧：AC-01 至 AC-23 与 BC-01 至 BC-24 未发现无法同时满足的规则，requirement_conflicts 为空。作用域 a（BC-15，程序化注入静默）与作用域 b（BC-16，命令行 4 行输出）由 BC-17 明确为分别适用，我按此复核未发现同一调用、同一输入的互斥期望；AC-05 的 char_count 5 与 BC-02/BC-08 自洽（'  \\\\r\\\\n \\\\r\\\\n' 7 个原始码点归一化后 5 个码点），历史轮次的 6 已不在本轮任何权威条目中。数值侧：我用 count_text 重算了 README 与各条 AC/BC 出现的全部示例（含 '  a  \\\\n\\\\t\\\\n'、'hello--world'、'caf\\\\u00e9-mocha' 等我另行按其码点独立计算的输入），0 处不符；第一次自我检查中我预置的 3 个期望字符数（13/11/7）经逐字符重数确认是我自己数错，模块给出的 12/10/8 才是正确码点数，不构成实现缺陷。矛盾点（触发 CHANGES_REQUESTED 的原因）：Coding Agent 报告称本轮已用『char_count 5（never 6）』的工作示例替换 AC-05 的陈旧文字，README.md:137-157 确实如此，但 examples/text-stats/test_text_stats.py:204-209 仍保留『AC-05 的 char_count 6 不可达 / 该冲突记入本报告的 requirement_conflicts』的陈旧注释，而本轮 Coding Agent 报告的 requirement_conflicts 恰为空数组——即 Coding Agent 自述（已替换该段陈旧文字）与我亲眼读到的测试文件内容之间、以及该注释与本轮需求产物 AC-05（值为 5）之间存在矛盾。测试断言本身为 5（第 210-213 行），故该矛盾只影响文档正确性，不改变四项统计、退出码与 81/81 通过的事实；据此按角色规范与编排要求判 CHANGES_REQUESTED，并给出可直接照改的注释修订建议。另需说明：Verifier 的 artifacts 与我在复跑之后对同一两个文件重新按原始字节计算的 sha256（56fdd944…、591206d5…）及字节数（11184、30875）完全一致，文件在验证前后未发生变化；我按角色规范只写了证据目录下的产物文件 docs/evidence/v0.1-run6-20261016T154400Z/review.json 与临时校验脚本 review-check.py（已删除），未改动交付目录任何文件。",
+        "summary": "我逐行读取了 examples/text-stats/text_stats.py（289 行）、test_text_stats.py（724 行）、README.md、sample_input.txt 与 .gitignore，并亲自复跑 python -m unittest discover -s examples/text-stats -p \"test_*.py\"（Ran 81 tests，OK，退出码 0），另用 count_text 与真实子进程逐条复算了 AC-01 至 AC-23 的全部数值与退出码，四项统计、两类调用作用域、五条错误路径、--encoding/--help、纯标准库边界与入口形态均已核对通过。唯一缺陷是文档侧的：test_text_stats.py:204-209 仍留有『AC-05 为 6 / 冲突记入 requirement_conflicts』的陈旧注释，与本轮需求产物（AC-05 为 5）及本轮 Coding Agent 报告的 requirement_conflicts 为空相矛盾，也与报告自称已替换该段陈旧文字的表述不符（README 已改、该文件未改）。该矛盾不改变任何功能结论，但按角色规范与编排一致性要求，本轮判定为 CHANGES_REQUESTED，修改该注释（并顺带把文件头的 BC-23 更正为 BC-24）后即可通过；除此之外未发现任何实现缺陷、需求冲突或指纹不一致。",
+        "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/review.json",
+        "generated_at": "2026-10-16T23:54:49+08:00"
+      },
+      "decision": {
+        "ok": false,
+        "status": "REVIEW_NOT_APPROVED",
+        "reasons": [
+          "审核结论不可用：Review 结论为 CHANGES_REQUESTED"
+        ]
+      },
+      "selfReportVsVerified": {
+        "coding_claimed_success": true,
+        "coding_claimed_exit_code": "0",
+        "verification_exit_code": "0",
+        "verification_ok": true,
+        "agreement": true
+      }
+    },
+    {
+      "attempt": 2,
+      "codingReport": {
+        "files_created": [
+          {
+            "path": "examples/text-stats/test_text_stats.py",
+            "purpose": "修订轮修复：把 AC-05 测试的注释块从『AC-05 为 6 / 冲突已记入 requirement_conflicts』的陈旧说法改写为本轮口径（AC-05 为 5，BC-02 归一化 7 个原始码点为 '  \\n \\n'，BC-08 计为 5 个码点，本轮 requirement_conflicts 为空）；并把文件头 'BC-01 .. BC-23' 与类 docstring 'BC-21, BC-22, BC-23 …' 更正为 BC-24。断言体未改动，无测试被放宽或删除。"
+          },
+          {
+            "path": "examples/text-stats/README.md",
+            "purpose": "修订轮修复：第 122 行与第 130 行的 'BC-01 至 BC-23' 更正为 'BC-01 至 BC-24'，与需求产物及测试实际覆盖一致。示例数值与判定表未改动。"
+          },
+          {
+            "path": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json",
+            "purpose": "本轮 Coding Agent 产物文件（JSON 信封），记录修复内容与真实复跑的测试证据。"
+          }
+        ],
+        "implementation_summary": "本轮为上一轮 CHANGES_REQUESTED 的文档一致性修订；examples/text-stats/text_stats.py 的实现逻辑完全未改动，未放宽也未删除任何测试。共修复 6 处文档/注释问题：(1) examples/text-stats/test_text_stats.py 第 203-208 行 AC-05 测试注释块，原名『Its char_count figure of 6 is unreachable … the conflict is reported in requirement_conflicts of the coding report rather than resolved here by weakening either rule』，与 AC-05=5 及本轮 requirement_conflicts 为空相矛盾；现改写为『AC-05 gives this input char_count 5, not 6 … BC-02 normalises \\\"  \\\\r\\\\n \\\\r\\\\n\\\" (7 raw code points) to \\\"  \\\\n \\\\n\\\" and BC-08 counts that as 5 code points … this round's requirement_conflicts is an empty array.  README.md carries the same 5.』，与 examples/text-stats/README.md:137-157 一致；断言 count_text(\\\"  \\\\r\\\\n \\\\r\\\\n\\\") == {\\\"char_count\\\": 5, \\\"line_count\\\": 2, \\\"non_empty_line_count\\\": 0, \\\"word_count\\\": 0} 原样保留。(2) test_text_stats.py:3 'BC-01 .. BC-23' → 'BC-01 .. BC-24'。(3) test_text_stats.py:615 docstring → 增列 BC-24（由 test_ac21_no_bare_u2019_literal_in_delivery_sources 与 test_ac21_u2019_regex_literal_names_its_code_point 实际覆盖）。(4)(5) README.md:122 与 README.md:130 'BC-01 至 BC-23' → 'BC-01 至 BC-24'。(6) 复核 README.md:157 属历史事实记录且与本轮报告一致，保留不改。修复后复扫交付目录：裸 U+2019 行数为 0（含 U+2019 的行必须同时给出 \\\\u2019 转义或 U+2019 码点标注）。所有统计口径未变：count_text(text) 先剥一个前导 U+FEFF，再把 CRLF 与单独 CR 归一化为 LF，只按 LF 切分（末尾空片段不计入 line_count），对同一次切分逐行 strip() 计 non_empty_line_count，word_count 用 [A-Za-z]+(?:[-'\\\\u2019][A-Za-z]+)*，char_count 用 len(归一化文本)；main(argv=None, stdin_text=None) 在 stdin_text 非 None 时只返回整数退出码且不写标准输出，命令行调用输出恰好 4 行 '<名称>: <整数>'，五类错误路径退出码 1 且标准错误以 'error: ' 开头，--help 退出码 0。",
+        "acceptance_criteria_addressed": [
+          "AC-05：CRLF 输入四项统计自洽 —— 断言仍为 {char_count 5, line_count 2, non_empty_line_count 0, word_count 0}；仅改写紧邻注释，使其不再声称 AC-05 为 6 或称冲突记入 requirement_conflicts，与 README.md:137-157 及本轮 requirement_conflicts 为空一致",
+          "AC-21：文档中的连接符字符可辨认 —— 交付目录内描述连接符处不出现裸 U+2019，脚本复扫 0 处命中",
+          "AC-22：可复制示例与样例输入一致 —— 未改动任何示例数值，改动仅涉及边界条件编号文字",
+          "AC-23：单元测试与纯函数接口 —— count_text 四键整数映射不变，规范化命令复跑 81 个用例全部通过、退出码 0；改动仅为注释与 docstring",
+          "AC-19 / AC-20：仅标准库；无冗余转发函数、__main__ 守卫直接 sys.exit(main()) —— 本轮未改动实现，既有对应测试继续通过"
+        ],
+        "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+        "test_succeeded": true,
+        "test_exit_code": "0",
+        "test_output_excerpt": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.145s\n\nOK\nEXITCODE=0",
+        "deviations_from_requirement": [
+          "无功能性偏差。本轮仅按上一轮 CHANGES_REQUESTED 修复文档与注释，未改动 examples/text-stats/text_stats.py 的任何实现逻辑，未改动任何断言值，未放宽或删除任何测试。"
+        ],
+        "requirement_conflicts": [],
+        "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json",
+        "generated_at": "2026-10-16T23:56:33.867170+08:00"
+      },
+      "verification": {
+  "command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+  "exit_code": "0",
+  "notes": "Independent rerun from the repository root <repo> […HARNESS-TRUNCATED here: the harness stopped delivering the return value in the middle of this string and dropped 27611 further characters. The Verifier's written artifact (verify-revision-2.json) carries a differently worded notes string, so the disk artifact is NOT a byte-identical stand-in for this value — see _derivedFromDiskArtifact.textMismatch.]",
+  "_derivedFromDiskArtifact": {
+    "provenance": "DERIVED, NOT VERBATIM",
+    "source": "docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json (result field)",
+    "why": "The delivered return value was cut inside this object, so the keys after notes never arrived. They are supplied from the artifact the Verifier wrote in the same run; the agent's returned object and its written artifact are demonstrably not identical (see textMismatch).",
+    "deliveredKeyOrder": [
+      "command",
+      "exit_code",
+      "notes"
+    ],
+    "diskArtifactKeyOrder": [
+      "command",
+      "exit_code",
+      "raw_output",
+      "ran_tests",
+      "result_marker",
+      "artifacts",
+      "requirement_conflicts",
+      "notes",
+      "generated_at"
+    ],
+    "fieldsFromArtifact": {
+      "raw_output": ".................................................................................\r\n----------------------------------------------------------------------\r\nRan 81 tests in 1.178s\r\n\r\nOK\r\n",
+      "ran_tests": 81,
+      "result_marker": "OK",
+      "artifacts": [
+        {
+          "path": "examples/text-stats/text_stats.py",
+          "sha256": "56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990",
+          "bytes": 11184
+        },
+        {
+          "path": "examples/text-stats/test_text_stats.py",
+          "sha256": "39892a7d96ec0f3177c06ccc01bb06e62ab30c4df413277b7c9a18bceb8aa84e",
+          "bytes": 30828
+        }
+      ],
+      "requirement_conflicts": [],
+      "generated_at": "2026-10-16T23:58:27.361734+08:00"
+    },
+    "textMismatch": {
+      "notes": {
+        "deliveredPrefix": "Independent rerun from the repository root <repo>",
+        "diskArtifactNotesHead": "Independent rerun of the normalized acceptance command from the repository root; unittest reports to stderr, so stdout and stderr were merged at OS level with c",
+        "deliveredPrefixAppearsInDiskNotes": false
+      }
+    },
+    "fieldsThatAgreeWithDeliveredText": [
+      "command (identical: 'python -m unittest discover -s examples/text-stats -p \"test_*.py\"')",
+      "exit_code (identical: '0')"
+    ]
+  }
+},"review": {
+  "verdict": "APPROVED",
+  "criteria_check": [
+    {
+      "criterion": "AC-01 行数唯一口径（程序化调用）",
+      "satisfied": true,
+      "evidence": "我自写探针（read-only，import count_text）逐例重算：count_text(\"a\\n\")['line_count']=1、(\"a\\nb\")=2、(\"a\\n\\n\")=2、(\"hello world\\nfoo bar\\n\")=2、(\"\")=0、(\"  \\n\\t\\n\")=2，全部为唯一值，未出现第二种期望。实现见 examples/text-stats/text_stats.py:103-110（空文本 lines=[]；否则 split('\\n') 后若末片段为 \"\" 则 pop()，故末尾换行不另计一行）。测试 examples/text-stats/test_text_stats.py:170-200 覆盖同批输入。"
+    },
+    {
+      "criterion": "AC-02 行边界集合（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：count_text(\"a\\r\\nb\") line=2/char=3；(\"a\\rb\") line=2；(\"a\\r\\nb\\rc\") line=3/char=5；对 c 依次取 U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85，每个 count_text(\"a\"+c+\"b\") line_count=1 且 char_count=3（8/8 全通过）。实现见 examples/text-stats/text_stats.py:97-107：只做 BOM 剥离 + CRLF→LF + 单独 CR→LF，然后仅 text.split(NEWLINE)，未使用 str.splitlines()（全文检索确认无 splitlines 调用）。测试 test_text_stats.py:86、244-253。"
+    },
+    {
+      "criterion": "AC-03 字符数按归一化后码点数（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：(\"\")=0；(\"hello world\\nfoo bar\\n\")=20；(\"a\\r\\nb\")=3；(\"a\\rb\")=3；(\"\\ufeffabc\")=3；(\"\\ufeff\\ufeffabc\")=4；(\"caf\\u00e9\")=4。实现 examples/text-stats/text_stats.py:97-98（只剥一个前导 U+FEFF：text.startswith 后切片一次）与 examples/text-stats/text_stats.py:113（CHAR_COUNT: len(text) 取归一化后文本）。测试 test_text_stats.py:264-277。"
+    },
+    {
+      "criterion": "AC-04 非空行数（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：(\"a\\n\\n\")=1；(\"a\\nb\")=2；(\"\\n\\n\")=0；(\"  \\n\\t\\n\")=0；(\"  a  \\n\\t\\n\")=1；(\"\")=0。实现 examples/text-stats/text_stats.py:115：sum(1 for line in lines if line.strip() != \"\")，与 LINE_COUNT 出自同一 lines 列表（第 107 行同一次 split），满足“同一次切分”。测试 test_text_stats.py:286-301。"
+    },
+    {
+      "criterion": "AC-05 CRLF 输入四项统计自洽（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针断言整映射相等并通过：count_text(\"  \\r\\n \\r\\n\") == {'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}。重算依据一致：7 个原始码点经 BC-02 归一化为 \"  \\n \\n\"（5 码点），两行 strip() 后为空。测试 test_text_stats.py:202-212 断言同一整映射（值 5，非 6），且 test_text_stats.py:203-208 的注释已改写为本轮口径，不再声称 6 或把冲突记入 requirement_conflicts；README.md:137-157 与 AC-05 数值一致（表格 char_count=5、line_count=2、non_empty_line_count=0、word_count=0）。"
+    },
+    {
+      "criterion": "AC-06 单词基本判定（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：(\"hello world\")=2；(\"Hello hello HELLO\")=3；(\"well-known\")=1；(\"don't\")=1；(\"it\\u2019s\")=1；(\"a-b-c\")=1；(\"hello--world\")=2。实现 examples/text-stats/text_stats.py:75-82：WORD_JOINERS = \"-'\" + \"\\u2019\"，WORD_PATTERN = re.compile(r\"[A-Za-z]+(?:[{0}][A-Za-z]+)*\".format(WORD_JOINERS))，单连接符、两侧须紧邻 ASCII 字母。测试 test_text_stats.py:328-342。"
+    },
+    {
+      "criterion": "AC-07 非 ASCII 字符与组合记号的单词数（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：(\"cafe\\u0301\") word=1 且 char=5（未出现 2）；(\"caf\\u00e9\") word=1 且 char=4；(\"caf\\u00e9-mocha\") word=2。测试 test_text_stats.py:344-356 只断言唯一值 1，无第二种期望，且无 skip/expectedFailure（结构探针检索 skipTest/xfail/expectedFailure 均 0 命中）。"
+    },
+    {
+      "criterion": "AC-08 数字与下划线不算单词字符（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：(\"123 456\")=0；(\"abc123\")=1；(\"a1b\")=2；(\"a_b\")=2；(\"foo_bar baz\")=3。正则字符类仅 [A-Za-z]，数字与下划线落在类外，把字母片段切开。测试 test_text_stats.py:358-366。"
+    },
+    {
+      "criterion": "AC-09 连接符两侧必须紧邻 ASCII 字母（程序化调用）",
+      "satisfied": true,
+      "evidence": "探针重算：(\" -abc\")=1；(\"abc- \")=1；(\"'abc\")=1；(\"a_b\")=2。正则 (?:[...][A-Za-z]+)* 要求连接符两侧都是 [A-Za-z]+，行首/行尾连接符不被吞入。测试 test_text_stats.py:368-378。"
+    },
+    {
+      "criterion": "AC-10 作用域 a — 程序化注入调用只返回退出码、不写标准输出",
+      "satisfied": true,
+      "evidence": "我用 contextlib.redirect_stdout/redirect_stderr 包住 main 逐例实测：main([], stdin_text=\"\") -> (0, \"\", \"\")；main([], stdin_text=\"hello world\\nfoo bar\\n\") -> (0, \"\", \"\")，标准输出为空字符串，不是 \"True 0 int\" 也不是任何 4 行文本。实现 examples/text-stats/text_stats.py:250（programmatic = stdin_text is not None）与 examples/text-stats/text_stats.py:273-275、283-285（programmatic 时不写 stdout）。测试 test_text_stats.py:384-395、411-432、530-534。"
+    },
+    {
+      "criterion": "AC-11 作用域 b — 命令行调用成功路径的输出格式",
+      "satisfied": true,
+      "evidence": "我自己以子进程执行 python text_stats.py sample_input.txt（cwd=交付目录，sample_input.txt 原始字节为 b'hello world\\nfoo bar\\n'）得到 returncode=0，stdout 精确等于 \"char_count: 20\\nline_count: 2\\nnon_empty_line_count: 2\\nword_count: 4\\n\"，stderr 为空，无其他内容。测试 test_text_stats.py:468-479。"
+    },
+    {
+      "criterion": "AC-12 作用域 b — 命令行未给出 PATH 时读进程标准输入",
+      "satisfied": true,
+      "evidence": "我以子进程 stdin 注入 \"hello world\\n\"（等价 printf 'hello world\\n' | python text_stats.py）实测：returncode=0，stdout 精确为 \"char_count: 12\\nline_count: 1\\nnon_empty_line_count: 1\\nword_count: 2\\n\"。实现走 examples/text-stats/text_stats.py:279-284（_read_stdin_text 后写 4 行）。测试 test_text_stats.py:481-488。"
+    },
+    {
+      "criterion": "AC-13 作用域 b — 命令行标准输入立即 EOF",
+      "satisfied": true,
+      "evidence": "子进程实测空 stdin：returncode=0，stdout 精确为 0/0/0/0 四行，进程立即返回、不阻塞等待输入。程序化路径另有测试证明不触碰 sys.stdin（test_text_stats.py:411-432 用一个调用 read 即抛异常的 _ForbiddenStdin）。测试 test_text_stats.py:490-494。"
+    },
+    {
+      "criterion": "AC-14 作用域 b — 命令行读取含 CRLF 与单独 CR 的文件",
+      "satisfied": true,
+      "evidence": "我在交付目录 .test-scratch 写入原始 \"a\\r\\nb\\rc\"（newline=\"\" 保留原始换行）后以子进程执行，得 returncode=0，stdout 精确为 \"char_count: 5\\nline_count: 3\\nnon_empty_line_count: 3\\nword_count: 3\\n\"，随后删除该临时文件。实现 examples/text-stats/text_stats.py:127-137 以 newline=\"\" 读文件，归一化只在 count_text 一处完成（BC-13）。测试 test_text_stats.py:496-520。"
+    },
+    {
+      "criterion": "AC-15 错误路径 — 文件不存在",
+      "satisfied": true,
+      "evidence": "子进程执行 python text_stats.py missing-file.txt：returncode=1，stdout 为空，stderr 以 \"error: \" 开头（实测首行形如 \"error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'\"），stderr 不含 \"Traceback\"。实现 examples/text-stats/text_stats.py:260-270 捕获 (OSError, UnicodeDecodeError) 后 _report_error。测试 test_text_stats.py:556-560。"
+    },
+    {
+      "criterion": "AC-16 错误路径 — 编码名非法",
+      "satisfied": true,
+      "evidence": "子进程执行 python text_stats.py sample_input.txt --encoding definitely-not-an-encoding：returncode=1，stdout 为空，stderr 以 \"error: \" 开头（\"error: unknown encoding: ...\"），不含 Traceback。实现 _encoding_for 在 examples/text-stats/text_stats.py:140-150 用 codecs.lookup 触发 LookupError，main 在 examples/text-stats/text_stats.py:265-267 转成退出码 1。测试 test_text_stats.py:562-567、434-441。"
+    },
+    {
+      "criterion": "AC-17 错误路径 — 位置参数多于 1 个",
+      "satisfied": true,
+      "evidence": "子进程执行 python text_stats.py a.txt b.txt：returncode=1（实测非 2），stdout 为空，stderr 以 \"error: \" 开头。实现 examples/text-stats/text_stats.py:185-192 用 _UsageErrorParser.error/exit 抛 _ParserExit，main 在 examples/text-stats/text_stats.py:253-258 返回 EXIT_ERROR=1，未沿用 argparse 默认 2。测试 test_text_stats.py:569-574、595-599。"
+    },
+    {
+      "criterion": "AC-18 --help",
+      "satisfied": true,
+      "evidence": "子进程执行 python text_stats.py --help：returncode=0，stdout 含 \"usage\"，且同时含 \"PATH\" 与 \"--encoding\" 说明文字（我用字符串包含检查逐项确认）。实现 _ParserExit(status=EXIT_OK) 在 examples/text-stats/text_stats.py:191-192、253-256 被直接转成返回 0。测试 test_text_stats.py:576-579。"
+    },
+    {
+      "criterion": "AC-19 依赖边界",
+      "satisfied": true,
+      "evidence": "我用 ast 解析交付目录两个 .py 文件（仅文件，排除 __pycache__），顶层导入集合为 ['argparse','ast','codecs','contextlib','io','os','re','subprocess','sys','text_stats','unittest']，除本模块自身外全部在 sys.stdlib_module_names 中，第三方导入为 0。目录内仅有的普通文件为 ['.gitignore','README.md','sample_input.txt','test_text_stats.py','text_stats.py']，不存在 requirements.txt / pyproject.toml / setup.py / setup.cfg / Pipfile / poetry.lock（.gitignore 为本轮允许的例外）。实现侧 imports 见 examples/text-stats/text_stats.py:46-49，测试侧见 examples/text-stats/test_text_stats.py:25-38。"
+    },
+    {
+      "criterion": "AC-20 冗余转发函数已删除且入口直接调用主函数",
+      "satisfied": true,
+      "evidence": "我用 ast.walk 对 examples/text-stats/text_stats.py 全量函数做“函数体去掉 docstring 后恰为单条 Return 且被调函数名不等于自身”的检测，命中列表为空；另确认源码含 'if __name__ == \"__main__\":' 与 'sys.exit(main())'（examples/text-stats/text_stats.py:288-289），且不存在 _main / run 转发包装。模块内其余函数（_format_stats/_read_file/_encoding_for/_write/_report_error/_read_stdin_text）均为多语句实体函数，非单行转发。测试 test_text_stats.py:443-462、674-705 做同类 AST 检查。"
+    },
+    {
+      "criterion": "AC-21 文档中的连接符字符可辨认",
+      "satisfied": true,
+      "evidence": "我逐行扫描交付目录全部 .py 与 .md 文件，凡含 U+2019 的行必须同时含 \"\\\\u2019\" 转义或 \"U+2019\" 码点标注，裸 U+2019 命中数为 0。正则可辨认写法见 examples/text-stats/text_stats.py:71-76（RIGHT_SINGLE_QUOTATION_MARK = \"\\u2019\" 并注释命名为 U+2019 RIGHT SINGLE QUOTATION MARK）；README.md:14 的正则字面量写作 [\\u2019]，README.md:25 明确区分 ASCII 撇号 U+0027 与 U+2019；测试中以常量 RSQUO = \"\\u2019\"（test_text_stats.py:45-48）替代裸字符。测试 test_text_stats.py:617-647。"
+    },
+    {
+      "criterion": "AC-22 可复制示例与样例输入一致",
+      "satisfied": true,
+      "evidence": "sample_input.txt 原始内容读出为 \"hello world\\nfoo bar\\n\"，与 README.md:60 所述内容一致；我按上文 AC-11/12/13/14 的实际子进程输出核对了 README 中四条示例的全部数值：文件示例 20/2/2/4（README.md:63-68）、标准输入示例 12/1/1/2（README.md:73-78）、EOF 示例 0/0/0/0（README.md:83-88）、CRLF+CR 文件示例 5/3/3/3（README.md:93-98），以及错误示例退出码 1（README.md:103-105），均与实测输出逐一相同；文档中不存在与 AC-01 至 AC-14 矛盾的数值（历史值 6 已在 README.md:137-143 显式标注为已被本轮口径 5 取代）。测试 test_text_stats.py:707-719 同时校验样例内容与 README 数值。"
+    },
+    {
+      "criterion": "AC-23 单元测试与纯函数接口",
+      "satisfied": true,
+      "evidence": "我在仓库根目录亲自执行 python -m unittest discover -s examples/text-stats -p \"test_*.py\"，退出码 0，原始输出为 81 个点 + \"Ran 81 tests in 1.173s\" + 空行 + \"OK\"（80 余个独立断言另有我自写的探针复核）。纯函数存在且可导入：sys.path 加入交付目录后 import text_stats，count_text 与 main 均可调用，count_text('hello world') 的键恰为 ['char_count','line_count','non_empty_line_count','word_count'] 四键（examples/text-stats/text_stats.py:85-117）。测试同时覆盖纯函数路径（CountTextInterfaceTests / LineCountTests / NonEmptyLineTests / WordCountTests）与真实子进程命令行路径（CommandLineSuccessTests / CommandLineErrorTests，test_text_stats.py:89-98 用 subprocess.run 调起）。"
+    }
+  ],
+  "issues": [],
+  "independent_test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+  "independent_test_exit_code": "0",
+  "independent_test_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.173s\n\nOK\nRERUN_EXITCODE=0",
+  "artifacts_after": [
+    {
+      "path": "examples/text-stats/text_stats.py",
+      "sha256": "56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990",
+      "bytes": 11184
+    },
+    {
+      "path": "examples/text-stats/test_text_stats.py",
+      "sha256": "39892a7d96ec0f3177c06ccc01bb06e62ab30c4df413277b7c9a18bceb8aa84e",
+      "bytes": 30828
+    }
+  ],
+  "requirement_conflicts": [],
+  "consistency_note": "未发现需求内部矛盾：我按本轮权威口径把 AC-01 至 AC-23 的每个数值示例在交付实现上重算了一遍（自写只读探针 87 条断言全过），同一类调用与同一输入只存在一个期望值；此前历史上争议的 AC-05（\"  \\r\\n \\r\\n\" 的 char_count 为 6 还是 5）在本轮需求里统一为 5，实现、测试、README 三处数值一致，故 requirement_conflicts 为空数组。三方一致性我已逐项核对，未发现矛盾：1) Coding Agent 自述“实现逻辑未改动、仅修文档注释、81 用例通过、退出码 0”，与我读到的文件及我自己复跑的结果一致（test_text_stats.py:203-208 的注释确已改写为 AC-05=5 且声明本轮 requirement_conflicts 为空；README.md:122 与 README.md:130 确为 BC-24；README.md:157 保留为历史事实记录，与本轮报告不冲突）。2) Verifier 的原始输出（Ran 81 tests / OK / exit 0）与我复跑的原始输出一致，我复跑两次均为 81 用例通过。3) 指纹一致：我在自己复跑测试之后按原始字节重算 sha256，text_stats.py 为 56fdd944...bc7990 / 11184 字节，test_text_stats.py 为 39892a7d...b8aa84e / 30828 字节，与 Verifier 的 artifacts 完全一致（哈希、字节数、路径三项均相符），说明交付文件在验证前后未发生变化。另说明两点不影响判定的观察：a) 我自写的探针文件写在证据目录 docs/evidence/v0.1-run6-20261016T154400Z/ 下并在用毕后删除，未触碰交付目录任何文件（唯一写入交付目录的是 .test-scratch 下一个临时输入文件，用毕即删）；b) 交付目录内存在 __pycache__、.test-scratch（含 12 个历史 tmp* 子目录）等非交付物，其中 .test-scratch 已被交付目录内 .gitignore 覆盖，且属上一轮遗留、非本轮引入。",
+  "summary": "实现与测试经我独立复跑与自写探针逐条重算后全部通过：规范化命令在仓库根目录退出码 0、81 个用例全过并输出 OK，我另行用只读探针重算了 AC-01 至 AC-18 的全部数值与命令行契约（87 条断言无失败），并以 AST 与逐行扫描确认了 AC-19（仅标准库、无依赖声明文件）、AC-20（无单行转发函数、__main__ 直接 sys.exit(main())）、AC-21（交付目录裸 U+2019 命中 0）、AC-22（样例文件内容与 README 四组示例数值逐一自洽）。交付文件在我复跑后重算的 sha256 与字节数与 Verifier 的 artifacts 完全一致，Coding Agent 自述、Verifier 原始输出与我的复跑结果三者无矛盾，需求侧未发现自相矛盾（此前 AC-05 的 6/5 之争本轮已统一为 5 并在实现、测试、README 三处落地）。结论：23 条验收条件全部 satisfied，无 issues，判 APPROVED。",
+  "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json",
+  "generated_at": "2026-10-16T23:59:33.436976+08:00"
+},"decision": {
+  "ok": true,
+  "status": "OK",
+  "reasons": []
+},"selfReportVsVerified": {
+  "coding_claimed_success": true,
+  "coding_claimed_exit_code": "0",
+  "verification_exit_code": "0",
+  "verification_ok": true,
+  "agreement": true
+},"_provenance": "DERIVED, NOT VERBATIM. Harness truncation removed this whole attempt-2 tail from the delivered return value. verification: the keys command/exit_code are verbatim from the delivered text, notes is the delivered fragment plus an inline truncation marker, and everything else is supplied from docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json (result field) (see _derivedFromDiskArtifact). review = result field of docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json (result field) (the Review Agent's returned object may differ in wording from its written artifact, exactly as demonstrated for the Verifier notes; only the gate-level values are corroborated by the verbatim top-level status). decision = {ok,status,reasons} replayed from the verbatim top-level ok=true / status=OK via workflows/three-agent-mvp.js:507-580 (status OK means every gate on lines 541-575 passed). selfReportVsVerified replayed from workflows/three-agent-mvp.js:531-537."}],"_harnessTruncation": {
+  "truncated": true,
+  "markerText": "[truncated: 27611 more characters]",
+  "missingCharacters": 27611,
+  "where": "The harness cut the workflow tool return value inside the JSON string value attemptsDetail[1].verification.notes, right after \"Independent rerun from the repository root <repo>\" (cut mid-UTF-8 byte; the broken byte shows as U+FFFD before the marker).",
+  "why": "DSH caps the formatted length of a tool result. The spill file (<home>\\AppData\\Local\\Temp\\dsh-spill-WNVubi\\session-03560e5f6d50\\89ae174c7462-workflow.txt) ends at the same marker, so the missing characters cannot be recovered from any artifact of that tool call.",
+  "missingFieldRanges": [
+    "attemptsDetail[1].verification: the rest of notes plus every key after it",
+    "attemptsDetail[1].review (whole object)",
+    "attemptsDetail[1].decision (whole object)",
+    "attemptsDetail[1].selfReportVsVerified (whole object)",
+    "top-level finalVerdict",
+    "top-level finalReview",
+    "top-level finalDecision"
+  ],
+  "preservedVerbatim": "Byte-for-byte from the delivered text: ok, status, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, maxCodingAttempts, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail[0] (complete), attemptsDetail[1].attempt, attemptsDetail[1].codingReport (complete), and attemptsDetail[1].verification.command / .exit_code.",
+  "verbatimTailFragment": "    \"command\": \"python -m unittest discover -s examples/text-stats -p \\\"test_*.py\\\"\",\n        \"exit_code\": \"0\",\n        ",
+  "attempt2VerificationNotesReplacedBecauseTruncated": true,
+  "deliveredNotesPrefix": "Independent rerun from the repository root <repo>",
+  "diskVerifierNotesHead": "Independent rerun of the normalized acceptance command from the repository root; unittest reports to stderr, so stdout and stderr were merged at OS level with c",
+  "deliveredNotesPrefixAppearsInDiskVerifierNotes": false,
+  "fieldsRebuilt": [
+    "attemptsDetail[1].verification (notes tail + all keys after notes)",
+    "attemptsDetail[1].review",
+    "attemptsDetail[1].decision",
+    "attemptsDetail[1].selfReportVsVerified",
+    "_derivedTail.finalVerdict",
+    "_derivedTail.finalReview",
+    "_derivedTail.finalDecision"
+  ],
+  "recoveryMethod": "attempt-2 verification remainder and review re-read from the on-disk stage artifacts those subagents wrote; attemptsDetail[1].decision, selfReportVsVerified and the final* fields replayed from workflows/three-agent-mvp.js:507-580 and 1383-1411 against those artifacts plus the verbatim top-level ok/status.",
+  "verbatimPrefixCharacters": 49920,
+  "verbatimPrefixSha256": "63120b94ac870e2452dc3ac72c6c197fb8eea5a88db7f3f1eaa87d2429c6c46c",
+  "verbatimPrefixSha256Basis": "harness 返回值脱敏前的原文（字符数按 Unicode 码点计）；脱敏把绝对路径替换为 <repo>/<home> 后字节已变，故不能从本文件复算该值，脱敏后的同一前缀哈希见下一条。",
+  "verbatimPrefixSha256AfterSanitization": "4b6c81317b6e0f9206db7fa219ca01defd098fcca6500b3cea36248153710d90"
+},"_derivedTail": {
+  "warning": "Every value below sits in the harness-truncated region of the return value. Nothing here is a verbatim quote of the workflow return value; each entry states its own basis.",
+  "finalVerdict": {
+    "value": "APPROVED",
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "workflows/three-agent-mvp.js:1393 sets finalVerdict = finalAttempt.review.verdict and line 438 defines approved = (verdict === 'APPROVED'). The verbatim top-level status is OK, and the gates at workflows/three-agent-mvp.js:561-575 make OK impossible unless reviewEval.approved === true. The stale-timestamp override cannot have fired (it forces CHANGES_REQUESTED at line 1296, which cannot yield status OK)."
+  },
+  "finalReview": {
+    "value": {
+      "verdict": "APPROVED",
+      "criteria_check": [
+        {
+          "criterion": "AC-01 行数唯一口径（程序化调用）",
+          "satisfied": true,
+          "evidence": "我自写探针（read-only，import count_text）逐例重算：count_text(\"a\\n\")['line_count']=1、(\"a\\nb\")=2、(\"a\\n\\n\")=2、(\"hello world\\nfoo bar\\n\")=2、(\"\")=0、(\"  \\n\\t\\n\")=2，全部为唯一值，未出现第二种期望。实现见 examples/text-stats/text_stats.py:103-110（空文本 lines=[]；否则 split('\\n') 后若末片段为 \"\" 则 pop()，故末尾换行不另计一行）。测试 examples/text-stats/test_text_stats.py:170-200 覆盖同批输入。"
+        },
+        {
+          "criterion": "AC-02 行边界集合（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：count_text(\"a\\r\\nb\") line=2/char=3；(\"a\\rb\") line=2；(\"a\\r\\nb\\rc\") line=3/char=5；对 c 依次取 U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85，每个 count_text(\"a\"+c+\"b\") line_count=1 且 char_count=3（8/8 全通过）。实现见 examples/text-stats/text_stats.py:97-107：只做 BOM 剥离 + CRLF→LF + 单独 CR→LF，然后仅 text.split(NEWLINE)，未使用 str.splitlines()（全文检索确认无 splitlines 调用）。测试 test_text_stats.py:86、244-253。"
+        },
+        {
+          "criterion": "AC-03 字符数按归一化后码点数（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：(\"\")=0；(\"hello world\\nfoo bar\\n\")=20；(\"a\\r\\nb\")=3；(\"a\\rb\")=3；(\"\\ufeffabc\")=3；(\"\\ufeff\\ufeffabc\")=4；(\"caf\\u00e9\")=4。实现 examples/text-stats/text_stats.py:97-98（只剥一个前导 U+FEFF：text.startswith 后切片一次）与 examples/text-stats/text_stats.py:113（CHAR_COUNT: len(text) 取归一化后文本）。测试 test_text_stats.py:264-277。"
+        },
+        {
+          "criterion": "AC-04 非空行数（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：(\"a\\n\\n\")=1；(\"a\\nb\")=2；(\"\\n\\n\")=0；(\"  \\n\\t\\n\")=0；(\"  a  \\n\\t\\n\")=1；(\"\")=0。实现 examples/text-stats/text_stats.py:115：sum(1 for line in lines if line.strip() != \"\")，与 LINE_COUNT 出自同一 lines 列表（第 107 行同一次 split），满足“同一次切分”。测试 test_text_stats.py:286-301。"
+        },
+        {
+          "criterion": "AC-05 CRLF 输入四项统计自洽（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针断言整映射相等并通过：count_text(\"  \\r\\n \\r\\n\") == {'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}。重算依据一致：7 个原始码点经 BC-02 归一化为 \"  \\n \\n\"（5 码点），两行 strip() 后为空。测试 test_text_stats.py:202-212 断言同一整映射（值 5，非 6），且 test_text_stats.py:203-208 的注释已改写为本轮口径，不再声称 6 或把冲突记入 requirement_conflicts；README.md:137-157 与 AC-05 数值一致（表格 char_count=5、line_count=2、non_empty_line_count=0、word_count=0）。"
+        },
+        {
+          "criterion": "AC-06 单词基本判定（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：(\"hello world\")=2；(\"Hello hello HELLO\")=3；(\"well-known\")=1；(\"don't\")=1；(\"it\\u2019s\")=1；(\"a-b-c\")=1；(\"hello--world\")=2。实现 examples/text-stats/text_stats.py:75-82：WORD_JOINERS = \"-'\" + \"\\u2019\"，WORD_PATTERN = re.compile(r\"[A-Za-z]+(?:[{0}][A-Za-z]+)*\".format(WORD_JOINERS))，单连接符、两侧须紧邻 ASCII 字母。测试 test_text_stats.py:328-342。"
+        },
+        {
+          "criterion": "AC-07 非 ASCII 字符与组合记号的单词数（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：(\"cafe\\u0301\") word=1 且 char=5（未出现 2）；(\"caf\\u00e9\") word=1 且 char=4；(\"caf\\u00e9-mocha\") word=2。测试 test_text_stats.py:344-356 只断言唯一值 1，无第二种期望，且无 skip/expectedFailure（结构探针检索 skipTest/xfail/expectedFailure 均 0 命中）。"
+        },
+        {
+          "criterion": "AC-08 数字与下划线不算单词字符（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：(\"123 456\")=0；(\"abc123\")=1；(\"a1b\")=2；(\"a_b\")=2；(\"foo_bar baz\")=3。正则字符类仅 [A-Za-z]，数字与下划线落在类外，把字母片段切开。测试 test_text_stats.py:358-366。"
+        },
+        {
+          "criterion": "AC-09 连接符两侧必须紧邻 ASCII 字母（程序化调用）",
+          "satisfied": true,
+          "evidence": "探针重算：(\" -abc\")=1；(\"abc- \")=1；(\"'abc\")=1；(\"a_b\")=2。正则 (?:[...][A-Za-z]+)* 要求连接符两侧都是 [A-Za-z]+，行首/行尾连接符不被吞入。测试 test_text_stats.py:368-378。"
+        },
+        {
+          "criterion": "AC-10 作用域 a — 程序化注入调用只返回退出码、不写标准输出",
+          "satisfied": true,
+          "evidence": "我用 contextlib.redirect_stdout/redirect_stderr 包住 main 逐例实测：main([], stdin_text=\"\") -> (0, \"\", \"\")；main([], stdin_text=\"hello world\\nfoo bar\\n\") -> (0, \"\", \"\")，标准输出为空字符串，不是 \"True 0 int\" 也不是任何 4 行文本。实现 examples/text-stats/text_stats.py:250（programmatic = stdin_text is not None）与 examples/text-stats/text_stats.py:273-275、283-285（programmatic 时不写 stdout）。测试 test_text_stats.py:384-395、411-432、530-534。"
+        },
+        {
+          "criterion": "AC-11 作用域 b — 命令行调用成功路径的输出格式",
+          "satisfied": true,
+          "evidence": "我自己以子进程执行 python text_stats.py sample_input.txt（cwd=交付目录，sample_input.txt 原始字节为 b'hello world\\nfoo bar\\n'）得到 returncode=0，stdout 精确等于 \"char_count: 20\\nline_count: 2\\nnon_empty_line_count: 2\\nword_count: 4\\n\"，stderr 为空，无其他内容。测试 test_text_stats.py:468-479。"
+        },
+        {
+          "criterion": "AC-12 作用域 b — 命令行未给出 PATH 时读进程标准输入",
+          "satisfied": true,
+          "evidence": "我以子进程 stdin 注入 \"hello world\\n\"（等价 printf 'hello world\\n' | python text_stats.py）实测：returncode=0，stdout 精确为 \"char_count: 12\\nline_count: 1\\nnon_empty_line_count: 1\\nword_count: 2\\n\"。实现走 examples/text-stats/text_stats.py:279-284（_read_stdin_text 后写 4 行）。测试 test_text_stats.py:481-488。"
+        },
+        {
+          "criterion": "AC-13 作用域 b — 命令行标准输入立即 EOF",
+          "satisfied": true,
+          "evidence": "子进程实测空 stdin：returncode=0，stdout 精确为 0/0/0/0 四行，进程立即返回、不阻塞等待输入。程序化路径另有测试证明不触碰 sys.stdin（test_text_stats.py:411-432 用一个调用 read 即抛异常的 _ForbiddenStdin）。测试 test_text_stats.py:490-494。"
+        },
+        {
+          "criterion": "AC-14 作用域 b — 命令行读取含 CRLF 与单独 CR 的文件",
+          "satisfied": true,
+          "evidence": "我在交付目录 .test-scratch 写入原始 \"a\\r\\nb\\rc\"（newline=\"\" 保留原始换行）后以子进程执行，得 returncode=0，stdout 精确为 \"char_count: 5\\nline_count: 3\\nnon_empty_line_count: 3\\nword_count: 3\\n\"，随后删除该临时文件。实现 examples/text-stats/text_stats.py:127-137 以 newline=\"\" 读文件，归一化只在 count_text 一处完成（BC-13）。测试 test_text_stats.py:496-520。"
+        },
+        {
+          "criterion": "AC-15 错误路径 — 文件不存在",
+          "satisfied": true,
+          "evidence": "子进程执行 python text_stats.py missing-file.txt：returncode=1，stdout 为空，stderr 以 \"error: \" 开头（实测首行形如 \"error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'\"），stderr 不含 \"Traceback\"。实现 examples/text-stats/text_stats.py:260-270 捕获 (OSError, UnicodeDecodeError) 后 _report_error。测试 test_text_stats.py:556-560。"
+        },
+        {
+          "criterion": "AC-16 错误路径 — 编码名非法",
+          "satisfied": true,
+          "evidence": "子进程执行 python text_stats.py sample_input.txt --encoding definitely-not-an-encoding：returncode=1，stdout 为空，stderr 以 \"error: \" 开头（\"error: unknown encoding: ...\"），不含 Traceback。实现 _encoding_for 在 examples/text-stats/text_stats.py:140-150 用 codecs.lookup 触发 LookupError，main 在 examples/text-stats/text_stats.py:265-267 转成退出码 1。测试 test_text_stats.py:562-567、434-441。"
+        },
+        {
+          "criterion": "AC-17 错误路径 — 位置参数多于 1 个",
+          "satisfied": true,
+          "evidence": "子进程执行 python text_stats.py a.txt b.txt：returncode=1（实测非 2），stdout 为空，stderr 以 \"error: \" 开头。实现 examples/text-stats/text_stats.py:185-192 用 _UsageErrorParser.error/exit 抛 _ParserExit，main 在 examples/text-stats/text_stats.py:253-258 返回 EXIT_ERROR=1，未沿用 argparse 默认 2。测试 test_text_stats.py:569-574、595-599。"
+        },
+        {
+          "criterion": "AC-18 --help",
+          "satisfied": true,
+          "evidence": "子进程执行 python text_stats.py --help：returncode=0，stdout 含 \"usage\"，且同时含 \"PATH\" 与 \"--encoding\" 说明文字（我用字符串包含检查逐项确认）。实现 _ParserExit(status=EXIT_OK) 在 examples/text-stats/text_stats.py:191-192、253-256 被直接转成返回 0。测试 test_text_stats.py:576-579。"
+        },
+        {
+          "criterion": "AC-19 依赖边界",
+          "satisfied": true,
+          "evidence": "我用 ast 解析交付目录两个 .py 文件（仅文件，排除 __pycache__），顶层导入集合为 ['argparse','ast','codecs','contextlib','io','os','re','subprocess','sys','text_stats','unittest']，除本模块自身外全部在 sys.stdlib_module_names 中，第三方导入为 0。目录内仅有的普通文件为 ['.gitignore','README.md','sample_input.txt','test_text_stats.py','text_stats.py']，不存在 requirements.txt / pyproject.toml / setup.py / setup.cfg / Pipfile / poetry.lock（.gitignore 为本轮允许的例外）。实现侧 imports 见 examples/text-stats/text_stats.py:46-49，测试侧见 examples/text-stats/test_text_stats.py:25-38。"
+        },
+        {
+          "criterion": "AC-20 冗余转发函数已删除且入口直接调用主函数",
+          "satisfied": true,
+          "evidence": "我用 ast.walk 对 examples/text-stats/text_stats.py 全量函数做“函数体去掉 docstring 后恰为单条 Return 且被调函数名不等于自身”的检测，命中列表为空；另确认源码含 'if __name__ == \"__main__\":' 与 'sys.exit(main())'（examples/text-stats/text_stats.py:288-289），且不存在 _main / run 转发包装。模块内其余函数（_format_stats/_read_file/_encoding_for/_write/_report_error/_read_stdin_text）均为多语句实体函数，非单行转发。测试 test_text_stats.py:443-462、674-705 做同类 AST 检查。"
+        },
+        {
+          "criterion": "AC-21 文档中的连接符字符可辨认",
+          "satisfied": true,
+          "evidence": "我逐行扫描交付目录全部 .py 与 .md 文件，凡含 U+2019 的行必须同时含 \"\\\\u2019\" 转义或 \"U+2019\" 码点标注，裸 U+2019 命中数为 0。正则可辨认写法见 examples/text-stats/text_stats.py:71-76（RIGHT_SINGLE_QUOTATION_MARK = \"\\u2019\" 并注释命名为 U+2019 RIGHT SINGLE QUOTATION MARK）；README.md:14 的正则字面量写作 [\\u2019]，README.md:25 明确区分 ASCII 撇号 U+0027 与 U+2019；测试中以常量 RSQUO = \"\\u2019\"（test_text_stats.py:45-48）替代裸字符。测试 test_text_stats.py:617-647。"
+        },
+        {
+          "criterion": "AC-22 可复制示例与样例输入一致",
+          "satisfied": true,
+          "evidence": "sample_input.txt 原始内容读出为 \"hello world\\nfoo bar\\n\"，与 README.md:60 所述内容一致；我按上文 AC-11/12/13/14 的实际子进程输出核对了 README 中四条示例的全部数值：文件示例 20/2/2/4（README.md:63-68）、标准输入示例 12/1/1/2（README.md:73-78）、EOF 示例 0/0/0/0（README.md:83-88）、CRLF+CR 文件示例 5/3/3/3（README.md:93-98），以及错误示例退出码 1（README.md:103-105），均与实测输出逐一相同；文档中不存在与 AC-01 至 AC-14 矛盾的数值（历史值 6 已在 README.md:137-143 显式标注为已被本轮口径 5 取代）。测试 test_text_stats.py:707-719 同时校验样例内容与 README 数值。"
+        },
+        {
+          "criterion": "AC-23 单元测试与纯函数接口",
+          "satisfied": true,
+          "evidence": "我在仓库根目录亲自执行 python -m unittest discover -s examples/text-stats -p \"test_*.py\"，退出码 0，原始输出为 81 个点 + \"Ran 81 tests in 1.173s\" + 空行 + \"OK\"（80 余个独立断言另有我自写的探针复核）。纯函数存在且可导入：sys.path 加入交付目录后 import text_stats，count_text 与 main 均可调用，count_text('hello world') 的键恰为 ['char_count','line_count','non_empty_line_count','word_count'] 四键（examples/text-stats/text_stats.py:85-117）。测试同时覆盖纯函数路径（CountTextInterfaceTests / LineCountTests / NonEmptyLineTests / WordCountTests）与真实子进程命令行路径（CommandLineSuccessTests / CommandLineErrorTests，test_text_stats.py:89-98 用 subprocess.run 调起）。"
+        }
+      ],
+      "issues": [],
+      "independent_test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+      "independent_test_exit_code": "0",
+      "independent_test_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.173s\n\nOK\nRERUN_EXITCODE=0",
+      "artifacts_after": [
+        {
+          "path": "examples/text-stats/text_stats.py",
+          "sha256": "56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990",
+          "bytes": 11184
+        },
+        {
+          "path": "examples/text-stats/test_text_stats.py",
+          "sha256": "39892a7d96ec0f3177c06ccc01bb06e62ab30c4df413277b7c9a18bceb8aa84e",
+          "bytes": 30828
+        }
+      ],
+      "requirement_conflicts": [],
+      "consistency_note": "未发现需求内部矛盾：我按本轮权威口径把 AC-01 至 AC-23 的每个数值示例在交付实现上重算了一遍（自写只读探针 87 条断言全过），同一类调用与同一输入只存在一个期望值；此前历史上争议的 AC-05（\"  \\r\\n \\r\\n\" 的 char_count 为 6 还是 5）在本轮需求里统一为 5，实现、测试、README 三处数值一致，故 requirement_conflicts 为空数组。三方一致性我已逐项核对，未发现矛盾：1) Coding Agent 自述“实现逻辑未改动、仅修文档注释、81 用例通过、退出码 0”，与我读到的文件及我自己复跑的结果一致（test_text_stats.py:203-208 的注释确已改写为 AC-05=5 且声明本轮 requirement_conflicts 为空；README.md:122 与 README.md:130 确为 BC-24；README.md:157 保留为历史事实记录，与本轮报告不冲突）。2) Verifier 的原始输出（Ran 81 tests / OK / exit 0）与我复跑的原始输出一致，我复跑两次均为 81 用例通过。3) 指纹一致：我在自己复跑测试之后按原始字节重算 sha256，text_stats.py 为 56fdd944...bc7990 / 11184 字节，test_text_stats.py 为 39892a7d...b8aa84e / 30828 字节，与 Verifier 的 artifacts 完全一致（哈希、字节数、路径三项均相符），说明交付文件在验证前后未发生变化。另说明两点不影响判定的观察：a) 我自写的探针文件写在证据目录 docs/evidence/v0.1-run6-20261016T154400Z/ 下并在用毕后删除，未触碰交付目录任何文件（唯一写入交付目录的是 .test-scratch 下一个临时输入文件，用毕即删）；b) 交付目录内存在 __pycache__、.test-scratch（含 12 个历史 tmp* 子目录）等非交付物，其中 .test-scratch 已被交付目录内 .gitignore 覆盖，且属上一轮遗留、非本轮引入。",
+      "summary": "实现与测试经我独立复跑与自写探针逐条重算后全部通过：规范化命令在仓库根目录退出码 0、81 个用例全过并输出 OK，我另行用只读探针重算了 AC-01 至 AC-18 的全部数值与命令行契约（87 条断言无失败），并以 AST 与逐行扫描确认了 AC-19（仅标准库、无依赖声明文件）、AC-20（无单行转发函数、__main__ 直接 sys.exit(main())）、AC-21（交付目录裸 U+2019 命中 0）、AC-22（样例文件内容与 README 四组示例数值逐一自洽）。交付文件在我复跑后重算的 sha256 与字节数与 Verifier 的 artifacts 完全一致，Coding Agent 自述、Verifier 原始输出与我的复跑结果三者无矛盾，需求侧未发现自相矛盾（此前 AC-05 的 6/5 之争本轮已统一为 5 并在实现、测试、README 三处落地）。结论：23 条验收条件全部 satisfied，无 issues，判 APPROVED。",
+      "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json",
+      "generated_at": "2026-10-16T23:59:33.436976+08:00"
+    },
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "workflows/three-agent-mvp.js:1394 sets finalReview = finalAttempt.review (the attempt-2 review object). Substituted with the result field of docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json (result field), the artifact that agent wrote in the same run; the returned object may differ in wording from the artifact (demonstrated for the Verifier notes: delivered \"Independent rerun from the repository root <repo>\" vs artifact \"Independent rerun of the normalized acceptance command from the repository root;\"), so this is the closest recoverable form, not a verbatim copy. finalReview is NOT attemptsDetail[0].review: attempt 1 ended CHANGES_REQUESTED and forced a rework round."
+  },
+  "finalDecision": {
+    "value": {
+      "ok": true,
+      "status": "OK",
+      "testsIndependentlyVerified": true,
+      "testsVerificationReasons": [],
+      "reviewApproved": true,
+      "criteriaSatisfied": 23,
+      "criteriaTotal": 23,
+      "allCriteriaSatisfied": true,
+      "criteriaCheckCoversAll": true,
+      "reviewIndependentTestsPassed": true,
+      "fingerprintsMatch": true,
+      "fingerprintReasons": [],
+      "stageReportedRequirementConflicts": [],
+      "criteriaIds": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "AC-12",
+        "AC-13",
+        "AC-14",
+        "AC-15",
+        "AC-16",
+        "AC-17",
+        "AC-18",
+        "AC-19",
+        "AC-20",
+        "AC-21",
+        "AC-22",
+        "AC-23"
+      ]
+    },
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "Field shape from workflows/three-agent-mvp.js:1395-1410. ok/status copied from the verbatim top-level ok=true / status=OK. Everything else follows from that status plus judgeAttempt (lines 507-580): line 556-560 not taken, so testsIndependentlyVerified=true and testsVerificationReasons=[] (judgeTestEvidence reports reasons only on failure); lines 561-575 not taken, so reviewIndependentTestsPassed=true, fingerprintsMatch=true, reviewApproved=true, allCriteriaSatisfied=true, no duplicate/unknown/missing criteria ids and coversAll=true; line 541 not taken, so stageReportedRequirementConflicts=[]. criteriaTotal/criteriaSatisfied: coversAll plus 'no unknown ids' plus 'no duplicates' forces criteria_check to hold exactly the 23 expected ids once each, and allSatisfied forces satisfied === checks.length, hence 23/23 (line 441-466, 498-500). fingerprintReasons=[] because judgeFingerprints pushes reasons only when it fails. criteriaIds copied from the verbatim top-level criteriaIds. Corroboration from disk: docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json (result field) exit_code \"0\" / result_marker \"OK\" / ran_tests 81, docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json (result field) verdict APPROVED with 23/23 satisfied and independent_test_exit_code \"0\", and verification.artifacts equal to review.artifacts_after (text_stats.py 56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990 / 11184 bytes; test_text_stats.py 39892a7d96ec0f3177c06ccc01bb06e62ab30c4df413277b7c9a18bceb8aa84e / 30828 bytes)."
+  },
+  "attemptsDetail_1_verification": {
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "command/exit_code verbatim from the delivered text; notes replaced by the delivered fragment plus an inline truncation marker; remaining keys from docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json (result field) (see _derivedFromDiskArtifact inside the object)."
+  },
+  "attemptsDetail_1_review": {
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "Re-read from the result field of docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json (result field); the delivered return value never reached this object."
+  },
+  "attemptsDetail_1_decision": {
+    "value": {
+      "ok": true,
+      "status": "OK",
+      "reasons": []
+    },
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "workflows/three-agent-mvp.js:1389 returns only {ok, status, reasons}. Replayed from judgeAttempt (workflows/three-agent-mvp.js:507-580) with the verbatim top-level ok/status and the attempt-2 evidence on disk."
+  },
+  "attemptsDetail_1_selfReportVsVerified": {
+    "value": {
+      "coding_claimed_success": true,
+      "coding_claimed_exit_code": "0",
+      "verification_exit_code": "0",
+      "verification_ok": true,
+      "agreement": true
+    },
+    "provenance": "DERIVED, NOT VERBATIM",
+    "basis": "Shape from workflows/three-agent-mvp.js:531-537. coding_claimed_success/exit from the verbatim attempt-2 codingReport in the delivered return value (test_succeeded true, test_exit_code \"0\"); verification_exit_code from docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json (result field) (identical to the delivered exit_code \"0\"); verification_ok from that artifact; agreement true because both sides report success."
+  }
+}
+}

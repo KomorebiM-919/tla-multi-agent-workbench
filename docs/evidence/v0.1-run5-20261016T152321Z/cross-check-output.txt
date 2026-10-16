@@ -1,0 +1,48 @@
+# workflow-result.json ↔ 磁盘证据 交叉检查
+
+- 返回值：`docs/evidence/v0.1-run5-20261016T152321Z/workflow-result.json`
+- 证据目录：`docs/evidence/v0.1-run5-20261016T152321Z`
+- 返回值摘要：`ok=False status=STAGE_REPORTS_REQUIREMENT_CONFLICT attempts=1`
+- 检查项：24，失败：2
+
+## evidenceFiles 实测
+
+- `docs/evidence/v0.1-run5-20261016T152321Z/.run-owner.json (187 B, sha256=256be7970548cdb2)`
+- `docs/evidence/v0.1-run5-20261016T152321Z/preflight.json (4472 B, sha256=ff38df6e10586059)`
+- `docs/evidence/v0.1-run5-20261016T152321Z/requirement.json (19996 B, sha256=4ff187ee2c9eeaa1)`
+- `docs/evidence/v0.1-run5-20261016T152321Z/coding-report.json (11654 B, sha256=c8d27f92c74aab91)`
+- `docs/evidence/v0.1-run5-20261016T152321Z/verify.json (3477 B, sha256=3b2e77c54d6582b7)`
+- `docs/evidence/v0.1-run5-20261016T152321Z/review.json (16068 B, sha256=b3e04f5304b215f4)`
+
+## 逐项结果
+
+- PASS 返回值含 ok（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 status（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 runId（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 evidenceDir（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 attempts（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 finalDecision（逐字或显式标注的推导值）（逐字=False 推导=True）
+- PASS finalDecision 属推导值且已显式标注（不作为逐字证据）（harness 截断了返回值，推导值仅供核对，原始记录以证据 JSON 为准）
+- PASS 返回值 runId 与证据目录末段一致（runId=v0.1-run5-20261016T152321Z dir=v0.1-run5-20261016T152321Z）
+- PASS evidenceFiles 非空（len=6）
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run5-20261016T152321Z/.run-owner.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run5-20261016T152321Z/preflight.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run5-20261016T152321Z/requirement.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run5-20261016T152321Z/coding-report.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run5-20261016T152321Z/verify.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run5-20261016T152321Z/review.json
+- PASS 证据目录内含关键文件名（preflight/requirement 至少各一）
+- PASS 存在 verify.json（docs/evidence/v0.1-run5-20261016T152321Z\verify.json）
+- PASS 存在 review.json（docs/evidence/v0.1-run5-20261016T152321Z\review.json）
+- FAIL 第 1 次尝试 verify/review 产物路径集合一致（verify/review）（verify=['examples/text-stats/.gitignore', 'examples/text-stats/README.md', 'examples/text-stats/sample_input.txt', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py'] review=[]）
+- FAIL 第 1 次尝试 verify/review 产物 sha256 一致（{"examples/text-stats/text_stats.py": ["83f94b483d88891309d46f6f5fdf6dae25cc4040a1581ffe12c9f5cfd939f8d1", null], "examples/text-stats/test_text_stats.py": ["84696a9c4a040671f2e9fe4a6e2f8e7b65d39833bb9dde58973e34ca6c11575c", null], "examples/text-stats/sample_input.txt": ["d1346fe09eb87e961fcbcd26071c9751e459bcf2e7bbd4e73a732b8ebc8a9f83", null], "examples/text-stats/README.md": ["31e918489ac8bcad2edb7fed6a17457d155be0ea4730d69d4510a48a7cf473c2", null], "examples/text-stats/.gitignore": ["7570b046eac73cded9ba0bee4c902f1cc812e7859fba6c01677a687678883b7a", null]}）
+- PASS criteria_check 的 ID 集合与 criteriaIds 一致（missing=[] unknown=[]）
+- PASS 未成功时 finalDecision 至少有一项为 false（推导值：{"ok": false, "status": "STAGE_REPORTS_REQUIREMENT_CONFLICT", "testsIndependentlyVerified": true, "testsVerificationReasons": [], "reviewApproved": false, "criteriaSatisfied": 22, "criteriaTotal": 23, "allCriteriaSatisfied": false, "criteriaCheckCoversAll": true, "reviewIndependentTestsPassed": true, "fingerprintsMatch": false, "fingerprintReasons": ["验证前后被哈希的文件集合不一致：[\"examples/text-stats/.gitignore\",\"examples/text-stats/readme.md\",\"examples/text-stats/sample_input.txt\",\"examples/text-stats/test_text_stats.py\",\"examples/text-stats/text_stats.py\"] vs [\"examples/text-stats/test_text_stats.py\",\"examples/text-stats/text_stats.py\"]"], "stageReportedRequirementConflicts": ["Coding Agent: AC-05 vs BC-02 / BC-08 AC-05 要求 count_text(\"  \\r\\n \\r\\n\") 返回 char_count=6，但 BC-02 规定唯一的归一化顺序（剥一个前导 U+FEFF → 把所有 CRLF 替换为 LF → 把剩余单独 CR 替换为 LF），BC-08 规定 char_count 为归一化后文本的码点数。该输入共 7 个原始码点（两空格 + CR + LF + 一空格 + CR + LF），按 BC-02 归一化为 \"  \\n \\n\" 共 5 个码点，任何同时满足 BC-02 与 BC-08 的映射都不能返回 6。实测：len(\"  \\r\\n \\r\\n\")=7，归一化后 len(\"  \\n \\n\")=5，count_text 返回 char_count=5。AC-05 的 line_count=2 与 non_empty_line_count=0 由 BC-04/BC-05/BC-06 唯一推出且与本实现一致，仅 char_count 一项互斥；未在本轮自行选择“统计前不归一化”的替代解释，留待人工统一口径。", "Verifier (verify): AC-05 vs BC-02 / BC-08 (requirement.json of run v0.1-run5-20261016T152321Z) AC-05 states count_text(\"  \\r\\n \\r\\n\") == {\"char_count\": 6, \"line_count\": 2, \"non_empty_line_count\": 0, \"word_count\": 0}. BC-02 mandates the sole normalisation order (strip one leading U+FEFF, replace all CRLF with LF, then all remaining lone CR with LF) and BC-08 defines char_count as len() of the normalised text. The input \"  \\r\\n \\r\\n\" holds 7 raw code points (space space CR LF space CR LF); after BC-02 it is \"  \\n \\n\" with 5 code points, so any mapping satisfying both BC-02 and BC-08 yields char_count == 5, never 6. The same AC-05 line_count == 2 and non_empty_line_count == 0 agree with BC-04/BC-05/BC-06. The delivery implements 5 and the run's own coding-report.json requirement_conflicts reports the identical conflict (AC-05 vs BC-02/BC-08); examples/text-stats/README.md line 139 documents the same discrepancy. No set of expectations was silently chosen here; the same-call char_count expectation is mutually exclusive.", "Review Agent: AC-05 vs BC-02 / BC-08 (docs/evidence/v0.1-run5-20261016T152321Z/requirement.json) AC-05 要求 count_text(\"  \\r\\n \\r\\n\") 返回 char_count=6，但 BC-02 规定唯一的归一化顺序（剥一个前导 U+FEFF → 把所有 CRLF 替换为 LF → 把剩余单独 CR 替换为 LF），BC-08 规定 char_count 为归一化后文本的码点数。该输入共 7 个原始码点（两空格 + CR LF + 一空格 + CR LF），按 BC-02 归一化为 \"  \\n \\n\" 共 5 个码点，任何同时满足 BC-02 与 BC-08 的映射都不能返回 6。实测：len(\"  \\r\\n \\r\\n\")==7，归一化后 len(\"  \\n \\n\")==5，count_text 返回 char_count==5。同条要求的 line_count=2 与 non_empty_line_count=0 由 BC-04/BC-05/BC-06 唯一推出且已实测满足，仅 char_count 一项互斥；Coding Agent 的 coding-report.json 与 Verifier 的 verify.json 均独立报告了同一条冲突，examples/text-stats/README.md:137-139 亦有记录。"], "criteriaIds": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17", "AC-18", "AC-19", "AC-20", "AC-21", "AC-22", "AC-23"]}）
+- PASS 未成功时返回了可读原因
+- PASS 未成功时磁盘证据未显示 APPROVED 通过（verdict=CHANGES_REQUESTED conflicts=0）
+
+## 说明（不作为失败）
+
+- 第 1 次尝试的产物已被后续修订覆盖 ['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']（--archived：历史运行，其产物已被后续运行改写，不与当前磁盘比对）；仍与磁盘一致 ['examples/text-stats/.gitignore', 'examples/text-stats/sample_input.txt']
+
+结论：存在 2 项不一致

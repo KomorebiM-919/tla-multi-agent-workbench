@@ -1,0 +1,5 @@
+Keeps the scratch directory used by test_text_stats.py in version control.
+
+The DSH file sandbox allows creating files only inside directories that already
+exist in the workspace, so the tests cannot use the system temporary directory.
+test_text_stats.py writes its temporary input files here and removes them again.

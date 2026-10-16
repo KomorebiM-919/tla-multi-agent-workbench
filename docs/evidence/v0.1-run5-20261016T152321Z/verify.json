@@ -1,0 +1,48 @@
+{
+  "run_id": "v0.1-run5-20261016T152321Z",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-16T23:31:32.538534+08:00",
+  "result": {
+    "command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": ".............................................................................\n----------------------------------------------------------------------\nRan 77 tests in 1.180s\n\nOK\n",
+    "ran_tests": 77,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "83f94b483d88891309d46f6f5fdf6dae25cc4040a1581ffe12c9f5cfd939f8d1",
+        "bytes": 10204
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "84696a9c4a040671f2e9fe4a6e2f8e7b65d39833bb9dde58973e34ca6c11575c",
+        "bytes": 27157
+      },
+      {
+        "path": "examples/text-stats/sample_input.txt",
+        "sha256": "d1346fe09eb87e961fcbcd26071c9751e459bcf2e7bbd4e73a732b8ebc8a9f83",
+        "bytes": 20
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "sha256": "31e918489ac8bcad2edb7fed6a17457d155be0ea4730d69d4510a48a7cf473c2",
+        "bytes": 8818
+      },
+      {
+        "path": "examples/text-stats/.gitignore",
+        "sha256": "7570b046eac73cded9ba0bee4c902f1cc812e7859fba6c01677a687678883b7a",
+        "bytes": 351
+      }
+    ],
+    "requirement_conflicts": [
+      {
+        "refs": "AC-05 vs BC-02 / BC-08 (requirement.json of run v0.1-run5-20261016T152321Z)",
+        "description": "AC-05 states count_text(\"  \\r\\n \\r\\n\") == {\"char_count\": 6, \"line_count\": 2, \"non_empty_line_count\": 0, \"word_count\": 0}. BC-02 mandates the sole normalisation order (strip one leading U+FEFF, replace all CRLF with LF, then all remaining lone CR with LF) and BC-08 defines char_count as len() of the normalised text. The input \"  \\r\\n \\r\\n\" holds 7 raw code points (space space CR LF space CR LF); after BC-02 it is \"  \\n \\n\" with 5 code points, so any mapping satisfying both BC-02 and BC-08 yields char_count == 5, never 6. The same AC-05 line_count == 2 and non_empty_line_count == 0 agree with BC-04/BC-05/BC-06. The delivery implements 5 and the run's own coding-report.json requirement_conflicts reports the identical conflict (AC-05 vs BC-02/BC-08); examples/text-stats/README.md line 139 documents the same discrepancy. No set of expectations was silently chosen here; the same-call char_count expectation is mutually exclusive."
+      }
+    ],
+    "notes": "Command executed verbatim from the repository root <repo>, where examples/text-stats exists. The unittest progress dots, the 'Ran 77 tests in 1.180s' line and the 'OK' line are emitted on stderr (unittest writes to stderr); stdout was empty. The raw_output above is the byte-exact stderr text including the terminating 'OK\\n'; the wall-clock duration in that text belongs to the final capture run. Artifacts were hashed after the rerun (text_stats.py and test_text_stats.py hashes re-confirmed identical at 2026-10-16T23:31:32+08:00). Delivery directory listing: .test-scratch/ (dir), __pycache__/ (dir), .gitignore, README.md, sample_input.txt, test_text_stats.py, text_stats.py. No file outside docs/evidence/v0.1-run5-20261016T152321Z/verify.json was created, modified or deleted by this run.",
+    "generated_at": "2026-10-16T23:31:32.538534+08:00"
+  }
+}

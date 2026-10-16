@@ -1,0 +1,7 @@
+# Test scratch directory used by test_text_stats.py.
+# Only the directory placeholder is tracked (`.` rules out, `!` re-includes the
+# placeholder); scratch files and leftovers stay untracked. The second rule keeps
+# git from descending into leftover tmp* directories it cannot read.
+.test-scratch/*
+.test-scratch/tmp*/
+!.test-scratch/.gitkeep

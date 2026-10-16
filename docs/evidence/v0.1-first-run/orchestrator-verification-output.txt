@@ -1,0 +1,58 @@
+command: python -B docs/evidence/v0.1-first-run/orchestrator-verification.py
+exit_code: 0
+
+== A. ����ʾ��������·���� ==
+[PASS] normal text 'hello world\nfoo bar\n': actual=(20, 2, 2, 4) expected=(20, 2, 2, 4)
+== B. ���� BC �ٷ�ʾ�� ==
+[PASS] BC-01 char_count('a��'): actual=2 expected=2
+[PASS] BC-01 char_count('\U0001F600'): actual=1 expected=1
+[PASS] BC-02 count_text('a\r\nb'): actual=(3, 2, 2, 2) expected=(3, 2, 2, 2)
+[PASS] BC-03 count_text('')['line_count']: actual=0 expected=0
+[PASS] BC-03 count_text('\n')['line_count']: actual=1 expected=1
+[PASS] BC-03 count_text('a\n')['line_count']: actual=1 expected=1
+[PASS] BC-03 count_text('a\nb')['line_count']: actual=2 expected=2
+[PASS] BC-03 count_text('a\n\n')['line_count']: actual=2 expected=2
+[PASS] BC-04 non_empty('a\n \n'): actual=1 expected=1
+[PASS] BC-04 non_empty('\t\n'): actual=0 expected=0
+[PASS] BC-04 non_empty('\u3000\n'): actual=0 expected=0
+[PASS] BC-04 non_empty('\u00a0x\n'): actual=1 expected=1
+[PASS] BC-11 count_text('\ufeffhi\n'): actual=(3, 1, 1, 1) expected=(3, 1, 1, 1)
+== C. �߽������������߶����Ƶ��� ==
+[PASS] empty text: actual=(0, 0, 0, 0) expected=(0, 0, 0, 0)
+[PASS] leading blank lines '\n\na': actual=(3, 3, 1, 1) expected=(3, 3, 1, 1)
+[PASS] blank lines inside 'a\n\n\nb': actual=(5, 4, 2, 2) expected=(5, 4, 2, 2)
+[PASS] trailing CRLF 'a\r\n' (normalised, 2 code points): actual=(2, 1, 1, 1) expected=(2, 1, 1, 1)
+[PASS] CRLF multi 'a\r\nb\r\n': actual=(4, 2, 2, 2) expected=(4, 2, 2, 2)
+[PASS] bare CR 'a\rb': actual=(3, 2, 2, 2) expected=(3, 2, 2, 2)
+[PASS] whitespace-only line 'a\n   \nb': actual=(7, 3, 2, 2) expected=(7, 3, 2, 2)
+[PASS] BOM-only '\ufeff' (BC-11 strip, then BC-03 empty text): actual=(0, 0, 0, 0) expected=(0, 0, 0, 0)
+== D. BC-05 ������ 0 <= non_empty <= line�����С������ ==
+[PASS] invariant over 513 samples: actual=[] expected=[]
+== E. ���ʹ��� ==
+[PASS] underscore 'a_b': actual=2 expected=2
+[PASS] hyphen 'well-known': actual=1 expected=1
+[PASS] double hyphen 'hello--world': actual=2 expected=2
+[PASS] apostrophe "don't": actual=1 expected=1
+[PASS] typographic apostrophe 'don\u2019t': actual=1 expected=1
+[PASS] digits 'abc123': actual=1 expected=1
+[PASS] CJK '����': actual=0 expected=0
+[PASS] accented precomposed 'caf��': actual=1 expected=1
+== F. CLI��BC-14 �����ʽ / �˳��룩 ==
+[PASS] stdin exit code: actual=0 expected=0
+[PASS] stdin stdout exactly 4 lines in order: actual='char_count: 20\nline_count: 2\nnon_empty_line_count: 2\nword_count: 4\n' expected='char_count: 20\nline_count: 2\nnon_empty_line_count: 2\nword_count: 4\n'
+[PASS] stdin stderr empty: actual='' expected=''
+[PASS] file arg exit code: actual=0 expected=0
+[PASS] file arg output == stdin output for same text: actual='char_count: 20\nline_count: 2\nnon_empty_line_count: 2\nword_count: 4\n' expected='char_count: 20\nline_count: 2\nnon_empty_line_count: 2\nword_count: 4\n'
+[PASS] file arg stderr empty: actual='' expected=''
+[PASS] missing file exit code: actual=1 expected=1
+[PASS] missing file stdout empty: actual='' expected=''
+[PASS] missing file stderr prefix 'error: ': actual=True expected=True
+[PASS] bad encoding exit code: actual=1 expected=1
+[PASS] bad encoding stderr prefix 'error: ': actual=True expected=True
+[PASS] help exit code: actual=0 expected=0
+[PASS] help text non-empty: actual=True expected=True
+== G. ��������ڣ�����׼�⣩ ==
+[PASS] stdlib-only imports: actual=['argparse', 'codecs', 're', 'sys'] expected=['argparse', 'codecs', 're', 'sys']
+
+checks=45 failures=0
+ALL ORCHESTRATOR CHECKS PASSED

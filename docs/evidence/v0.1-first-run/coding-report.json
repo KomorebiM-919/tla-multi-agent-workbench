@@ -1,0 +1,61 @@
+{
+  "run_id": "v0.1-first-run",
+  "agent": "Coding Agent",
+  "stage": "coding",
+  "generated_at": "2026-02-14T00:00:00Z",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "purpose": "纯函数 count_text(text) 与 CLI 主函数 main(argv=None, stdin_text=None) 的实现（仅标准库：argparse、codecs、re、sys）；负责通用换行归一化（BC-02）、BOM 剥离（BC-11）、四项统计（BC-01/03/04/06-10）以及 4 行 ASCII 输出与错误处理（BC-12/13/14）。"
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "仅依赖 unittest 的测试套件（42 个测试），覆盖 BC-01 至 BC-15：count_text 的签名与基线取值、字符/换行/行数/非空行/单词规则、BOM、stdin 与文件两条 CLI 路径、错误路径退出码与 stderr 前缀，并用真实子进程校验 4 行输出格式；TestSpecificationConflicts 固定需求自身矛盾处的既定行为。"
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "中文文档：四项统计的判定规则表、命令行用法、一个可直接复制且输出逐字符一致的示例、测试运行命令，以及需求两处内部矛盾的说明。"
+      },
+      {
+        "path": "examples/text-stats/sample_input.txt",
+        "purpose": "README 示例与 AC-06 口径所用的样例输入文件，内容为 \"hello world\\nfoo bar\\n\"。"
+      },
+      {
+        "path": "examples/text-stats/.test-scratch/.gitkeep",
+        "purpose": "保留测试用临时目录（DSH 沙箱下 Python 无法在新建目录内创建文件，测试只能复用已存在的目录写入临时输入文件），并在文件内说明该约束。"
+      },
+      {
+        "path": "docs/evidence/v0.1-first-run/coding-report.json",
+        "purpose": "本证据文件：记录本次 Coding Agent 阶段的交付物、实现摘要、AC 覆盖、真实测试命令与输出、以及与需求的两处显式偏离。"
+      }
+    ],
+    "implementation_summary": "交付目录 examples/text-stats 下实现了一个仅使用 Python 标准库的文本统计模块：count_text(text: str) -> dict 先在字符串上做统一处理——剥离单个前导 BOM（\\ufeff），再把 \\r\\n 与 \\r 归一化为 \\n——随后一次性算出四项指标：char_count = len(归一化文本)（码点数，BC-01）；line_count 对空串取 0，否则取按 \\n 切分的片段数并去掉结尾换行产生的最后一个空片段（BC-03）；non_empty_line_count 逐行判断 line.strip() 是否非空（BC-04，空白定义随 Python str.strip，含 \\u3000/\\u00a0）；word_count 用正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 在归一化文本上 findall 计数，只承认 ASCII 字母片段，单个内部连字符/撇号可连接两段字母（BC-06 至 BC-10）。命令行 main(argv=None, stdin_text=None) 复用同一逻辑：至多接受 1 个位置参数（文件路径，缺省读标准输入），--encoding 可覆盖默认 UTF-8，stdin_text 参数供测试注入标准输入内容；成功时向标准输出打印恰好 4 行 \"<key>: <value>\"（顺序为 char_count、line_count、non_empty_line_count、word_count）并返回 0；OSError、UnicodeDecodeError 与未知编码名均转为一行以 'error: ' 开头的英文标准错误消息、标准输出为空、返回 1，不抛出未捕获的 traceback。读文件时以 newline=\"\" 打开，确保归一化只在 count_text 中发生一次，使文件路径与纯函数口径完全一致（BC-15）。测试文件除 unittest 与标准库外无任何导入，既直接调用 count_text/main，也用 subprocess 真实运行 CLI 校验退出码与 4 行输出。",
+    "acceptance_criteria_addressed": [
+      "AC-01：python -c \"from text_stats import count_text; d = count_text('a'); print(type(d).__name__, sorted(d), all(type(v) is int for v in d.values()))\" 输出 `dict ['char_count', 'line_count', 'non_empty_line_count', 'word_count'] True`，四个值的类型均为 int。",
+      "AC-02：count_text('hello world\\nfoo bar\\n') 实际返回 {'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}——char_count/non_empty_line_count/word_count 与 AC-02 期望一致，line_count 按 BC-03 为 2 而非 AC-02 声称的 3（见 deviations_from_requirement 第 1 条）。",
+      "AC-03：count_text('') 返回四项全 0。",
+      "AC-04：count_text('\\n\\n') == {'char_count': 2, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}；count_text('  \\n\\t \\n') == {'char_count': 6, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}，与期望完全一致。",
+      "AC-05：12 条断言中 10 条成立（word_count 依次为 3、1、1、2、0、1、1、1、1、0、2、2 中的对应项）；例外两条为由需求内部矛盾导致的 'cafe\\u0301'（期望 2，按 BC-06 实得 1）与预组合形式 'naïve'（期望 1，实得 2），见 deviations_from_requirement 第 2 条。",
+      "AC-06：python text_stats.py sample.txt（内容 'hello world\\nfoo bar\\n'）退出码 0，标准输出恰为 char_count: 20 / line_count: 2 / non_empty_line_count: 2 / word_count: 4 四行（line_count 一处按 BC-03 修正，其余三项与 AC-06 一致）。",
+      "AC-07：printf 'hello world\\n' | python text_stats.py 退出码 0，输出 char_count: 12 / line_count: 1 / non_empty_line_count: 1 / word_count: 2，与期望完全一致。",
+      "AC-08：python text_stats.py 配合立即关闭的标准输入（空 stdin）退出码 0，四项均为 0，不阻塞等待输入。",
+      "AC-09：python text_stats.py missing-file.txt 退出码 1，标准输出为空，标准错误包含一行以 'error: ' 开头的消息（实测 `error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'`）。",
+      "AC-10：字节为 EF BB BF + 'hi\\n' 的 bom.txt 经 CLI 统计得 char_count: 3、line_count: 1、non_empty_line_count: 1、word_count: 1；count_text('\\ufeffhi\\n')['char_count'] == 3。",
+      "AC-11：python -m unittest discover -s examples/text-stats -p \"test_*.py\" 退出码 0，Ran 42 tests / OK，无 failure、无 error（测试数 42 >= 12）。",
+      "AC-12：交付目录内所有 .py 的 import 行仅涉及标准库（argparse、codecs、io、os、re、subprocess、sys、unittest、contextlib）与本地模块 text_stats；目录内不存在 requirements.txt、pyproject.toml、setup.py、Pipfile。",
+      "AC-13：README.md 中的示例 `python text_stats.py sample_input.txt` 按原文执行后输出与记载的期望输出逐字符一致（char_count: 20 / line_count: 2 / non_empty_line_count: 2 / word_count: 4）；README 给出的测试命令执行后退出码为 0。"
+    ],
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": "..................usage: text_stats.py [-h] [--encoding ENCODING] [path]\ntext_stats.py: error: unrecognized arguments: <repo>\\examples\\text-stats\\.test-scratch\\test_extra_positional_arguments-b.txt\n........................\n----------------------------------------------------------------------\nRan 42 tests in 0.279s\n\nOK",
+    "deviations_from_requirement": [
+      "AC-02/AC-06 的 line_count 与 BC-03、AC-07 相互矛盾：AC-02/AC-06 要求 count_text('hello world\\nfoo bar\\n')['line_count'] == 3，而 BC-03 明文规定“以换行结尾不产生额外的空行”（'a\\n' → 1），AC-07 对同样以换行结尾的 'hello world\\n' 要求 1。两种口径无法同时满足该组断言（按片段数得 3 与 2，去掉一个结尾空片段得 2 与 1），故按规范条文 BC-03（同 2 与 1）实现：该输入 line_count == 2。已在 README.md 与 test_text_stats.py::TestSpecificationConflicts 中显式记录，AC-02/AC-06 其余三项（20/2/4）完全满足。",
+      "AC-05 中 'cafe\\u0301' 期望 word_count == 2，与 BC-09 对 'caf\u00e9' 期望 1 相互矛盾：BC-06 规定用正则 [A-Za-z]+ 在文本上 findall，该正则在预组合与分解两种写法上都只能得到 1 个 ASCII 字母片段（'caf' / 'naive' 之外的字母不构成新词），但 AC-05 同时写了 'cafe\\u0301' → 2 与 'naive'（引号内未注明组合方式，预组合 U+00EF）→ 1。按 BC-06/BC-09 实现（ASCII 字母片段），两种写法均得 1，AC-05 的 12 条断言中 10 条成立、2 条不成立。已在 README.md 与 TestSpecificationConflicts 中显式记录。",
+      "测试临时文件不使用系统临时目录或 tempfile.TemporaryDirectory()：本机 DSH 沙箱（workspace-write）下 Python 无法在新建目录内创建文件（PermissionError: [Errno 13] Permission denied，并报 [sandbox: file access denied under workspace-write mode]），而测试又必须通过真实子进程校验 CLI。因此改在交付目录内已存在的 examples/text-stats/.test-scratch 下写入唯一命名的平铺临时文件（该目录以 .gitkeep 保留），测试结束即删除；该做法属于实现细节，不改变任何对外行为与设计边界。",
+      "为不修改交付目录之外的文件，未向仓库根 .gitignore 添加 examples/text-stats/.test-scratch/ 忽略项（该目录含 11 个早期失败探测遗留的不可删除临时子目录，仅本地噪声，不影响交付内容）。如需忽略，请由仓库所有者在仓库根 .gitignore 中追加一行。"
+    ],
+    "report_file": "docs/evidence/v0.1-first-run/coding-report.json"
+  }
+}

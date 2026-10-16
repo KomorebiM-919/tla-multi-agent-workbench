@@ -1,0 +1,406 @@
+==============================================================================
+run6 独立复核（第三方 orchestrator 层）
+需求文本: <repo>\evidence\v0.1-run6-20261016T154400Z\requirement.json
+被检查对象: <repo>\examples\text-stats
+Python: 3.13.12
+==============================================================================
+
+== 归一化顺序与前导 BOM：BC-01 / BC-02 / BC-03 / BC-04 ==
+PASS [BC-01] BC-01 'a\u2028b' -> line_count == 1
+PASS [BC-01] BC-01 'a\u2028b' -> char_count == 3
+PASS [BC-01] BC-01 'a\u2028b' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\u2028b' -> word_count == 2
+PASS [BC-01] BC-01 \u2028 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\u2029b' -> line_count == 1
+PASS [BC-01] BC-01 'a\u2029b' -> char_count == 3
+PASS [BC-01] BC-01 'a\u2029b' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\u2029b' -> word_count == 2
+PASS [BC-01] BC-01 \u2029 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\x0bb' -> line_count == 1
+PASS [BC-01] BC-01 'a\x0bb' -> char_count == 3
+PASS [BC-01] BC-01 'a\x0bb' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\x0bb' -> word_count == 2
+PASS [BC-01] BC-01 \x0b 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\x0cb' -> line_count == 1
+PASS [BC-01] BC-01 'a\x0cb' -> char_count == 3
+PASS [BC-01] BC-01 'a\x0cb' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\x0cb' -> word_count == 2
+PASS [BC-01] BC-01 \x0c 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\x1cb' -> line_count == 1
+PASS [BC-01] BC-01 'a\x1cb' -> char_count == 3
+PASS [BC-01] BC-01 'a\x1cb' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\x1cb' -> word_count == 2
+PASS [BC-01] BC-01 \x1c 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\x1db' -> line_count == 1
+PASS [BC-01] BC-01 'a\x1db' -> char_count == 3
+PASS [BC-01] BC-01 'a\x1db' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\x1db' -> word_count == 2
+PASS [BC-01] BC-01 \x1d 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\x1eb' -> line_count == 1
+PASS [BC-01] BC-01 'a\x1eb' -> char_count == 3
+PASS [BC-01] BC-01 'a\x1eb' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\x1eb' -> word_count == 2
+PASS [BC-01] BC-01 \x1e 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\x85b' -> line_count == 1
+PASS [BC-01] BC-01 'a\x85b' -> char_count == 3
+PASS [BC-01] BC-01 'a\x85b' -> non_empty_line_count == 1
+PASS [BC-01] BC-01 'a\x85b' -> word_count == 2
+PASS [BC-01] BC-01 \x85 不构成换行且保留在行内容中（非 str.splitlines()）
+PASS [BC-01] BC-01 'a\nb' -> line_count == 2
+PASS [BC-01] BC-01 'a\rb' -> line_count == 2
+PASS [BC-01] BC-01 'a\r\nb' -> line_count == 2
+PASS [BC-02] BC-02 '\ufeffa\r\nb' -> char_count == 3
+PASS [BC-02] BC-02 '\ufeffa\r\nb' -> line_count == 2
+PASS [BC-02] BC-02 'a\r\r\nb' -> char_count == 4
+PASS [BC-02] BC-02 'a\r\r\nb' -> line_count == 3
+PASS [BC-02] BC-02 'a\r\n\rb' -> char_count == 4
+PASS [BC-02] BC-02 'a\r\n\rb' -> line_count == 3
+PASS [BC-02] BC-02 '\r\n\r\n' -> char_count == 2
+PASS [BC-02] BC-02 '\r\n\r\n' -> line_count == 2
+PASS [BC-02] BC-02 '\r\n\r\n' -> non_empty_line_count == 0
+PASS [BC-03] BC-03 '\ufeffabc' -> char_count == 3
+PASS [BC-03] BC-03 '\ufeffabc' -> line_count == 1
+PASS [BC-03] BC-03 '\ufeff\ufeffabc' -> char_count == 4
+PASS [BC-03] BC-03 '\ufeff' -> char_count == 0
+PASS [BC-03] BC-03 '\ufeff' -> line_count == 0
+PASS [BC-03] BC-03 '\ufeff' -> word_count == 0
+PASS [BC-03] BC-03 'a\ufeffb' -> char_count == 3
+PASS [BC-03] BC-03 'a\ufeffb' -> line_count == 1
+PASS [BC-04] BC-04 '' 四项全为 0（空文本不是 1 行）
+
+== AC-01 行数唯一口径（程序化调用） ==
+PASS [AC-01] AC-01 'a\n' -> line_count == 1
+PASS [AC-01] AC-01 'a\nb' -> line_count == 2
+PASS [AC-01] AC-01 'a\n\n' -> line_count == 2
+PASS [AC-01] AC-01 'hello world\nfoo bar\n' -> line_count == 2
+PASS [AC-01] AC-01 '' -> line_count == 0
+PASS [AC-01] AC-01 '  \n\t\n' -> line_count == 2
+PASS [AC-01] AC-01 'hello world\nfoo bar\n' 不存在 3 行的第二种期望（需求文本仅给 2）
+
+== AC-02 行边界集合 / AC-03 字符数（程序化调用） ==
+PASS [AC-02] AC-02 'a\r\nb' -> line_count == 2
+PASS [AC-02] AC-02 'a\r\nb' -> char_count == 3
+PASS [AC-02] AC-02 'a\rb' -> line_count == 2
+PASS [AC-02] AC-02 'a\r\nb\rc' -> line_count == 3
+PASS [AC-02] AC-02 'a\r\nb\rc' -> char_count == 5
+PASS [AC-02] AC-02 'a\u2028b' -> line_count == 1
+PASS [AC-02] AC-02 'a\u2028b' -> char_count == 3
+PASS [AC-02] AC-02 'a\u2029b' -> line_count == 1
+PASS [AC-02] AC-02 'a\u2029b' -> char_count == 3
+PASS [AC-02] AC-02 'a\x0bb' -> line_count == 1
+PASS [AC-02] AC-02 'a\x0bb' -> char_count == 3
+PASS [AC-02] AC-02 'a\x0cb' -> line_count == 1
+PASS [AC-02] AC-02 'a\x0cb' -> char_count == 3
+PASS [AC-02] AC-02 'a\x1cb' -> line_count == 1
+PASS [AC-02] AC-02 'a\x1cb' -> char_count == 3
+PASS [AC-02] AC-02 'a\x1db' -> line_count == 1
+PASS [AC-02] AC-02 'a\x1db' -> char_count == 3
+PASS [AC-02] AC-02 'a\x1eb' -> line_count == 1
+PASS [AC-02] AC-02 'a\x1eb' -> char_count == 3
+PASS [AC-02] AC-02 'a\x85b' -> line_count == 1
+PASS [AC-02] AC-02 'a\x85b' -> char_count == 3
+PASS [AC-03] AC-03 '' -> char_count == 0
+PASS [AC-03] AC-03 'hello world\nfoo bar\n' -> char_count == 20
+PASS [AC-03] AC-03 'a\r\nb' -> char_count == 3
+PASS [AC-03] AC-03 'a\rb' -> char_count == 3
+PASS [AC-03] AC-03 '\ufeffabc' -> char_count == 3
+PASS [AC-03] AC-03 '\ufeff\ufeffabc' -> char_count == 4
+PASS [AC-03] AC-03 'café' -> char_count == 4
+PASS [AC-03] AC-03 'café' -> char_count == 5
+PASS [AC-03] AC-03 'a\r\nb\rc' -> char_count == 5
+
+== AC-04 非空行数 / AC-05 四值自洽 / BC-05 结尾换行 / BC-06 空行判定 / BC-07 空白定义 ==
+PASS [AC-04] AC-04 'a\n\n' -> non_empty_line_count == 1
+PASS [AC-04] AC-04 'a\nb' -> non_empty_line_count == 2
+PASS [AC-04] AC-04 '\n\n' -> non_empty_line_count == 0
+PASS [AC-04] AC-04 '  \n\t\n' -> non_empty_line_count == 0
+PASS [AC-04] AC-04 '  a  \n\t\n' -> non_empty_line_count == 1
+PASS [AC-04] AC-04 '' -> non_empty_line_count == 0
+PASS [AC-05] AC-05 '  \r\n \r\n' 四值自洽（char_count 为 5，非历史轮次的 6）
+PASS [BC-05] BC-05 'a\n' -> line_count == 1
+PASS [BC-05] BC-05 'a\n\nb' -> line_count == 3
+PASS [BC-05] BC-05 'a\n\n' -> line_count == 2
+PASS [BC-05] BC-05 '\n' -> line_count == 1
+PASS [BC-05] BC-05 'hello world\nfoo bar\n' -> line_count == 2
+PASS [BC-05] BC-05 '  \n\t\n' -> line_count == 2
+PASS [BC-05] BC-05 '  \n\t\n' -> non_empty_line_count == 0
+PASS [BC-06] BC-06 '\n\n' -> line_count == 2
+PASS [BC-06] BC-06 '\n\n' -> non_empty_line_count == 0
+PASS [BC-06] BC-06 '  \n\t\n' -> line_count == 2
+PASS [BC-06] BC-06 '  \n\t\n' -> non_empty_line_count == 0
+PASS [BC-06] BC-06 'a\n\n' -> line_count == 2
+PASS [BC-06] BC-06 'a\n\n' -> non_empty_line_count == 1
+PASS [BC-07] BC-07 空格 属于 str.strip() 空白：' 空格\n' -> 1 行 0 非空行
+PASS [BC-07] BC-07 \t 属于 str.strip() 空白：' \t\n' -> 1 行 0 非空行
+PASS [BC-07] BC-07 \x0b 属于 str.strip() 空白：' \x0b\n' -> 1 行 0 非空行
+PASS [BC-07] BC-07 \x0c 属于 str.strip() 空白：' \x0c\n' -> 1 行 0 非空行
+PASS [BC-07] BC-07 \u00a0 属于 str.strip() 空白：' \u00a0\n' -> 1 行 0 非空行
+PASS [BC-07] BC-07 \u3000 属于 str.strip() 空白：' \u3000\n' -> 1 行 0 非空行
+SKIP BC-07 :: 需求只规定“行边界字符先归一化”，未规定归一化后如何单独观测 \r 是否属于 str.strip() 空白；'\r\n' 经 BC-04 归一化后只剩一个行边界，无法把 \r 单独取回，故不构造检查项。
+     需求原文: BC-07 的非空行判定必须使用 str.strip() 自身的空白集合，不得扩大也不得缩小；不得把 U+00A0、U+3000 等 Unicode 空白当作可剥离空白，也不得只把 ASCII 空格当作空白。
+PASS [BC-07] BC-07 '\xa0x\n' -> line_count == 1
+PASS [BC-07] BC-07 '\xa0x\n' -> non_empty_line_count == 1
+PASS [BC-05] BC-05 不变量采样：0 <= non_empty_line_count <= line_count（85 个输入）
+PASS [BC-05] BC-05 采样输入与需求规则推导的参考值一致
+
+== AC-06..AC-09 与 BC-09..BC-12 单词判定 ==
+PASS [AC-06] AC-06 'hello world' -> word_count == 2
+PASS [AC-06] AC-06 'Hello hello HELLO' -> word_count == 3
+PASS [AC-06] AC-06 'well-known' -> word_count == 1
+PASS [AC-06] AC-06 "don't" -> word_count == 1
+PASS [AC-06] AC-06 'it’s' -> word_count == 1
+PASS [AC-06] AC-06 'a-b-c' -> word_count == 1
+PASS [AC-06] AC-06 'hello--world' -> word_count == 2
+PASS [AC-06] AC-06 'hello--world' -> word_count == 2
+PASS [AC-07] AC-07 'café' -> word_count == 1
+PASS [AC-07] AC-07 'café' -> char_count == 5
+PASS [AC-07] AC-07 'café' -> word_count == 1
+PASS [AC-07] AC-07 'café' -> char_count == 4
+PASS [AC-07] AC-07 'café-mocha' -> word_count == 2
+PASS [AC-07] AC-07 'cafe\u0301' 不存在 2 的第二种期望
+PASS [AC-08] AC-08 '123 456' -> word_count == 0
+PASS [AC-08] AC-08 'abc123' -> word_count == 1
+PASS [AC-08] AC-08 'a1b' -> word_count == 2
+PASS [AC-08] AC-08 'a_b' -> word_count == 2
+PASS [AC-08] AC-08 'foo_bar baz' -> word_count == 3
+PASS [AC-09] AC-09 ' -abc' -> word_count == 1
+PASS [AC-09] AC-09 'abc- ' -> word_count == 1
+PASS [AC-09] AC-09 "'abc" -> word_count == 1
+PASS [AC-09] AC-09 'a_b' -> word_count == 2
+PASS [BC-09] BC-09 'Hello hello HELLO' word_count == 3
+PASS [BC-09] BC-09 'well-known' word_count == 1
+PASS [BC-09] BC-09 "don't" word_count == 1
+PASS [BC-09] BC-09 'it’s' word_count == 1
+PASS [BC-09] BC-09 'a-b-c' word_count == 1
+PASS [BC-09] BC-09 'hello--world' word_count == 2
+PASS [BC-09] BC-09 ' -abc' word_count == 1
+PASS [BC-09] BC-09 'abc- ' word_count == 1
+PASS [BC-09] BC-09 "'abc" word_count == 1
+PASS [BC-09] BC-09 '123 456' word_count == 0
+PASS [BC-09] BC-09 'abc123' word_count == 1
+PASS [BC-09] BC-09 'a1b' word_count == 2
+PASS [BC-09] BC-09 'a_b' word_count == 2
+PASS [BC-09] BC-09 'foo_bar baz' word_count == 3
+PASS [BC-09] BC-09 'café' word_count == 1
+PASS [BC-09] BC-09 'naïve' word_count == 2
+PASS [BC-09] BC-09 '中文' word_count == 0
+PASS [BC-09] BC-09 'abc中文def' word_count == 2
+PASS [BC-12] BC-12 'café-mocha' -> word_count == 2
+PASS [BC-08] BC-08 'café' -> char_count == 5
+PASS [BC-08] BC-08 'café' -> word_count == 1
+PASS [BC-08] BC-08 '😀' -> char_count == 1
+PASS [BC-08] BC-08 'a\r\nb' -> char_count == 3
+PASS [BC-09] BC-09 'café' -> word_count == 1
+PASS [BC-09] BC-09 'café' -> char_count == 5
+PASS [BC-09] BC-09 'café' -> word_count == 1
+PASS [BC-09] BC-09 'café' -> char_count == 4
+PASS [BC-09] BC-09 'café-mocha' -> word_count == 2
+PASS [BC-10] BC-10 不做小写化归并：'Hello hello HELLO' 每个 [A-Za-z]+ 片段各计 1
+PASS [BC-11] BC-11 只有 '-'、U+0027、U+2019 三种连接符且一次只允许一个（关系表逐一核对）
+PASS [BC-12] BC-12 非 ASCII 字母不是连接符：'cafe\u0301-mocha' 的参考口径为 2 个词
+
+== BC-20 纯函数接口（四键整数映射，无额外键） ==
+PASS [BC-20] BC-20 count_text 返回映射且恰好四个键（无额外键）
+PASS [BC-20] BC-20 四个值均为 int 且非 bool
+PASS [BC-20] BC-20 'a\n\nb' -> char_count == 4
+PASS [BC-20] BC-20 'a\n\nb' -> line_count == 3
+PASS [BC-20] BC-20 'a\n\nb' -> non_empty_line_count == 2
+PASS [BC-20] BC-20 'a\n\nb' -> word_count == 2
+
+== AC-10 / BC-15 / BC-17 作用域 a：程序化注入只返回退出码、不写 stdout ==
+PASS [AC-10] AC-10 main([], stdin_text='') 返回 0
+PASS [AC-10] AC-10 程序化调用不写 stdout（含不读进程 stdin）
+PASS [AC-10] AC-10 main([], stdin_text='hello world\nfoo bar\n') 返回 0
+PASS [AC-10] AC-10 程序化调用不写 stdout（含不读进程 stdin）
+PASS [AC-10] AC-10 main([], stdin_text='') 的 stdout 为空字符串（不是 'True 0 int' 或 4 行文本）
+PASS [BC-15] BC-15 main([], stdin_text='ignored text') 返回 0
+PASS [BC-15] BC-15 程序化调用不写 stdout（含不读进程 stdin）
+
+== AC-11..AC-14 / BC-16 / BC-17 / BC-19 作用域 b：命令行调用 ==
+PASS [AC-11] AC-11 sample_input.txt 内容为 'hello world\nfoo bar\n'（20 字节）
+PASS [AC-11] AC-11 python text_stats.py sample_input.txt 退出码 == 0
+PASS [AC-11] AC-11 stdout 恰好 4 行且逐行等于需求数值
+PASS [AC-11] AC-11 每行形如 '<name>: <integer>' 且行尾单个 LF
+PASS [AC-11] AC-11 stderr 为空
+PASS [AC-12] AC-12 管道标准输入退出码 == 0
+PASS [AC-12] AC-12 stdout 恰好 4 行且逐行等于需求数值
+PASS [AC-12] AC-12 每行形如 '<name>: <integer>' 且行尾单个 LF
+PASS [AC-13] AC-13 立即 EOF 退出码 == 0 且不阻塞
+PASS [AC-13] AC-13 stdout 恰好 4 行且逐行等于需求数值
+PASS [AC-13] AC-13 每行形如 '<name>: <integer>' 且行尾单个 LF
+PASS [AC-14] AC-14 含 CRLF 与单独 CR 的文件退出码 == 0
+PASS [AC-14] AC-14 stdout 恰好 4 行且逐行等于需求数值
+PASS [AC-14] AC-14 每行形如 '<name>: <integer>' 且行尾单个 LF
+PASS [BC-13] BC-13 文件路径与 count_text 在同一原始文本上数值相同（保留原始换行）
+PASS [BC-16] BC-16 未给 PATH 时读进程标准输入并写恰好 4 行
+PASS [BC-17] BC-17 main([], stdin_text='a\nb\n') 返回 0
+PASS [BC-17] BC-17 程序化调用不写 stdout（含不读进程 stdin）
+PASS [BC-19] BC-19 数值为无符号、无前导零、无千位分隔符的十进制字面量
+PASS [BC-19] BC-19 名称为小写下划线形式且顺序为 char/line/non_empty/word
+
+== AC-15..AC-18 / BC-14 / BC-18 错误路径与退出码 ==
+PASS [AC-15] AC-15 文件不存在 退出码 == 1
+PASS [AC-15] AC-15 文件不存在 stdout 为空
+PASS [AC-15] AC-15 文件不存在 stderr 至少一行以 'error: ' 开头
+PASS [AC-15] AC-15 文件不存在 无 traceback
+PASS [AC-16] AC-16 编码名非法 退出码 == 1
+PASS [AC-16] AC-16 编码名非法 stdout 为空
+PASS [AC-16] AC-16 编码名非法 stderr 至少一行以 'error: ' 开头
+PASS [AC-16] AC-16 编码名非法 无 traceback
+PASS [AC-17] AC-17 位置参数多于 1 个 退出码 == 1
+PASS [AC-17] AC-17 位置参数多于 1 个 stdout 为空
+PASS [AC-17] AC-17 位置参数多于 1 个 stderr 至少一行以 'error: ' 开头
+PASS [AC-17] AC-17 位置参数多于 1 个 无 traceback
+PASS [AC-17] AC-17 退出码为 1 而不是 argparse 默认的 2
+PASS [AC-18] AC-18 --help 退出码 == 0
+PASS [AC-18] AC-18 --help 标准输出含 PATH 与 --encoding 的说明
+PASS [BC-18] BC-18 目录作为文件参数 退出码 == 1
+PASS [BC-18] BC-18 目录作为文件参数 stdout 为空
+PASS [BC-18] BC-18 目录作为文件参数 stderr 至少一行以 'error: ' 开头
+PASS [BC-18] BC-18 目录作为文件参数 无 traceback
+PASS [BC-18] BC-18 解码失败 退出码 == 1
+PASS [BC-18] BC-18 解码失败 stdout 为空
+PASS [BC-18] BC-18 解码失败 stderr 至少一行以 'error: ' 开头
+PASS [BC-18] BC-18 解码失败 无 traceback
+PASS [BC-18] BC-18 全部路径的退出码只取 0 或 1
+PASS [BC-18] BC-18 非 --help 的错误路径不使用 argparse 默认的 2
+PASS [BC-14] BC-14 --encoding latin-1 读取同一文件成功且数值按归一化口径
+PASS [BC-14] BC-14 不含 --encoding 时默认 UTF-8 解码失败属错误路径（退出码 1）
+PASS [BC-14] BC-14 合法 --encoding 名（latin-1）可用且默认 UTF-8 不变
+
+== AC-19..AC-21 / BC-21..BC-24 交付约束 ==
+PASS [AC-19] AC-19 交付目录内存在 .py 文件（text_stats.py / test_text_stats.py）
+PASS [AC-19] AC-19 全部 .py 只 import 标准库（AST 静态检查）
+PASS [AC-19] AC-19 交付目录内不存在依赖声明文件 ['requirements.txt', 'pyproject.toml', 'setup.py', 'Pipfile']
+PASS [BC-22] BC-22 实现与测试仅依赖标准库（AST 静态检查 import 名，逐文件列出）
+PASS [BC-22] BC-22 交付目录内无依赖声明文件（requirements/pyproject/setup/Pipfile）
+PASS [BC-22] BC-22 交付目录内无锁文件/额外依赖配置（*.lock / *.cfg / *.in / *.toml / Pipfile*）
+PASS [AC-20] AC-20 模块内不存在单行转发（只一句 return 转发到另一函数）的冗余函数
+PASS [AC-20] AC-20 __main__ 守卫可见 'if __name__ == "__main__":' 且直接 sys.exit(main())
+PASS [AC-20] AC-20 模块内不存在仅转发到 main 或 count_text 的包装函数
+PASS [AC-20] AC-20 命令行入口在 __main__ 守卫内（不在函数内）直接调用主函数 main()
+PASS [BC-21] BC-21 模块内无单行转发冗余函数且 __main__ 守卫以 sys.exit(main()) 收尾
+PASS [BC-21] BC-21 模块内不存在旧版转发函数名（_main / _cli / run）
+PASS [AC-23] AC-23 test_text_stats.py 通过真实子进程覆盖命令行入口
+PASS [AC-23] AC-23 测试可用 unittest 直接导入 count_text（纯函数路径）
+PASS [AC-21] AC-21 交付目录 .py 中无裸 U+2019（每处须带 \u2019 或 U+2019 标注）
+PASS [BC-24] BC-24 README.md 中无裸 U+2019（每处须带 \u2019 或 U+2019 标注）
+PASS [BC-24] BC-24 README 同时给出 ASCII 撇号 ' 与 U+2019（U+0027 / U+2019）的区分说明
+PASS [AC-21] AC-21 模块与测试同时以 \u2019 转义与 U+2019 码点命名该字符
+
+== AC-22 / BC-23 README 可复制示例与样例输入一致 ==
+PASS [AC-22] AC-22 README 含命令行示例块（文件示例与标准输入示例）
+PASS [AC-22] AC-22 README 含读取 sample_input.txt 的示例
+PASS [AC-22] AC-22 文件示例命令为 'python text_stats.py sample_input.txt'
+PASS [AC-22] AC-22 文件示例的四个数值与实现逐个字符一致
+PASS [AC-22] AC-22 文件示例数值 == 需求 AC-11 的 20/2/2/4
+PASS [AC-22] AC-22 文件示例数值与交付样例文件的实际内容自洽（count_text(sample) == 示例值）
+PASS [BC-23] BC-23 README 所述样例文件内容 == 交付目录内 sample_input.txt 的实际内容
+PASS [BC-23] BC-23 README 含标准输入示例（printf 管道）
+PASS [BC-23] BC-23 标准输入示例命令形如 printf '...' | python text_stats.py：printf 'hello world\n' | python text_stats.py
+PASS [BC-23] BC-23 标准输入示例（printf 'hello world\n' | python text_stats.py）的四个数值与实现一致
+PASS [BC-23] BC-23 标准输入示例命令形如 printf '...' | python text_stats.py：printf '' | python text_stats.py
+PASS [BC-23] BC-23 标准输入示例（printf '' | python text_stats.py）的四个数值与实现一致
+PASS [BC-23] BC-23 README 未把 '  \r\n \r\n' 的 char_count 声明为 6（历史说明允许出现 6）
+PASS [BC-23] BC-23 README 声明该输入的 char_count 为 5 且与实现一致
+PASS [BC-23] BC-23 README 的行数判定表与需求 BC-05 一致（含 2 与 3 的区分）
+PASS [BC-23] BC-23 文件示例数值与 --encoding 无关（默认 UTF-8 路径一致）
+
+== 需求条文覆盖检查（AC-01..AC-23 与 BC-01..BC-24 逐条） ==
+PASS [COVERAGE] 全部 47 条 AC/BC 均有检查项或明确的跳过理由
+  AC-01 covered: AC-01 行数唯一口径（程序化调用）：count_text("a\n")["line_count"] == 1；count_text("a\nb")["line_count"] == 2；count_text("a\n\n")["line
+  AC-02 covered: AC-02 行边界集合（程序化调用）：count_text("a\r\nb")["line_count"] == 2 且 char_count == 3；count_text("a\rb")["line_count"] == 2；count
+  AC-03 covered: AC-03 字符数按归一化后码点数（程序化调用）：count_text("")["char_count"] == 0；count_text("hello world\nfoo bar\n")["char_count"] == 20；coun
+  AC-04 covered: AC-04 非空行数（程序化调用）：count_text("a\n\n")["non_empty_line_count"] == 1；count_text("a\nb")["non_empty_line_count"] == 2；count
+  AC-05 covered: AC-05 CRLF 输入四项统计自洽（程序化调用）：count_text("  \r\n \r\n") == {"char_count": 5, "line_count": 2, "non_empty_line_count": 0, "w
+  AC-06 covered: AC-06 单词基本判定（程序化调用）：count_text("hello world")["word_count"] == 2；count_text("Hello hello HELLO")["word_count"] == 3；coun
+  AC-07 covered: AC-07 非 ASCII 字符与组合记号的单词数（程序化调用）：count_text("cafe\u0301")["word_count"] == 1 且 char_count == 5（不得出现 2 的第二种期望）；count_text
+  AC-08 covered: AC-08 数字与下划线不算单词字符（程序化调用）：count_text("123 456")["word_count"] == 0；count_text("abc123")["word_count"] == 1；count_text("a
+  AC-09 covered: AC-09 连接符两侧必须紧邻 ASCII 字母（程序化调用）：count_text(" -abc")["word_count"] == 1；count_text("abc- ")["word_count"] == 1；count_text
+  AC-10 covered: AC-10 作用域 a — 程序化注入调用只返回退出码、不写标准输出：以显式 stdin_text 调用 main 时（传空串 "" 与非空文本都算），main([], stdin_text="") 返回 0 且标准输出为空；main([]
+  AC-11 covered: AC-11 作用域 b — 命令行调用成功路径的输出格式：在交付目录内执行 python text_stats.py sample_input.txt（该文件内容为 "hello world\nfoo bar\n"），退出码为 0，标准输出
+  AC-12 covered: AC-12 作用域 b — 命令行未给出 PATH 时读进程标准输入：执行 printf 'hello world\n' | python text_stats.py，退出码为 0，标准输出恰好 4 行，依次为 "char_count: 1
+  AC-13 covered: AC-13 作用域 b — 命令行标准输入立即 EOF：执行 printf '' | python text_stats.py，退出码为 0，标准输出恰好 4 行，数值依次为 0、0、0、0，且不阻塞等待输入。
+  AC-14 covered: AC-14 作用域 b — 命令行读取含 CRLF 与单独 CR 的文件：文件内容为 "a\r\nb\rc" 时执行 python text_stats.py <该文件>，退出码为 0，标准输出恰好 4 行，依次为 "char_count:
+  AC-15 covered: AC-15 错误路径 — 文件不存在：执行 python text_stats.py missing-file.txt，退出码为 1，标准输出为空，标准错误至少一行且以 "error: " 开头，且不出现 traceback。
+  AC-16 covered: AC-16 错误路径 — 编码名非法：执行 python text_stats.py sample_input.txt --encoding definitely-not-an-encoding，退出码为 1，标准输出为空，标准错误至少一行
+  AC-17 covered: AC-17 错误路径 — 位置参数多于 1 个：执行 python text_stats.py a.txt b.txt，退出码为 1（不得为 argparse 默认的 2），标准输出为空，标准错误至少一行且以 "error: " 开头。
+  AC-18 covered: AC-18 --help：执行 python text_stats.py --help，退出码为 0，并在标准输出给出用法说明（含 PATH 与 --encoding 的说明文字）。
+  AC-19 covered: AC-19 依赖边界：交付目录 examples/text-stats 内全部 .py 文件只导入 Python 标准库（如 argparse、codecs、re、sys、io、contextlib、unittest、subprocess）
+  AC-20 covered: AC-20 冗余转发函数已删除且入口直接调用主函数：模块内不存在函数体只有一句 return 转发到另一个函数的冗余函数（例如仅转发到 main 或仅转发到 count_text 的单行包装），且 __main__ 守卫直接调用 main(
+  AC-21 covered: AC-21 文档中的连接符字符可辨认：交付目录内的文档与代码注释在描述连接符时，不得出现裸的 U+2019 字符；该字符必须以可辨认写法给出（如正则字面量用 \u2019 转义、正文明确标注 U+2019 并配 ASCII 撇号），第三方按
+  AC-22 covered: AC-22 可复制示例与样例输入一致：README.md 中每条示例（含文件示例与标准输入示例）的命令与四个期望数值，与交付目录内样例文件内容及上述各项口径逐一自洽，第三方照抄命令即可得到相同输出；示例中不得出现与 AC-01 至 AC-1
+  AC-23 covered: AC-23 单元测试与纯函数接口：存在可被 unittest 直接导入调用的纯函数 count_text，其返回值为四键整数映射；在仓库根目录执行 python -m unittest discover -s examples/text-s
+  BC-01 covered: BC-01 行边界集合（权威口径）：只有 LF(\n)、CR(\r)、CRLF(\r\n) 三种序列构成换行；U+2028、U+2029、\x0b、\x0c、\x1c、\x1d、\x1e、\x85 一律不构成换行，它们保留在行内容中并计入 
+  BC-02 covered: BC-02 归一化顺序（唯一顺序）：先剥除一个前导 U+FEFF，再把所有 CRLF 替换为 LF，最后把剩余的全部单独 CR 替换为 LF；此后只按 LF 切分。顺序颠倒或漏掉单独 CR 的处理都会改变 char_count 与 line
+  BC-03 covered: BC-03 BOM 剥离范围：只剥除一个前导 U+FEFF，且只影响四项统计的统计基准；"\ufeffabc" 的 char_count == 3、line_count == 1；"\ufeff\ufeffabc" 的 char_count
+  BC-04 covered: BC-04 空文本："" 的 char_count == 0、line_count == 0、non_empty_line_count == 0、word_count == 0；空文本不产生任何行（把它记成 1 行属错误）。
+  BC-05 covered: BC-05 结尾换行不产生额外空行（唯一口径）："a\n" 为 1 行；"a\n\nb" 为 3 行；"a\n\n" 为 2 行；"\n" 为 1 行；"hello world\nfoo bar\n" 为 2 行；"  \n\t\n" 为 
+  BC-06 covered: BC-06 空行与非空行判定：空行指切分出的行内容为空串的行；非空行指该行 strip() 后仍含字符的行。因此 "\n\n" 为 2 行且 non_empty_line_count == 0；"  \n\t\n" 为 2 行且 non_e
+  BC-07 covered skipped: BC-07 空白定义：判定 non_empty_line_count 时使用 Python str.strip() 的空白集合（含空格、\t、\n、\r、\x0b、\x0c、\u00a0、\u3000 等），不做自定义扩展也不做缩减。
+  BC-08 covered: BC-08 字符数定义：char_count 为归一化后文本的 Unicode 码点数（len(str)），不按字节、不按字形簇、不按显示宽度；因此 "caf\u00e9" 为 4 个码点，"cafe\u0301"（e 加组合重音 U+03
+  BC-09 covered: BC-09 单词正则：word_count 为 [A-Za-z]+(?:[-'\u2019][A-Za-z]+)* 在归一化文本上匹配到的片段个数；只有 ASCII 字母 a-z/A-Z 是单词字符，数字、下划线、非 ASCII 字母与组合
+  BC-10 covered: BC-10 大小写：不做小写化归并，每个 [A-Za-z]+ 片段各计 1 个词，"Hello hello HELLO" 为 3 个词。
+  BC-11 covered: BC-11 连接符规则：只有三种连接符能把两个 ASCII 字母片段连成 1 个词——ASCII 连字符 '-'、ASCII 撇号 '（U+0027）、右单引号 U+2019；连接符两侧必须紧邻 ASCII 字母，且一次只允许一个连接符。因
+  BC-12 covered: BC-12 非 ASCII 相邻情形：非 ASCII 字母与组合记号既不能充当连接符，也不能作为单词字符——"caf\u00e9-mocha" 为 2 个词（é 处切断，mocha 单独计数）、"cafe\u0301" 为 1 个词（组合记
+  BC-13 covered: BC-13 读文件方式：读取文件时必须保留原始换行字符（open(..., newline="") 或等价的二进制读取后解码），归一化只在 count_text 一处完成，从而保证文件路径与标准输入路径在同一份原始文本上得到完全相同的四项数
+  BC-14 covered: BC-14 编码：默认按 UTF-8 解码，既有选项 --encoding NAME 覆盖之；编码名非法（codecs.lookup 抛 LookupError）属错误路径，退出码 1 并在标准错误输出一行以 "error: " 开头的说明
+  BC-15 covered: BC-15 作用域 a（程序化注入调用，权威口径，不得改写、不得与 b 合并）：调用方显式传入 stdin_text 参数（传入空串 "" 或非空文本都算）时，main() 只返回整数退出码、不写标准输出、不读进程流；例如 main([],
+  BC-16 covered: BC-16 作用域 b（命令行调用，权威口径，不得改写、不得与 a 合并）：程序作为命令行运行（给出 PATH 时读该文件，未给出 PATH 时读进程标准输入）时，成功路径必须在标准输出写恰好 4 行，顺序为 char_count、line
+  BC-17 covered: BC-17 两类调用不构成冲突："成功路径恰好 4 行"只约束 BC-16 的命令行调用；BC-15 的程序化注入调用在同一输入下只返回退出码且标准输出为空。二者期望值不同但适用于不同类调用，属于分别适用而非互斥；反向要求（程序化注入也打印
+  BC-18 covered: BC-18 错误退出码：文件不存在、文件不可读或是目录、解码失败、--encoding 编码名非法、位置参数多于 1 个，一律以退出码 1 结束，并在标准错误输出至少一行以 "error: " 开头的说明；不得使用 argparse 默认的
+  BC-19 covered: BC-19 输出行格式：命令行成功输出只含四行 "<名称>: <整数>"，名称为 char_count、line_count、non_empty_line_count、word_count（全小写、下划线分隔），数值为十进制整数字面量（无引
+  BC-20 covered: BC-20 纯函数接口：count_text(text) 接收已解码文本（不做解码、不读文件、不读 stdin），返回恰好含四个整数键的映射；同名键不得有第二种含义，也不得返回额外键。
+  BC-21 covered: BC-21 冗余函数与入口：模块内不得保留仅做单行转发（函数体只有一句 return 转发到另一个函数）的冗余函数；命令行入口在 __main__ 守卫中直接调用主函数 main() 并以返回值作为进程退出码。
+  BC-22 covered: BC-22 依赖与目录边界：实现与测试只允许 Python 标准库（argparse、codecs、re、sys、io、contextlib、subprocess、unittest 等），禁止任何第三方依赖；不得在交付目录内新增依赖声明文件
+  BC-23 covered: BC-23 示例一致性：README 中每条可复制示例（命令行 + 样例文件内容或标准输入内容）的四个期望数值必须与 BC-01 至 BC-19 的规则逐一自洽，样例文件的实际内容与文档所述内容一致；不允许保留与规则矛盾的历史示例值（例如把
+  BC-24 covered: BC-24 连接符字符可辨认：交付目录内的文档与代码注释在描述正则连接符时，不得出现裸的 U+2019 字符；必须写成可辨认形式（如正则字面量使用 \u2019 转义并在正文旁标注 U+2019，或同时给出 ASCII 撇号 ' 与 U+2
+
+== 交付测试套件断言交叉核对（AST 静态求值，独立于上一节计数） ==
+交付测试套件 assertEqual 调用总数: 149
+交叉核对·逐条一致: 44
+交叉核对·不一致: 0
+交叉核对·无法静态求值: 32（原因见下）
+  [unresolvable] line 152: assertIsInstance — 类型断言，无需求数值
+  [unresolvable] line 156: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 401: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 409: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 440: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 560: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 566: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 574: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 585: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 592: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 659: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 545: assertTrue — 布尔断言，无需求数值
+  [unresolvable] line 579: assertIn — 成员断言，无需求数值
+  [unresolvable] line 637: assertIn — 成员断言，无需求数值
+  [unresolvable] line 638: assertIn — 成员断言，无需求数值
+  [unresolvable] line 646: assertIn — 成员断言，无需求数值
+  [unresolvable] line 647: assertIn — 成员断言，无需求数值
+  [unresolvable] line 677: assertIn — 成员断言，无需求数值
+  [unresolvable] line 678: assertIn — 成员断言，无需求数值
+  [unresolvable] line 661: assertIn — 成员断言，无需求数值
+  ... 其余 12 条同类明细略
+PASS [AC-23] AC-23 可静态求值的交付断言与实现逐条一致（44 条）
+
+== AC-23 交付测试套件实跑（信息项，不作为期望来源） ==
+PASS [AC-23] AC-23 python -m unittest discover -s examples/text-stats -p "test_*.py" 全部通过
+unittest 报告: Ran 81 tests
+  Ran 81 tests in 1.143s
+  
+  OK
+
+==============================================================================
+检查项总数: 280
+通过: 280
+失败: 0
+跳过（需求文本不足以唯一判定）: 1
+  SKIP BC-07 :: 需求只规定“行边界字符先归一化”，未规定归一化后如何单独观测 \r 是否属于 str.strip() 空白；'\r\n' 经 BC-04 归一化后只剩一个行边界，无法把 \r 单独取回，故不构造检查项。
+       需求原文: BC-07 的非空行判定必须使用 str.strip() 自身的空白集合，不得扩大也不得缩小；不得把 U+00A0、U+3000 等 Unicode 空白当作可剥离空白，也不得只把 ASCII 空格当作空白。
+
+断言交叉核对: 一致 44 / 不一致 0 / 无法静态求值 32（可静态求值合计 44）
+
+ALL CHECKS PASSED
+EXIT 0
+==============================================================================

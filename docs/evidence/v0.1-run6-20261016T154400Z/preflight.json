@@ -1,0 +1,65 @@
+{
+    "run_id":  "v0.1-run6-20261016T154400Z",
+    "agent":  "Verifier Agent",
+    "stage":  "preflight",
+    "generated_at":  "2026-10-16T23:46:30.5132527+08:00",
+    "result":  {
+                   "repo_root":  "<repo>",
+                   "repo_root_realpath":  "<repo>",
+                   "evidence_dir_state":  "missing",
+                   "evidence_dir_realpath":  "<repo>\\docs\\evidence\\v0.1-run6-20261016T154400Z",
+                   "evidence_dir_claimed":  true,
+                   "evidence_dir_entries":  [
+
+                                            ],
+                   "owner_marker_path":  "docs/evidence/v0.1-run6-20261016T154400Z/.run-owner.json",
+                   "link_components":  [
+
+                                       ],
+                   "prompt_files":  [
+                                        {
+                                            "path":  "agents/requirement-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/coding-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/review-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/verifier-agent.md",
+                                            "exists":  true
+                                        }
+                                    ],
+                   "target_dir":  "examples/text-stats",
+                   "target_dir_state":  "present",
+                   "target_dir_realpath":  "<repo>\\examples\\text-stats",
+                   "resolved_paths":  [
+                                          "<repo>",
+                                          "<repo>\\AGENTS.md",
+                                          "<repo>\\docs",
+                                          "<repo>\\docs\\evidence",
+                                          "<repo>\\docs\\evidence\\v0.1-run6-20261016T154400Z",
+                                          "<repo>\\docs\\evidence\\v0.1-run6-20261016T154400Z\\.run-owner.json",
+                                          "<repo>\\docs\\evidence\\v0.1-run6-20261016T154400Z\\preflight.json",
+                                          "<repo>\\agents",
+                                          "<repo>\\agents\\requirement-agent.md",
+                                          "<repo>\\agents\\coding-agent.md",
+                                          "<repo>\\agents\\review-agent.md",
+                                          "<repo>\\agents\\verifier-agent.md",
+                                          "<repo>\\examples",
+                                          "<repo>\\examples\\text-stats",
+                                          "<repo>\\examples\\text-stats\\text_stats.py",
+                                          "<repo>\\examples\\text-stats\\test_text_stats.py",
+                                          "<repo>\\tests",
+                                          "<repo>\\workflows"
+                                      ],
+                   "problems":  [
+
+                                ],
+                   "generated_at":  "2026-10-16T23:46:30.5132527+08:00"
+               }
+}

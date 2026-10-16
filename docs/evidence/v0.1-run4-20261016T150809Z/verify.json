@@ -1,0 +1,33 @@
+{
+  "run_id": "v0.1-run4-20261016T150809Z",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-16T23:17:57.276332+08:00",
+  "result": {
+    "command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": "......................................................\r\n----------------------------------------------------------------------\r\nRan 54 tests in 0.854s\r\n\r\nOK\r\n",
+    "ran_tests": 54,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "19944de197d875f539f69be99af8f5b6291c92a27395e377e528965cbc2fcf9e",
+        "bytes": 10541
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "203234d5bb81233093f94077a0d87df5299985dccd19dd2e92e33db6e3ae08f8",
+        "bytes": 20345
+      }
+    ],
+    "requirement_conflicts": [
+      {
+        "refs": "BC-03(b) vs BC-04",
+        "description": "BC-03(b) 规定“以换行结尾的文本不产生额外空行”，因此输入 \"  \\n\\t\\n\"（两个空白行各以一个 LF 结尾）按 BC-03 切分应为 2 行；而 BC-04 的判定示例明确写 \"  \\n\\t\\n\" 的 line_count 为 3、non_empty_line_count 为 0。同一输入、同一 line_count 字段被两条边界条件给出互斥期望（2 vs 3）。本次复跑中测试文件 test_text_stats.py 的 test_bc04_blank_lines_use_str_strip（examples/text-stats/test_text_stats.py:210-219）以 BC-03 为准断言 line_count == 2，并在注释中记录了该偏离；BC-04 的示例未被任何验收条款（AC）引用。"
+      }
+    ],
+    "notes": "已在交付目录 examples/text-stats 存在的前提下从仓库根目录原样执行规范化命令一次（python -m unittest discover -s examples/text-stats -p \"test_*.py\"）：真实退出码 0，unittest 摘要为 Ran 54 tests in 0.854s / OK，用例数与摘要一致（54 个点与 54 tests 一致）。 注：unittest 把测试进度与摘要写到标准错误流（本机 Python 3.13），故 raw_output 记录的是该命令实际产生的输出流原文，行尾为 CRLF（Windows 文本模式重定向所致）；标准输出流内容为空。 artifacts 的两个 sha256 均为本次复跑之后重新计算的值，复跑未改动交付文件（字节数 10541 / 20345 与复跑前一致）。 除本产物文件 docs/evidence/v0.1-run4-20261016T150809Z/verify.json 外未写入、修改或删除任何文件；未安装依赖、未联网、未执行 git 操作。 发现的需求自相矛盾已逐条写入 requirement_conflicts，未自行选定口径，也不对通过与否做裁定。",
+    "generated_at": "2026-10-16T23:17:57.276332+08:00"
+  }
+}

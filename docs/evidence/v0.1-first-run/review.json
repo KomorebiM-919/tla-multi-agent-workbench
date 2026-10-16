@@ -1,0 +1,106 @@
+{
+  "run_id": "v0.1-first-run",
+  "agent": "Review Agent",
+  "stage": "review",
+  "generated_at": "2026-10-16T19:25:15+08:00",
+  "result": {
+    "verdict": "CHANGES_REQUESTED",
+    "criteria_check": [
+      {
+        "criterion": "AC-01（纯函数存在且签名正确）：导入 count_text 后返回类型为 dict、键集合正确、四个值均为 int。",
+        "satisfied": true,
+        "evidence": "实测 `cd examples/text-stats; python -c \"from text_stats import count_text; d = count_text('a'); print(type(d).__name__, sorted(d), all(type(v) is int for v in d.values()))\"` 输出 `dict ['char_count', 'line_count', 'non_empty_line_count', 'word_count'] True`（退出码 0）；实现见 examples/text-stats/text_stats.py:100-113 的 count_text；另有独立探针确认四个值类型名均为 'int'。"
+      },
+      {
+        "criterion": "AC-02（基线取值）：count_text('hello world\\nfoo bar\\n') 返回 {'char_count': 20, 'line_count': 3, 'non_empty_line_count': 2, 'word_count': 4}。",
+        "satisfied": false,
+        "evidence": "实测返回 {'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}：char_count/non_empty_line_count/word_count 三项与期望一致，line_count 为 2 而非 3。该期望值与 BC-03（'a\\n' → 1、'a\\n\\n' → 2，即结尾换行不产生额外空行）在同一输入形状上不可能同时成立，AC-02 的 line_count==3 与 BC-03、AC-07 自相矛盾。"
+      },
+      {
+        "criterion": "AC-03（空文本）：count_text('') 返回四项全 0。",
+        "satisfied": true,
+        "evidence": "实测 count_text('') == {'char_count': 0, 'line_count': 0, 'non_empty_line_count': 0, 'word_count': 0}（reviewer 独立探针，退出 0）；实现见 examples/text-stats/text_stats.py:85-86（空串无行）。"
+      },
+      {
+        "criterion": "AC-04（只含空白行）：'\\n\\n' → {2,2,0,0}；'  \\n\\t \\n' → {6,2,0,0}。",
+        "satisfied": true,
+        "evidence": "实测两条断言均逐键相等：count_text('\\n\\n') == {'char_count': 2, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}；count_text('  \\n\\t \\n') == {'char_count': 6, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}。另由 test_text_stats.py:210-229 覆盖。"
+      },
+      {
+        "criterion": "AC-05（英文单词判定规则）：12 条给定的“输入→word_count”断言全部成立。",
+        "satisfied": false,
+        "evidence": "12 条中 11 条成立（Hello hello HELLO=3、well-known=1、don't=1、hello--world=2、123 456=0、abc123=1、3rd=1、naive=1、中文=0、abc中文def=2、a_b=2），'café'（cafe+U+0301）实得 1、要求 2。按 BC-06 明文规则（正则 [A-Za-z]+ 的极大片段）该输入只有 'cafe' 一段，必然为 1；AC-05 的这条断言与 BC-06 及 BC-09 对 'café' 的 1 相互矛盾，故判为不满足的是需求条目本身而非实现（实现见 text_stats.py:53 的 WORD_PATTERN 与 :112 的 findall）。"
+      },
+      {
+        "criterion": "AC-06（命令行读取文件）：sample.txt 内容 'hello world\\nfoo bar\\n'，`python text_stats.py sample.txt` 退出码 0，四行标准输出中 line_count 为 3。",
+        "satisfied": false,
+        "evidence": "以真实文件（字节 b'hello world\\nfoo bar\\n'）实测：退出码 0，stdout 逐字节为 b'char_count: 20\\r\\nline_count: 2\\r\\nnon_empty_line_count: 2\\r\\nword_count: 4\\r\\n'（\\r 为 Windows 控制台转换，程序自身只写 \\n）。char_count/non_empty_line_count/word_count 与期望一致，line_count 为 2 而非 3，原因同 AC-02（与 BC-03 冲突）。"
+      },
+      {
+        "criterion": "AC-07（命令行读取标准输入）：'hello world\\n' → 退出码 0，char_count: 12 / line_count: 1 / non_empty_line_count: 1 / word_count: 2。",
+        "satisfied": true,
+        "evidence": "以真实文件内容 b'hello world\\n' 作为 CLI 输入实测：退出码 0，输出四行 char_count: 12、line_count: 1、non_empty_line_count: 1、word_count: 2，逐字符一致；纯函数 count_text('hello world\\n') 同值（text_stats.py:158-189 的 main 复用 count_text）。"
+      },
+      {
+        "criterion": "AC-08（命令行无输入不挂起）：空标准输入 → 退出码 0，四项均为 0。",
+        "satisfied": true,
+        "evidence": "`cmd /c \"python text_stats.py < NUL > out 2> err\"`：退出码 0，stdout=b'char_count: 0\\r\\nline_count: 0\\r\\nnon_empty_line_count: 0\\r\\nword_count: 0\\r\\n'，stderr 为空，未阻塞；另以注入空 stdin 的进程内调用 main([], stdin_text='') 亦得退出码 0 与同样四行（text_stats.py:175-178）。"
+      },
+      {
+        "criterion": "AC-09（错误路径）：`python text_stats.py missing-file.txt` → 退出码 1，stdout 为空，stderr 含一行以 'error: ' 开头的文本。",
+        "satisfied": true,
+        "evidence": "`cmd /c \"python text_stats.py missing-file.txt > cmd_out.txt 2> cmd_err.txt\"`：退出码 1，stdout 长度 0 字节，stderr 字节为 b\"error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'\\r\\n\"（单行，以 'error: ' 开头，无 traceback）；实现见 text_stats.py:180-186。"
+      },
+      {
+        "criterion": "AC-10（BOM 处理）：EF BB BF + 'hi\\n' 的文件 → char_count: 3；count_text('\\ufeffhi\\n')['char_count'] == 3。",
+        "satisfied": true,
+        "evidence": "实测真实文件 bom_tmp.txt 的字节为 b'\\xef\\xbb\\xbfhi\\n'，CLI 输出 char_count: 3、line_count: 1、non_empty_line_count: 1、word_count: 1，退出码 0；进程内 count_text('\\ufeffhi\\n')['char_count'] == 3；实现见 text_stats.py:71-72。"
+      },
+      {
+        "criterion": "AC-11（单元测试可一键运行且全绿）：`python -m unittest discover -v` 退出码 0，测试数 ≥ 12，无 failure/error。",
+        "satisfied": true,
+        "evidence": "在交付目录内 `cmd /c \"python -m unittest discover -v\"`：退出码 0，输出 'Ran 42 tests in 0.260s' 后 'OK'，无 failure、无 error。另在仓库根独立运行规范化命令 `python -m unittest discover -s examples/text-stats -p \"test_*.py\"`：退出码 0，'Ran 42 tests in 0.305s' + 'OK'（42 ≥ 12）。"
+      },
+      {
+        "criterion": "AC-12（依赖边界可检查）：所有 import 的顶层模块均属标准库；目录内无 requirements.txt / pyproject.toml / setup.py / Pipfile。",
+        "satisfied": true,
+        "evidence": "用 grep 检索交付目录 *.py 的全部 import 行：examples/text-stats/text_stats.py:25-28 为 argparse、codecs、re、sys；examples/text-stats/test_text_stats.py:13-18 为 io、os、subprocess、sys、unittest、contextlib.redirect_stderr/redirect_stdout，:24 为本地模块 text_stats。全部属标准库。Test-Path 检查 requirements.txt、pyproject.toml、setup.py、Pipfile、Pipfile.lock、setup.cfg 均为 False。注：本题指定的 findstr 写法在本机 PowerShell/cmd 下不可用（findstr 对 /R \"^import \\|^from \" 与 /C:\"^import\" 均返回“找不到”，退出码 1），故以等价的 grep 检索替代。"
+      },
+      {
+        "criterion": "AC-13（文档可执行性）：README.md 中的示例命令按原文执行后输出与记载逐字符一致；README 给出的测试命令退出码为 0。",
+        "satisfied": true,
+        "evidence": "按 README.md:33 原样执行 `python text_stats.py sample_input.txt`（文件字节 b'hello world\\nfoo bar\\n'）：退出码 0，输出 char_count: 20 / line_count: 2 / non_empty_line_count: 2 / word_count: 4，与 README.md:34-37 记载逐字符一致；以同一文件作为标准输入复现 README.md:44-47 的示例，输出亦与 char_count: 12 / line_count: 1 / non_empty_line_count: 1 / word_count: 2 一致（对应单行 'hello world\\n'）。README.md:55 与 :62 给出的两条 unittest 命令均实测退出码 0、Ran 42 tests、OK。"
+      }
+    ],
+    "issues": [
+      {
+        "file": "docs/evidence/v0.1-first-run/requirement.json",
+        "location": "result.acceptance_criteria 的 AC-02 与 AC-06（line_count 期望 3）",
+        "problem": "需求内部矛盾导致 AC-02/AC-06 不可满足：同一输入 'hello world\\nfoo bar\\n' 被要求 line_count == 3，而同文件 BC-03 明文规定 'a\\n' → 1、'a\\n\\n' → 2（结尾换行不产生额外空行），AC-07 对同样带结尾换行的 'hello world\\n' 也要求 1。三种要求无法同时成立，实现按 BC-03 得 2，因此 AC-02/AC-06 按字面不满足。",
+        "suggestion": "由 Requirement Agent 修订需求：把 AC-02 与 AC-06 的 line_count 期望改为 2（与 BC-03、AC-07 一致），或在 BC-03 中明确改采“按 '\\n' 切分的片段个数（含结尾空片段）”口径并同步修正 'a\\n'、'a\\n\\n'、AC-07 的例子；保持单一自洽口径后重新交付。代码侧 text_stats.py:79-90 的 _split_lines 无需改动。"
+      },
+      {
+        "file": "docs/evidence/v0.1-first-run/requirement.json",
+        "location": "result.acceptance_criteria 的 AC-05（'cafe\\u0301' → 2）与 boundary_conditions 的 BC-09（'naïve'/'café' → 1）",
+        "problem": "AC-05 要求 'cafe\\u0301'（cafe + U+0301 组合尖音符）word_count == 2，与 BC-06 明文正则口径（[A-Za-z]+ 极大片段，'cafe' 即 1 段）以及 BC-09 对 'café' 的 1 相互矛盾；同时 BC-09 自身把预组合 'naïve'（U+00EF）写作 1，但按 BC-06 明文正则实测为 2（'na' 与 've' 两段，组合字符并不连接字母片段）。实现与测试采用 BC-06 明文正则，故 AC-05 的该条断言不成立。",
+        "suggestion": "由 Requirement Agent 统一口径：删除或改写 AC-05 中 'cafe\\u0301' == 2 的断言（改为 1），并在 BC-09 中区分预组合/分解写法（'na\\u00efve' → 1，'nai\\u0308ve' → 2），或明确改用支持组合字符（unicodedata.normalize + 非 ASCII 字母类）的正则；现状实现与 BC-06 一致，代码侧无需改动。"
+      },
+      {
+        "file": "examples/text-stats/text_stats.py",
+        "location": "text_stats.py:55-66 的模块级常量 DEVIATIONS",
+        "problem": "DEVIATIONS 常量定义了需求矛盾说明，但在模块内没有任何引用（grep 全仓仅此处出现），属死代码；AGENTS.md 第 4 节明确“禁止死代码与注释掉的代码块”。",
+        "suggestion": "二选一并保持单一来源：删除 DEVIATIONS（两处矛盾已在 README.md:69-75 与 test_text_stats.py:440-461 的 TestSpecificationConflicts 中记录且被断言），或让 __main__ 的 --help/epilog 真正引用它。"
+      },
+      {
+        "file": "examples/text-stats/.test-scratch/",
+        "location": "目录 examples/text-stats/.test-scratch 下的 tmp5yuml3ir、tmpd5umizfc、tmpetnaz6yp、tmph71ek5k4、tmpjagfdglo、tmpmwydd9c8、tmpo0q7hkbr、tmptlafhlu7、tmptwz6gew6、tmpzjkypr0o、tmp_011ki5g 共 11 个残留子目录",
+        "problem": "交付目录内遗留 11 个早期测试遗留的临时子目录，当前用户对其无读取权限（Get-ChildItem 与 git status 均报“访问被拒绝”），导致每次 git status 都产生 11 条 warning，且这些目录不在 .gitignore 覆盖范围内；Coding Agent 报告称临时文件“测试结束即删除”，与现场不一致（本审核清理自建探针文件后，.test-scratch 下除 .gitkeep 外仍有这 11 个目录）。",
+        "suggestion": "在能修改这些 ACL 的终端里删除这 11 个目录（例如以拥有者身份 `Remove-Item -Recurse -Force`），并让 test_text_stats.py 改用 tempfile.TemporaryDirectory() 或至少把临时文件放到系统临时目录（本机实测 os.makedirs 可成功创建新目录，仅是沙箱不允许向新建目录写入文件，故 Coding Agent 报告中“无法在新建目录内创建文件”的归因需按实测修正为“无法向新建目录写入文件”）；若确需保留交付目录内的 scratch 目录，请在仓库根 .gitignore 增加一行 `examples/text-stats/.test-scratch/`（注意 __pycache__/ 与 *.py[cod] 已由根 .gitignore:2-3 覆盖，无需新增）。"
+      }
+    ],
+    "independent_test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "independent_test_result": "退出码 0；'Ran 42 tests in 0.305s' + 'OK'，无 failure、无 error（另在交付目录内 `python -m unittest discover -v` 同为退出码 0、Ran 42 tests、OK）。AC 逐条复跑的独立证据：AC-01 `dict [...] True`；AC-02 实得 line_count 2（期望 3，FAIL）；AC-05 12 条中 11 条通过、'cafe\\u0301' 实得 1（期望 2，FAIL）；AC-06 文件路径退出码 0、line_count 2（期望 3，FAIL）；AC-07/AC-08/AC-09/AC-10 输出与退出码全部与期望一致；AC-12 import 全为标准库且无依赖清单文件；AC-13 README 示例输出逐字符一致。",
+    "summary": "实现本身是干净、可移植的纯标准库实现：42 个测试全绿，AC-01、AC-03、AC-04、AC-07 至 AC-13 共 10 条验收条件全部亲自复验通过，BC-01 至 BC-15 逐条复验一致，无第三方依赖、无跳过/放宽测试的痕迹。判为 CHANGES_REQUESTED 的原因是需求文本自相矛盾造成三条验收条件按字面不可满足：AC-02/AC-06 要求 'hello world\\nfoo bar\\n' 的 line_count 为 3，而 BC-03 明文（'a\\n'→1、'a\\n\\n'→2）与 AC-07 要求同一形状为 1，数学上无法两全；AC-05 要求 'cafe\\u0301' 为 2，与其自身引用的 BC-06 正则口径及 BC-09 的 1 冲突；此外 BC-09 把 'naïve' 写作 1，但按 BC-06 明文正则实测分解写法为 2（预组合为 1）。代码在这三处一致地遵循了 BC-06/BC-03，并在 README.md:69-75 与 test_text_stats.py:440-461 显式记录，因此问题清单指向需求条目与少量实现卫生项（text_stats.py:55-66 的 DEVIATIONS 死代码、.test-scratch 下 11 个不可访问残留目录），建议 Requirement Agent 统一口径后重新交付；代码逻辑本身无需返工。",
+    "report_file": "docs/evidence/v0.1-first-run/review.json"
+  }
+}

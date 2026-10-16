@@ -1,0 +1,58 @@
+{
+    "run_id":  "v0.1-run5-20261016T152321Z",
+    "agent":  "Verifier Agent",
+    "stage":  "preflight",
+    "generated_at":  "2026-10-16T23:25:36.0549522+08:00",
+    "result":  {
+                   "mode":  "preflight",
+                   "repo_root":  "<repo>",
+                   "repo_root_realpath":  "<repo>",
+                   "evidence_dir_state":  "missing",
+                   "evidence_dir_realpath":  "<repo>\\evidence\\v0.1-run5-20261016T152321Z",
+                   "evidence_dir_claimed":  true,
+                   "owner_marker_path":  "<repo>\\evidence\\v0.1-run5-20261016T152321Z\\.run-owner.json",
+                   "link_components":  [
+
+                                       ],
+                   "prompt_files":  [
+                                        {
+                                            "path":  "agents\\requirement-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents\\coding-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents\\review-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents\\verifier-agent.md",
+                                            "exists":  true
+                                        }
+                                    ],
+                   "target_dir":  "examples\\text-stats",
+                   "target_dir_state":  "present",
+                   "target_dir_realpath":  "<repo>\\examples\\text-stats",
+                   "resolved_paths":  [
+                                          "<repo>",
+                                          "<repo>",
+                                          "<repo>\\evidence",
+                                          "<repo>\\evidence\\v0.1-run5-20261016T152321Z",
+                                          "<repo>\\evidence\\v0.1-run5-20261016T152321Z\\.run-owner.json",
+                                          "<repo>\\agents",
+                                          "<repo>\\agents\\requirement-agent.md",
+                                          "<repo>\\agents\\coding-agent.md",
+                                          "<repo>\\agents\\review-agent.md",
+                                          "<repo>\\agents\\verifier-agent.md",
+                                          "<repo>\\examples",
+                                          "<repo>\\examples\\text-stats"
+                                      ],
+                   "notes":  "证据目录在本次认领前不存在（状态 missing），由本次运行创建并写入 .run-owner.json；docs\\evidence 下已存在历史运行 v0.1-run3-... 与 v0.1-run4-... 的认领文件，未被本次触碰。所有路径分量经 ReparsePoint 属性扫描与 dir /AL 检查确认均非软链接/目录联接。python 可用（Python 3.13.12）。",
+                   "problems":  [
+                                    "examples\\text-stats\\.test-scratch 下的 11 个 tmp* 子目录在递归枚举时返回 PermissionDenied（访问被拒绝），无法读取其内容与真实路径；这些目录非本次 run_id 所有，未做任何修改，仅如实报告。",
+                                    "docs\\evidence 下已存在其他 run_id 的认领文件：v0.1-run3-20261016T150153Z 与 v0.1-run4-20261016T150809Z；本次 run_id v0.1-run5-20261016T152321Z 与它们无冲突，历史证据未被覆盖。"
+                                ]
+               }
+}

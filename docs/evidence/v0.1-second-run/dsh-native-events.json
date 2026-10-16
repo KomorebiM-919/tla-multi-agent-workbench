@@ -1,0 +1,284 @@
+{
+  "description": "Sanitised DSH native execution evidence for one three-agent workflow run.",
+  "source": "DSH session logs (harness-written JSONL + zstd, one file per agent session)",
+  "extraction": {
+    "script": "docs/evidence/v0.1-second-run/extract-native-events.mjs",
+    "method": "decompress every zstd frame, keep a whitelist of non-content fields",
+    "parentSessionFilter": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "createdSince": "2026-10-16T19:48:21+08:00",
+    "excludedByDesign": [
+      "user and assistant message text",
+      "system prompts and role instructions",
+      "tool call arguments and tool result payloads",
+      "anything from the DSH credential store"
+    ]
+  },
+  "sessionCount": 5,
+  "sessions": [
+    {
+      "sessionId": "3a235608-965a-464b-aa4a-b8d10d5a9e1e",
+      "parentSessionId": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "workspace": "<repo>",
+      "createdAt": "2026-10-16T11:49:36.421Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "descriptor": {
+        "version": 3,
+        "mode": "one-shot",
+        "provider": "spawn"
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "titlePrefix": "你是 TLA 流水线中的 **Verifier Ag",
+      "firstEventAt": "2026-10-16T11:49:36.425Z",
+      "lastEventAt": "2026-10-16T11:50:10.868Z",
+      "turnCount": 1,
+      "stepCount": 6,
+      "toolCallCount": 10,
+      "recordTypeCounts": {
+        "agent/inbox/spliced": 2,
+        "approval/policy": 1,
+        "assistant/message": 6,
+        "request/context": 1,
+        "request/header": 1,
+        "sandbox/mode": 1,
+        "session": 1,
+        "session-log-deepseek/delivery-accepted": 6,
+        "session/title": 1,
+        "step/end": 6,
+        "step/start": 6,
+        "subagent/descriptor": 1,
+        "system/message": 1,
+        "tool/call": 10,
+        "tool/result": 10,
+        "turn/end": 1,
+        "turn/start": 1,
+        "user/message": 4
+      }
+    },
+    {
+      "sessionId": "371f086c-287a-430b-b14a-0cc0f3ecaa60",
+      "parentSessionId": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "workspace": "<repo>",
+      "createdAt": "2026-10-16T11:50:10.882Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "descriptor": {
+        "version": 3,
+        "mode": "one-shot",
+        "provider": "spawn"
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "titlePrefix": "你是 TLA 三 Agent 流水线中的第",
+      "firstEventAt": "2026-10-16T11:50:10.885Z",
+      "lastEventAt": "2026-10-16T11:52:34.394Z",
+      "turnCount": 1,
+      "stepCount": 15,
+      "toolCallCount": 20,
+      "recordTypeCounts": {
+        "agent/inbox/spliced": 2,
+        "approval/policy": 1,
+        "assistant/message": 15,
+        "request/context": 1,
+        "request/header": 1,
+        "sandbox/mode": 1,
+        "session": 1,
+        "session-log-deepseek/delivery-accepted": 15,
+        "session/title": 1,
+        "step/end": 15,
+        "step/start": 15,
+        "subagent/descriptor": 1,
+        "system/message": 1,
+        "tool/call": 20,
+        "tool/result": 20,
+        "turn/end": 1,
+        "turn/start": 1,
+        "user/message": 4
+      }
+    },
+    {
+      "sessionId": "3eb48128-7596-4541-b138-d733e9b3d728",
+      "parentSessionId": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "workspace": "<repo>",
+      "createdAt": "2026-10-16T11:52:34.410Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "descriptor": {
+        "version": 3,
+        "mode": "one-shot",
+        "provider": "spawn"
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "titlePrefix": "你是 TLA 三 Agent 流水线中的第",
+      "firstEventAt": "2026-10-16T11:52:34.413Z",
+      "lastEventAt": "2026-10-16T12:00:28.796Z",
+      "turnCount": 1,
+      "stepCount": 101,
+      "toolCallCount": 115,
+      "recordTypeCounts": {
+        "agent/inbox/spliced": 2,
+        "approval/policy": 1,
+        "assistant/message": 101,
+        "request/context": 1,
+        "request/header": 1,
+        "sandbox/mode": 1,
+        "session": 1,
+        "session-log-deepseek/delivery-accepted": 101,
+        "session/title": 1,
+        "step/end": 101,
+        "step/start": 101,
+        "subagent/descriptor": 1,
+        "system/message": 1,
+        "tool/call": 115,
+        "tool/result": 115,
+        "turn/end": 1,
+        "turn/start": 1,
+        "user/message": 4
+      }
+    },
+    {
+      "sessionId": "d610249a-b590-4e77-8d61-4827827821a6",
+      "parentSessionId": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "workspace": "<repo>",
+      "createdAt": "2026-10-16T12:00:28.812Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "descriptor": {
+        "version": 3,
+        "mode": "one-shot",
+        "provider": "spawn"
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "titlePrefix": "你是 TLA 流水线中的 **Verifier Ag",
+      "firstEventAt": "2026-10-16T12:00:28.815Z",
+      "lastEventAt": "2026-10-16T12:01:24.898Z",
+      "turnCount": 1,
+      "stepCount": 8,
+      "toolCallCount": 12,
+      "recordTypeCounts": {
+        "agent/inbox/spliced": 2,
+        "approval/policy": 1,
+        "assistant/message": 8,
+        "request/context": 1,
+        "request/header": 1,
+        "sandbox/mode": 1,
+        "session": 1,
+        "session-log-deepseek/delivery-accepted": 8,
+        "session/title": 1,
+        "step/end": 8,
+        "step/start": 8,
+        "subagent/descriptor": 1,
+        "system/message": 1,
+        "tool/call": 12,
+        "tool/result": 12,
+        "turn/end": 1,
+        "turn/start": 1,
+        "user/message": 4
+      }
+    },
+    {
+      "sessionId": "aa4447bd-782d-4c58-8d97-b3dc96a7ce6c",
+      "parentSessionId": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "workspace": "<repo>",
+      "createdAt": "2026-10-16T12:01:24.913Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "descriptor": {
+        "version": 3,
+        "mode": "one-shot",
+        "provider": "spawn"
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "titlePrefix": "你是 TLA 三 Agent 流水线中的第",
+      "firstEventAt": "2026-10-16T12:01:24.917Z",
+      "lastEventAt": "2026-10-16T12:03:52.085Z",
+      "turnCount": 1,
+      "stepCount": 18,
+      "toolCallCount": 23,
+      "recordTypeCounts": {
+        "agent/inbox/spliced": 2,
+        "approval/policy": 1,
+        "assistant/message": 18,
+        "request/context": 1,
+        "request/header": 1,
+        "sandbox/mode": 1,
+        "session": 1,
+        "session-log-deepseek/delivery-accepted": 18,
+        "session/title": 1,
+        "step/end": 18,
+        "step/start": 18,
+        "subagent/descriptor": 1,
+        "system/message": 1,
+        "tool/call": 23,
+        "tool/result": 23,
+        "turn/end": 1,
+        "turn/start": 1,
+        "user/message": 4
+      }
+    }
+  ]
+}

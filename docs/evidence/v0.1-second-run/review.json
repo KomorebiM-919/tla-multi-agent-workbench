@@ -1,0 +1,123 @@
+{
+  "run_id": "v0.1-second-run",
+  "agent": "Review Agent",
+  "stage": "review",
+  "generated_at": "2026-10-16T20:03:00.567788+08:00",
+  "result": {
+    "verdict": "APPROVED",
+    "criteria_check": [
+      {
+        "criterion": "AC-01（纯函数接口形状）",
+        "satisfied": true,
+        "evidence": "我亲自在 examples/text-stats 下执行 `python -c \"from text_stats import count_text; d = count_text('a'); print(type(d).__name__, sorted(d), [type(v).__name__ for v in d.values()])\"`：rc=0，stdout=`dict ['char_count', 'line_count', 'non_empty_line_count', 'word_count'] ['int', 'int', 'int', 'int']`；另查 any(isinstance(v, bool))=False。实现位置 examples/text-stats/text_stats.py:115-128（count_text，键常量定义于 text_stats.py:47-51）。"
+      },
+      {
+        "criterion": "AC-02（空文本）",
+        "satisfied": true,
+        "evidence": "直调 count_text('') == {'char_count': 0, 'line_count': 0, 'non_empty_line_count': 0, 'word_count': 0}（我的探针 check4 打印 OK）。实现：text_stats.py:121-128 对空串取 len('')=0、_split_lines('')==[] (text_stats.py:97-98)。"
+      },
+      {
+        "criterion": "AC-03（结尾换行 / 仅换行 / 连续换行）",
+        "satisfied": true,
+        "evidence": "四条断言全部 OK：count_text('hello world\\n')={'char_count':12,'line_count':1,'non_empty_line_count':1,'word_count':2}；count_text('\\n')={'char_count':1,'line_count':1,'non_empty_line_count':0,'word_count':0}；count_text('a\\n\\n')={'char_count':3,'line_count':2,'non_empty_line_count':1,'word_count':1}；count_text('a\\nb')['line_count']=2。未见任何“结尾换行=3 行”的第二种断言。"
+      },
+      {
+        "criterion": "AC-04（只含空白行）",
+        "satisfied": true,
+        "evidence": "全部 OK：'\\n\\n'->{2,2,0,0}；'  \\n\\t \\n'->{char_count:6,line_count:2,non_empty_line_count:0,word_count:0}；'\\t\\n' 非空行 0；'\\u3000\\n' 非空行 0；'\\u00a0x\\n' 非空行 1。实现按 str.strip() 判定：text_stats.py:108-112。"
+      },
+      {
+        "criterion": "AC-05（行数三段式）",
+        "satisfied": true,
+        "evidence": "全部 OK：'hello world\\nfoo bar\\n'->{'char_count':20,'line_count':2,'non_empty_line_count':2,'word_count':4}；无结尾换行 'hello world\\nfoo bar' 的 line_count=2、char_count=19；baseline 的 line_count=2 而 baseline+'\\n' 的 line_count=3。测试侧对应 test_text_stats.py:189-207。"
+      },
+      {
+        "criterion": "AC-06（大小写 / 连字符 / 撇号 / 数字）",
+        "satisfied": true,
+        "evidence": "13 条断言逐条直调 count_text 全部 OK：'Hello hello HELLO'=3、'well-known'=1、'a-b-c'=1、'hello--world'=2、'-abc'=1、\"don't\"=1、'it\\u2019s'=1、'123 456'=0、'abc123'=1、'3rd'=1、'a1b'=2、'a_b'=2、'foo_bar baz'=3。正则实现 text_stats.py:56。"
+      },
+      {
+        "criterion": "AC-07（非 ASCII 与组合字符）",
+        "satisfied": true,
+        "evidence": "全部 OK：'caf\\u00e9' word=1 且 char=4；'cafe\\u0301' word=1 且 char=5；'na\\u00efve'=2；'\\u4e2d\\u6587'=0；'abc\\u4e2d\\u6587def'=2；'caf\\u00e9-mocha'=2。测试中已无 'cafe\\u0301'==2 的断言（test_text_stats.py:340、347、570 均为 1/1/2 的正确值）。"
+      },
+      {
+        "criterion": "AC-08（命令行读取文件）",
+        "satisfied": true,
+        "evidence": "在 examples/text-stats 执行 `python text_stats.py sample_input.txt`：rc=0，stdout 恰好四行 `char_count: 20` / `line_count: 2` / `non_empty_line_count: 2` / `word_count: 4`（原始字节 'char_count: 20\\r\\nline_count: 2\\r\\nnon_empty_line_count: 2\\r\\nword_count: 4\\r\\n'，\\r 为 Windows 控制台翻译），stderr 为空；sample_input.txt 实测 20 字节且内容 'hello world\\nfoo bar\\n'。"
+      },
+      {
+        "criterion": "AC-09（命令行读取标准输入）",
+        "satisfied": true,
+        "evidence": "管道输入 b'hello world\\n'：rc=0，stdout 四行 12/1/1/2；管道输入 b''（立即 EOF）：rc=0，stdout 四行全 0 且未阻塞（submit 后立即返回）。实现 text_stats.py:247-251（stdin_text is None 时读 sys.stdin 并总是按 BC-12 输出四行）。"
+      },
+      {
+        "criterion": "AC-10（文件路径错误路径）",
+        "satisfied": true,
+        "evidence": "四类错误逐一实跑：missing-file.txt、目录路径（Errno 13）、不可解码文件 b'\\xff\\xfe\\x00bad'（UnicodeDecodeError）、`--encoding no-such-codec`（LookupError）全部 rc=1、stdout=''、stderr 以 'error: ' 开头且不含 'Traceback'。实现 text_stats.py:241-245 与 260-264。"
+      },
+      {
+        "criterion": "AC-11（多余位置参数退出码为 1）",
+        "satisfied": true,
+        "evidence": "`python text_stats.py sample_input.txt extra.txt` rc=1、stdout=''、stderr='error: usage: invalid arguments (unrecognized arguments: extra.txt); expected at most one PATH'；三参数 `a.txt b.txt c.txt` 同样 rc=1、stdout=''、stderr 以 'error: ' 开头（非 argparse 默认 2）。实现为 _UsageErrorParser.error/exit 抛 ValueError 再由 main 转为错误路径（text_stats.py:176-239）。"
+      },
+      {
+        "criterion": "AC-12（无冗余转发函数、入口直接调用 main）",
+        "satisfied": true,
+        "evidence": "第一条命令实跑输出 `FORWARDERS []`（rc=0）；第二条命令 `python -c \"import text_stats as t; code = t.main([], stdin_text=''); print(callable(t.main), code, type(code).__name__)\"` 输出恰为 `True 0 int`，我以 inherit / DEVNULL / 空管道 / '\\n' 管道四种 stdin 形态各重复 3 次，12 次结果全部为 `True 0 int`。模块只有 count_text 与 main 两个公开函数，__main__ 直接 sys.exit(main())（text_stats.py:269-270）。"
+      },
+      {
+        "criterion": "AC-13（删除转发函数后命令行仍正常）",
+        "satisfied": true,
+        "evidence": "`python text_stats.py --help` rc=0 且 stdout 含 'usage: text_stats.py [-h] [--encoding ENCODING] [path]' 与 'PATH' 说明；`python text_stats.py sample_input.txt` rc=0 且四行输出与 AC-08 逐字符一致。"
+      },
+      {
+        "criterion": "AC-14（测试可一键运行、全绿且无矛盾断言）",
+        "satisfied": true,
+        "evidence": "我在仓库根目录亲自执行规范化命令 `python -m unittest discover -s examples/text-stats -p \"test_*.py\" -v`：rc=0，输出含 `Ran 55 tests in 0.502s` 与 `OK`，55 个 '... ok'，无 FAILED/ERROR/Traceback。检索 `line_count: 3` 在 text_stats.py / test_text_stats.py / README.md 中 0 命中；test_text_stats.py 中唯一的 `[\"line_count\"], 3` 位于 test_text_stats.py:206，对象是 'hello world\\nfoo bar\\n\\n'（AC-05 要求的正确值），非 baseline；'cafe\\u0301' 附近只有 1、1、2(表示 'cafe\\u0301-mocha'==2) 三处，无 word_count==2 的矛盾断言。"
+      },
+      {
+        "criterion": "AC-15（README 连接符可辨认）",
+        "satisfied": true,
+        "evidence": "以 UTF-8 读取 examples/text-stats/README.md 逐字符统计：U+2019 字面字符出现 0 次，U+0027 出现 33 次；第 23 行（唯一以引号形式书写右单引号的连接符说明行）同时给出 `\\u2019` 与 `（U+2019）` 码位标注，并把 ASCII 撇号标为 `'`（U+0027）。不存在“两个外观相同但码位不同的撇号并列且无标注”的句子；第 111 行 'cafe\\u0301' 使用显式转义写法。"
+      },
+      {
+        "criterion": "AC-16（文档可执行性）",
+        "satisfied": true,
+        "evidence": "按 README 原文逐条复跑：`python text_stats.py sample_input.txt` 输出与文档记载四行（20/2/2/4）逐字符一致；`printf 'hello world\\n' | python text_stats.py` 输出 12/1/1/2 与文档一致；EOF 情形输出四行全 0 与文档一致；缺失文件示例 stderr 为 `error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'` 与文档第 81 行一致。README 第 89 行给出的测试命令从仓库根执行 rc=0。"
+      },
+      {
+        "criterion": "AC-17（依赖边界可检查）",
+        "satisfied": true,
+        "evidence": "用 ast 解析两个 .py 文件取 import 顶层模块：text_stats.py = ['argparse','codecs','re','sys']，test_text_stats.py = ['argparse','ast','contextlib','inspect','io','os','re','subprocess','sys','text_stats','unittest']，全部属于标准库（text_stats 为同目录被测模块）；交付目录内 requirements.txt / pyproject.toml / setup.py / Pipfile 均不存在（os.path.exists 全 False）。"
+      }
+    ],
+    "issues": [
+      {
+        "file": "docs/evidence/v0.1-second-run/requirement.json",
+        "location": "AC-12 第二条命令 vs BC-12 / AC-09 / SI-03",
+        "problem": "需求自相矛盾：AC-12 要求 `python -c \"...print(callable(t.main), code, type(code).__name__)\"`（其中调用 t.main([], stdin_text='')）的标准输出恰为 `True 0 int`，即该次 main 调用本身不得写出任何统计行；而 BC-12 规定成功路径的标准输出恰好 4 行 `<key>: <value>`，BC-15/SI-03 又要求命令行与纯函数同口径。同一个调用的 stdout 不可能既为空又为四行，两条要求数学上不可同时满足。实现选择顺从 AC-12 的字面要求（stdin_text 显式传入空串时不写输出），我复核的 12 次运行全部得到 `True 0 int`，故本条按字面记 satisfied。",
+        "suggestion": "需求侧收口（不必改代码）：把 AC-12 的命令改为断言返回值与类型而不断言 stdout，例如 `python -c \"import text_stats as t; code = t.main(['sample_input.txt'], stdin_text=''); print(callable(t.main), code, type(code).__name__)\"` 并期望 `True 0 int`；或把 AC-12 的期望输出改为 `char_count: 0\\nline_count: 0\\nnon_empty_line_count: 0\\nword_count: 0\\nTrue 0 int`，与 BC-12 保持一致。"
+      },
+      {
+        "file": "examples/text-stats/test_text_stats.py",
+        "location": "test_text_stats.py:373-379（test_injected_empty_stdin_text_writes_nothing）",
+        "problem": "该测试把“main([], stdin_text='') 不写任何输出”固化为期望值（assertEqual(out, \"\")），这是上一轮为满足 AC-12 字面输出而引入的实现决策；它与 BC-12『成功路径标准输出恰好 4 行』存在张力（真实命令行路径不受影响，空 stdin 仍输出四行 0，AC-09 已覆盖）。此点属于 AC-12 与 BC-12 矛盾的下游表现，不是独立缺陷，但若将来需求按建议收口，此断言需同步调整。",
+        "suggestion": "在需求确认 AC-12 以返回值为准后，把该测试改为断言 stdin_text='' 时 main 返回 0 且类型为 int（或直接删除），并用真实子进程保留『空 stdin -> 四行 0』的 BC-12 行为断言。"
+      },
+      {
+        "file": "examples/text-stats/text_stats.py",
+        "location": "text_stats.py:10-13（模块 docstring 的 line_count 说明）、text_stats.py:58-71、89-105（_split_lines）",
+        "problem": "BC-03 的字面定义是 line_count = len(T.splitlines())，但 Python 的 str.splitlines() 还把 U+2028 / U+2029 视为换行；BC-02 又明确要求 U+2028/U+2029 不得产生新行。字面执行 BC-03 会违反 BC-02。实现用掩码方式规避（U+2028/U+2029 不切分，实测 'a\\u2028b' -> line_count 1，与 BC-02 一致；而 'a\\x0bb'、'a\\x85b'、'a\\x1cb' 仍按 str.splitlines() 切为 2 行）。这是需求内部的第二处口径张力，实现选择了 BC-02 的显式例子，属于权威口径优先，无验收条件受影响（AC-01..AC-17 均未含 U+2028/U+2029 的行数断言）。",
+        "suggestion": "需求侧可在 BC-03 补一句『行边界集合以 BC-02 归一化后的 \\n 加上 str.splitlines() 中非 U+2028/U+2029 的字符为准』，使文档与实现完全一致。"
+      }
+    ],
+    "independent_test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\" -v",
+    "independent_test_exit_code": "0",
+    "independent_test_output": "test_empty_text (test_text_stats.TestBaseline.test_empty_text) ... ok\ntest_single_line_with_trailing_newline (test_text_stats.TestBaseline.test_single_line_with_trailing_newline) ... ok\ntest_two_line_text_with_trailing_newline (test_text_stats.TestBaseline.test_two_line_text_with_trailing_newline) ... ok\ntest_two_line_text_without_trailing_newline (test_text_stats.TestBaseline.test_two_line_text_without_trailing_newline) ... ok\ntest_two_trailing_newlines_add_one_line (test_text_stats.TestBaseline.test_two_trailing_newlines_add_one_line) ... ok\ntest_precomposed_accent_character_count (test_text_stats.TestBomHandling.test_precomposed_accent_character_count) ... ok\ntest_pure_function_strips_bom (test_text_stats.TestBomHandling.test_pure_function_strips_bom) ... ok\ntest_character_count_uses_code_points (test_text_stats.TestCharacterAndNewlineRules.test_character_count_uses_code_points) ... ok\ntest_crlf_counts_as_one_character (test_text_stats.TestCharacterAndNewlineRules.test_crlf_counts_as_one_character) ... ok\ntest_lone_carriage_return_counts_as_one_character (test_text_stats.TestCharacterAndNewlineRules.test_lone_carriage_return_counts_as_one_character) ... ok\ntest_other_separators_are_not_normalised (test_text_stats.TestCharacterAndNewlineRules.test_other_separators_are_not_normalised) ... ok\ntest_all_values_are_integers (test_text_stats.TestCountTextInterface.test_all_values_are_integers) ... ok\ntest_returns_dict_with_exactly_the_four_keys (test_text_stats.TestCountTextInterface.test_returns_dict_with_exactly_the_four_keys) ... ok\ntest_help_exits_zero_and_describes_path (test_text_stats.TestEntryPointContract.test_help_exits_zero_and_describes_path) ... ok\ntest_help_subprocess (test_text_stats.TestEntryPointContract.test_help_subprocess) ... ok\ntest_main_is_directly_callable_and_returns_int (test_text_stats.TestEntryPointContract.test_main_is_directly_callable_and_returns_int) ... ok\ntest_no_forwarding_wrapper_function_exists (test_text_stats.TestEntryPointContract.test_no_forwarding_wrapper_function_exists) ... ok\ntest_non_empty_line_invariants (test_text_stats.TestLineCountingRules.test_non_empty_line_invariants) ... ok\ntest_splitlines_semantics (test_text_stats.TestLineCountingRules.test_splitlines_semantics) ... ok\ntest_whitespace_only_text (test_text_stats.TestLineCountingRules.test_whitespace_only_text) ... ok\ntest_directory_path (test_text_stats.TestMainErrorPaths.test_directory_path) ... ok\ntest_empty_string_path (test_text_stats.TestMainErrorPaths.test_empty_string_path) ... ok\ntest_extra_positional_arguments_return_one (test_text_stats.TestMainErrorPaths.test_extra_positional_arguments_return_one) ... ok\ntest_extra_positional_arguments_subprocess (test_text_stats.TestMainErrorPaths.test_extra_positional_arguments_subprocess) ... ok\ntest_missing_file (test_text_stats.TestMainErrorPaths.test_missing_file) ... ok\ntest_missing_file_subprocess (test_text_stats.TestMainErrorPaths.test_missing_file_subprocess) ... ok\ntest_three_positional_arguments_return_one (test_text_stats.TestMainErrorPaths.test_three_positional_arguments_return_one) ... ok\ntest_three_positional_arguments_subprocess (test_text_stats.TestMainErrorPaths.test_three_positional_arguments_subprocess) ... ok\ntest_undecodable_bytes (test_text_stats.TestMainErrorPaths.test_undecodable_bytes) ... ok\ntest_unknown_encoding (test_text_stats.TestMainErrorPaths.test_unknown_encoding) ... ok\ntest_bom_file (test_text_stats.TestMainFilePath.test_bom_file) ... ok\ntest_bom_is_stripped_even_with_explicit_encoding (test_text_stats.TestMainFilePath.test_bom_is_stripped_even_with_explicit_encoding) ... ok\ntest_cli_and_pure_function_agree (test_text_stats.TestMainFilePath.test_cli_and_pure_function_agree) ... ok\ntest_encoding_override (test_text_stats.TestMainFilePath.test_encoding_override) ... ok\ntest_file_baseline_output (test_text_stats.TestMainFilePath.test_file_baseline_output) ... ok\ntest_sample_input_file_in_delivery_directory (test_text_stats.TestMainFilePath.test_sample_input_file_in_delivery_directory) ... ok\ntest_cli_immediate_eof_subprocess (test_text_stats.TestMainStdinPath.test_cli_immediate_eof_subprocess) ... ok\ntest_cli_stdin_pipe (test_text_stats.TestMainStdinPath.test_cli_stdin_pipe) ... ok\ntest_injected_empty_stdin_text_writes_nothing (test_text_stats.TestMainStdinPath.test_injected_empty_stdin_text_writes_nothing) ... ok\ntest_injected_stdin_text (test_text_stats.TestMainStdinPath.test_injected_stdin_text) ... ok\ntest_ascii_whitespace (test_text_stats.TestNonEmptyLineRules.test_ascii_whitespace) ... ok\ntest_unicode_whitespace (test_text_stats.TestNonEmptyLineRules.test_unicode_whitespace) ... ok\ntest_flat_scratch_file_round_trip (test_text_stats.TestScratchDirectoryContract.test_flat_scratch_file_round_trip) ... ok\ntest_scratch_root_exists (test_text_stats.TestScratchDirectoryContract.test_scratch_root_exists) ... ok\ntest_combining_accent_word_count_is_the_sole_value (test_text_stats.TestSpecificationRules.test_combining_accent_word_count_is_the_sole_value) ... ok\ntest_trailing_newline_line_count_is_the_sole_value (test_text_stats.TestSpecificationRules.test_trailing_newline_line_count_is_the_sole_value) ... ok\ntest_imports_are_standard_library (test_text_stats.TestStandardLibraryBoundary.test_imports_are_standard_library) ... ok\ntest_no_dependency_manifests (test_text_stats.TestStandardLibraryBoundary.test_no_dependency_manifests) ... ok\ntest_digits_are_not_word_characters (test_text_stats.TestWordRules.test_digits_are_not_word_characters) ... ok\ntest_double_or_leading_or_trailing_joiner_does_not_join (test_text_stats.TestWordRules.test_double_or_leading_or_trailing_joiner_does_not_join) ... ok\ntest_letter_runs_are_counted_per_occurrence (test_text_stats.TestWordRules.test_letter_runs_are_counted_per_occurrence) ... ok\ntest_non_ascii_letters_cannot_act_as_joiners (test_text_stats.TestWordRules.test_non_ascii_letters_cannot_act_as_joiners) ... ok\ntest_non_ascii_text_yields_only_ascii_letter_runs (test_text_stats.TestWordRules.test_non_ascii_text_yields_only_ascii_letter_runs) ... ok\ntest_single_internal_joiner_keeps_one_word (test_text_stats.TestWordRules.test_single_internal_joiner_keeps_one_word) ... ok\ntest_underscore_splits_words (test_text_stats.TestWordRules.test_underscore_splits_words) ... ok\n\n----------------------------------------------------------------------\nRan 55 tests in 0.502s\n\nOK\n\n[退出码 EXITCODE=0；输出中的首行『python :』前缀与 CategoryInfo 行来自 PowerShell 对 stderr 的包装，非测试程序输出]",
+    "consistency_note": "需求侧有两处自相矛盾（均不构成实现缺陷，已作为需求问题记入 issues，file 指向需求产物）：(1) AC-12 第二条命令要求 stdout 恰为 `True 0 int`（即该 main 调用不得写统计行），与 BC-12『成功路径恰好 4 行』冲突；实现顺从 AC-12 字面要求，我 12 次复跑（inherit/DEVNULL/空管道/换行管道各 3 次）全部得到恰为 `True 0 int`，故 AC-12 按字面 satisfied。(2) BC-03 字面定义 len(T.splitlines()) 会把 U+2028/U+2029 当换行，与 BC-02『U+2028/U+2029 不产生新行』冲突；实现的 'a\\u2028b' -> line_count 1 与 BC-02 一致，属权威口径优先，无验收条件受影响。与 Coding Agent 自述及 Verifier 原始输出的三方核对全部一致：Coding Agent 报 55 tests / OK，Verifier 原始输出为 'Ran 55 tests in 0.479s / OK'（rc=0，sha256 text_stats.py=00149d88e886465c9bde1c2a206a1baf1a8d0bdb4dc0647cb59f5a74b31207a7），我独立复跑为 'Ran 55 tests in 0.502s / OK'（rc=0，55 个 '... ok'，无 FAILED/ERROR/Traceback）；Coding Agent 自述的『仅当显式传入非空 stdin_text 时才写输出』这一偏差我已实测确认（main([], stdin_text='') 不写任何输出，真实 stdin 的 EOF 路径仍写四行 0），与 AC-12 的字面输出要求一致，未发现任何一方陈述与实测相矛盾之处。",
+    "summary": "我逐条独立复核了 AC-01 至 AC-17：全部 17 条 satisfied，evidence 均来自我自己运行的命令输出与亲读的文件内容（text_stats.py、test_text_stats.py 全文、README.md 全文）。我亲自执行规范化测试命令 `python -m unittest discover -s examples/text-stats -p \"test_*.py\" -v`，退出码 0、Ran 55 tests、输出含 OK，无 FAILED/ERROR/Traceback；AC-01/08/09/10/11/12/13/16 的关键命令全部实跑复现，AC-02..AC-07 的每条给定输入→期望输出用直调 count_text 的探针逐条比对，0 处失败。上一轮 4 个缺陷均已实际修复：行数口径唯一（'hello world\\nfoo bar\\n' -> 2，无 3 行断言）、多余位置参数退出码 1（非 2）、forwarder 检出为 `FORWARDERS []` 且 __main__ 直接 sys.exit(main())、README 中不存在未标注的 U+2019（该文件字面 U+2019 出现 0 次，连接符行同时给出 U+0027 与 \\u2019/U+2019 标注）。仅发现需求侧自相矛盾（AC-12 与 BC-12、BC-03 与 BC-02）与一处测试固化了 AC-12 偏差的断言，均属需求/后续收口事项而非实现缺陷，故判 APPROVED。",
+    "report_file": "docs/evidence/v0.1-second-run/review.json",
+    "generated_at": "2026-10-16T20:03:00.567788+08:00"
+  }
+}
