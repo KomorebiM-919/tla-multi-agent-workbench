@@ -48,6 +48,8 @@
     "independent_test_command": "...",
     "independent_test_exit_code": "0",
     "independent_test_output": "...原始输出（含用例统计与退出码相关行）...",
+    "artifacts_after": [{ "path": "...", "sha256": "...", "bytes": 1234 }],
+    "requirement_conflicts": [],
     "consistency_note": "...",
     "summary": "...",
     "report_file": "...",
@@ -66,6 +68,8 @@
 | `independent_test_command` | string | 你自己运行的那条命令 |
 | `independent_test_exit_code` | string | 真实退出码（如 `"0"`） |
 | `independent_test_output` | string | **原始输出**（不得只写摘要） |
+| `artifacts_after` | {path,sha256,bytes}[] | 你**自己复跑之后**对交付文件（模块文件与测试文件）重新计算的指纹；必须与 Verifier 的 `artifacts` 集合、哈希、字节数完全一致，否则整轮判为指纹不一致 |
+| `requirement_conflicts` | {refs,description}[] | 你在需求内部发现的、无法同时满足的规则；无冲突写 `[]`。非空时不得判 `APPROVED` |
 | `consistency_note` | string | 需求矛盾说明；无则写 `none` |
 | `summary` | string | 2–4 句结论说明 |
 | `report_file` | string | 产物文件路径 |
