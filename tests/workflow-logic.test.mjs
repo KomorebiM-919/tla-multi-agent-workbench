@@ -18,13 +18,30 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORKFLOW_PATH = path.join(HERE, '..', 'workflows', 'three-agent-mvp.js');
 const SOURCE = readFileSync(WORKFLOW_PATH, 'utf8');
 
+/** 固定的"编排层当前时间"（生产脚本用 Date.now() 锚定运行起点）。 */
+const FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z');
+
+/**
+ * 造一个 Date 替身：Date.now() 固定，其余（parse / new Date(ms) / toISOString）保持真实行为。
+ * 必须注入：生产脚本会核对 runStartedAt 与编排层实际时间的差值，否则测试夹具里的
+ * 2026-10-16 会被真实机器时间判成"伪造起点"，正常成功路径也会失败。
+ */
+function makeFixedDate(fixedMs) {
+  return class FixedDate extends Date {
+    constructor(...parts) {
+      if (parts.length === 0) { super(fixedMs); } else { super(...parts); }
+    }
+    static now() { return fixedMs; }
+  };
+}
+
 /** 把生产脚本包成 async 函数（脚本正文在 workflow 工具里是顶层代码，含顶层 return）。 */
 function loadWorkflowBody() {
   const wrapper =
     'async function __workflowBody(args, agent, log, phase, parallel, pipeline) {\n' +
     SOURCE +
     '\n}\n__workflowBody;';
-  return vm.runInNewContext(wrapper, { console: console });
+  return vm.runInNewContext(wrapper, { console: console, Date: makeFixedDate(FIXED_NOW_MS) });
 }
 const workflowBody = loadWorkflowBody();
 
@@ -34,6 +51,10 @@ const NOW = '2026-10-16T12:00:00+08:00';            // 对应 UTC 时间戳 2026
 const RUN_ID = 'test-run-20261016T040000Z';          // runId 必须以 -<UTC 时间戳> 结尾（原子防覆盖）
 const EVIDENCE_DIR = 'docs/evidence/' + RUN_ID;
 const TARGET_DIR = 'examples/text-stats';
+// 夹具时间必须与注入的"编排层当前时间"同一瞬间，否则时钟锚定判定会把夹具判成伪造起点。
+if (Date.parse(NOW) !== FIXED_NOW_MS) {
+  throw new Error('测试夹具的 NOW 与 FIXED_NOW_MS 不是同一瞬间：' + Date.parse(NOW) + ' != ' + FIXED_NOW_MS);
+}
 // 仓库根从测试文件位置推导，不写死本机路径（否则换个检出位置就断言失败，也把作者机器路径带进公开仓库）。
 const REPO_ROOT = path.resolve(HERE, '..').replace(/\\/g, '/');
 const MODULE_SHA = 'a'.repeat(64);
@@ -64,6 +85,10 @@ function preflightOk(over) {
     evidence_dir_entries: [],
     evidence_dir_realpath: REPO_ROOT + '/' + EVIDENCE_DIR,
     evidence_dir_claimed: true,
+    claim_tool: 'tools/claim_evidence_dir.py',
+    claim_created: true,
+    claim_exit_code: 0,
+    claimed_at: NOW,
     owner_marker_path: EVIDENCE_DIR + '/.run-owner.json',
     link_components: [],
     prompt_files: ['requirement', 'coding', 'review', 'verifier'].map(function (n) {
@@ -630,6 +655,200 @@ await scenario('Verifier 证据时间戳越出运行窗口 → INVALID_TIMESTAMP
   happyPlan({ verify: function () { return verifyOk({ generated_at: '2024-01-01T00:00:00Z' }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
   { status: 'INVALID_TIMESTAMP', ok: false, calls: 5 });
+
+// ---------------------------------------------------------------- 场景（复审 7 项加固）：应当拒绝的路径
+
+// 28. 指纹清单必须"恰好覆盖配置指定的源码与测试文件"：两侧一致地多报 / 少报 / 重复都不算通过。
+await scenario('指纹清单多列了配置之外的文件（两侧一致也不算通过）→ ARTIFACT_FINGERPRINT_MISMATCH',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ artifacts: verifyOk().artifacts.concat([{ path: TARGET_DIR + '/README.md', sha256: 'd'.repeat(64), bytes: 12 }]) });
+    },
+    review: function () {
+      return reviewOk({ artifacts_after: reviewOk().artifacts_after.concat([{ path: TARGET_DIR + '/README.md', sha256: 'd'.repeat(64), bytes: 12 }]) });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+
+await scenario('指纹清单缺少配置的测试文件（两侧一致也不算通过）→ ARTIFACT_FINGERPRINT_MISMATCH',
+  happyPlan({
+    verify: function () { return verifyOk({ artifacts: verifyOk().artifacts.slice(0, 1) }); },
+    review: function () { return reviewOk({ artifacts_after: reviewOk().artifacts_after.slice(0, 1) }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+
+await scenario('指纹清单出现重复路径（两侧一致也不算通过）→ ARTIFACT_FINGERPRINT_MISMATCH',
+  happyPlan({
+    verify: function () {
+      const list = verifyOk().artifacts;
+      return verifyOk({ artifacts: list.concat([Object.assign({}, list[0])]) });
+    },
+    review: function () {
+      const list = reviewOk().artifacts_after;
+      return reviewOk({ artifacts_after: list.concat([Object.assign({}, list[0])]) });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+
+// 29. 预检 problems 非空必须失败（任何"可能有问题"的观察都要先由人处理）。
+await scenario('预检报告 problems 非空 → PREFLIGHT_PROBLEMS（不启动任何角色）',
+  happyPlan({ preflight: function () { return preflightOk({ problems: ['sample_input.txt 不存在（可选项缺失）'] }); } }),
+  baseArgs(),
+  { status: 'PREFLIGHT_PROBLEMS', ok: false, calls: 1, errorIncludes: '环境预检报告了 1 个问题' });
+
+// 30. 认领必须由排他创建工具真实完成：只报 claimed=true / 已有认领不得覆写。
+await scenario('预检 claim_created=false（已有认领，未覆写）→ EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ claim_created: false, claim_exit_code: 10 }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: '已有认领不得覆写' });
+
+await scenario('预检 claim_tool 不是排他创建工具 → EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ claim_tool: '手写的 shell 命令' }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'claim_tool' });
+
+await scenario('预检 claim_exit_code=10 → EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ claim_exit_code: 10 }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'claim_exit_code' });
+
+await scenario('预检 owner marker 属于别的运行 → EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ owner_marker_path: 'docs/evidence/other-run/.run-owner.json' }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'owner_marker_path' });
+
+await scenario('预检 claimed_at 是旧运行留下的时间（超出本次窗口）→ EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ claimed_at: '2024-01-01T00:00:00Z' }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'claimed_at 不可信' });
+
+await scenario('预检 claimed_at 是未来时间 → EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ claimed_at: '2026-10-16T06:00:00Z' }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'claimed_at 不可信' });
+
+// 31. Review 必须真的执行了测试，且用例数要与 Verifier 对同一命令的结果一致。
+await scenario('Review 独立复跑执行 0 个用例 → INCONSISTENT_REVIEW（不得 ok）',
+  happyPlan({
+    review: function () {
+      return reviewOk({ independent_test_output: 'Ran 0 tests in 0.001s\n\nOK\n' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5 });
+
+await scenario('Review 用例数与 Verifier 对同一命令的用例数不一致 → INCONSISTENT_REVIEW',
+  happyPlan({
+    review: function () {
+      return reviewOk({ independent_test_output: '............\nRan 43 tests in 0.021s\n\nOK\n' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5, errorIncludes: '不一致' });
+
+// 32. Coding 自述必须内部自洽：test_succeeded / 退出码 / 命令 / 输出摘录四者互相印证。
+await scenario('Coding 自述 test_succeeded=true 但退出码 1 → CODING_REPORT_INCONSISTENT（不得 ok）',
+  happyPlan({
+    coding: function () { return codingOk({ test_succeeded: true, test_exit_code: '1' }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '自述内部矛盾' });
+
+await scenario('Coding 自述 test_succeeded=false 但退出码 0 → CODING_REPORT_INCONSISTENT',
+  happyPlan({
+    coding: function () { return codingOk({ test_succeeded: false, test_exit_code: '0' }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5 });
+
+await scenario('Coding 报告的测试命令被换掉 → CODING_REPORT_INCONSISTENT',
+  happyPlan({
+    coding: function () { return codingOk({ test_command: 'python -m pytest -q' }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '规范化命令' });
+
+await scenario('Coding 报告的退出码不是非负整数 → CODING_REPORT_INCONSISTENT',
+  happyPlan({
+    coding: function () { return codingOk({ test_exit_code: 'ok' }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5 });
+
+await scenario('Coding 自述通过但输出摘录含 FAILED → CODING_REPORT_INCONSISTENT',
+  happyPlan({
+    coding: function () { return codingOk({ test_succeeded: true, test_exit_code: '0', test_output_excerpt: FAILED_OUTPUT }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '失败标记' });
+
+// 33. 无效日期解析必须失败（正则匹配不等于真实时间）。
+await scenario('需求阶段时间戳日历非法（2026-02-30）→ INVALID_TIMESTAMP',
+  happyPlan({
+    requirement: function () {
+      const req = requirementOk(3);
+      req.generated_at = '2026-02-30T00:00:00Z';
+      return req;
+    }
+  }),
+  baseArgs(),
+  { status: 'INVALID_TIMESTAMP', ok: false, calls: 2, errorIncludes: '日历时间' });
+
+await scenario('Verifier 证据时间戳为未来时间 → INVALID_TIMESTAMP（不得 ok）',
+  happyPlan({ verify: function () { return verifyOk({ generated_at: '2026-10-16T06:00:00Z' }); } }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INVALID_TIMESTAMP', ok: false, calls: 5 });
+
+// 34. 运行起点必须落在编排层实际时间附近：把 runId 与 runStartedAt 一起伪造成旧时间也必须被拦下。
+await scenario('runStartedAt 不是合法日历时间 → INVALID_ARGS',
+  happyPlan(),
+  baseArgs({ runId: 'test-run-20260230T040000Z', evidenceDir: 'docs/evidence/test-run-20260230T040000Z', runStartedAt: '2026-02-30T04:00:00Z' }),
+  { status: 'INVALID_ARGS', ok: false, calls: 0, errorIncludes: 'runStartedAt' });
+
+await scenario('runId 与 runStartedAt 一起伪造成一天前的旧时间 → INVALID_ARGS（时钟锚定）',
+  happyPlan(),
+  baseArgs({ runId: 'test-run-20261015T040000Z', evidenceDir: 'docs/evidence/test-run-20261015T040000Z', runStartedAt: '2026-10-15T04:00:00Z' }),
+  { status: 'INVALID_ARGS', ok: false, calls: 0, errorIncludes: '伪造或过期' });
+
+// 35. 路径判定：未规范化的点段不得作为判定依据；解算路径必须与配置的目标一一对应。
+await scenario('预检路径含未规范化的点段 → PATH_NOT_NORMALIZED',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ target_dir_realpath: REPO_ROOT + '/./' + TARGET_DIR });
+    }
+  }),
+  baseArgs(),
+  { status: 'PATH_NOT_NORMALIZED', ok: false, calls: 1, errorIncludes: '点段' });
+
+await scenario('交付目录 realpath 指向仓库内别的目录 → PATH_TARGET_MISMATCH',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ target_dir_realpath: REPO_ROOT + '/examples/other-project' });
+    }
+  }),
+  baseArgs(),
+  { status: 'PATH_TARGET_MISMATCH', ok: false, calls: 1 });
+
+await scenario('预检 target_dir 与本次配置不符 → PATH_TARGET_MISMATCH',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ target_dir: 'examples/other-project' });
+    }
+  }),
+  baseArgs(),
+  { status: 'PATH_TARGET_MISMATCH', ok: false, calls: 1 });
+
+await scenario('证据目录 realpath 与本次配置不符 → PATH_TARGET_MISMATCH',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ evidence_dir_realpath: REPO_ROOT + '/docs/evidence/other-run' });
+    }
+  }),
+  baseArgs(),
+  { status: 'PATH_TARGET_MISMATCH', ok: false, calls: 1 });
 
 // ---------------------------------------------------------------- 结果
 
