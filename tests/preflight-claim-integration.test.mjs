@@ -8,16 +8,22 @@
 //   2. 重复认领被工具拒绝（退出码 10）→ 门禁拒绝，且既有认领文件逐字节不变；
 //   3. 目录非空且无认领文件（退出码 11）→ 拒绝，且失败路径不写任何文件（尤其不写 preflight.json）；
 //   4. 已存在但为空的目录可被认领（认领前状态 empty）；
-//   5. 预检自报的认领前状态与工具回报的 evidence_dir_state_before 不一致 → EVIDENCE_NOT_CLAIMED。
+//   5. 预检自报的认领前状态与工具回报的 evidence_dir_state_before 不一致 → EVIDENCE_NOT_CLAIMED；
+//   6. 证据目录路径**含空格**时同样能被认领并跑完整条流水线（参数数组传参，不经过 shell 拼接）。
 //
-// 为什么用 shell 重定向而不是管道捕获子进程输出：DSH 文件沙箱下 Node 捕获子进程
-// stdout/stderr（管道）会 EPERM，`stdio: 'ignore'` + shell 重定向是可行路径。
+// 子进程的启动方式（复审修正）：直接执行 Python 解释器、参数以**数组**传入，子进程输出写进**已打开的文件句柄**。
+// 早期版本把命令拼成一个字符串交给 shell（`shell: true` 加 `> out 2> err` 重定向），它在审查环境里以
+// 0xC0000005 崩溃，而且路径含空格时会被 shell 拆成多个参数；现在不经过 shell，路径原样作为单个参数传递。
+// 之所以用文件句柄而不是管道捕获：DSH 文件沙箱下 Node 捕获子进程 stdout/stderr（管道）会 EPERM，
+// 文件句柄不经过管道，因此可用。
 //
 // 运行：node tests/preflight-claim-integration.test.mjs
 
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync
+} from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -41,21 +47,73 @@ function sceneDir(rel) {
   return path.join(REPO_ROOT, rel);
 }
 
-/** 运行真实的认领工具（本轮运行期间最后一次写入的现场都留在 RUNNER_DIR，便于事后核对）。 */
-function runClaimTool(evidenceDirRel, runId, runStartedAt, claimedBy) {
+/**
+ * 解析出可直接执行的 Python 3 解释器路径。
+ * 不走 shell、也不用管道读版本（沙箱下管道会 EPERM）：逐个候选路径用 stdio: 'ignore' 试跑一次。
+ * 跳过 Windows 的 `Microsoft\WindowsApps\python.exe`——那是应用商店别名占位程序，不是真解释器。
+ * 需要指定别的解释器时设置环境变量 TLA_PYTHON。
+ */
+function resolvePython() {
+  const isWindows = process.platform === 'win32';
+  const names = isWindows ? ['python'] : ['python3', 'python'];
+  const exts = isWindows ? ['.exe'] : [''];
+  const candidates = [];
+  if (process.env.TLA_PYTHON) { candidates.push(process.env.TLA_PYTHON); }
+  String(process.env.PATH || '').split(path.delimiter).forEach(function (entry) {
+    const dir = entry.replace(/^"|"$/g, '').trim();
+    if (dir === '' || /WindowsApps/i.test(dir)) { return; }
+    names.forEach(function (name) {
+      exts.forEach(function (ext) { candidates.push(path.join(dir, name + ext)); });
+    });
+  });
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    if (!existsSync(candidate)) { continue; }
+    const probe = spawnSync(candidate, ['-c', 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)'],
+      { stdio: 'ignore' });
+    if (probe.error === undefined && probe.status === 0) { return candidate; }
+  }
+  throw new Error('找不到可用的 Python 3 解释器；请用环境变量 TLA_PYTHON 指定 python 可执行文件（例如 C:\\...\\python.exe）');
+}
+
+const PYTHON = resolvePython();
+console.log('认领工具调用方式：直接执行 ' + PYTHON + '（参数数组 + 已打开的文件句柄，不经过 shell）');
+
+/**
+ * 运行真实的认领工具（本轮运行期间最后一次写入的现场都留在 RUNNER_DIR，便于事后核对）。
+ * 参数以**数组**传入、输出写进**已打开的文件句柄**，全程不经过 shell：含空格的路径不会被拆开。
+ */
+function runClaimTool(evidenceDirRel, runId, runStartedAt, claimedBy, outDir) {
+  const dir = outDir || RUNNER_DIR;
+  mkdirSync(dir, { recursive: true });
   redirectSeq += 1;
-  const outFile = path.join(RUNNER_DIR, 'stdout-' + redirectSeq + '.json');
-  const errFile = path.join(RUNNER_DIR, 'stderr-' + redirectSeq + '.txt');
-  const command = 'python ' + CLAIM_TOOL +
-    ' --repo-root . --evidence-dir ' + evidenceDirRel +
-    ' --run-id ' + runId + ' --run-started-at ' + runStartedAt +
-    ' --claimed-by ' + claimedBy +
-    ' > ' + outFile + ' 2> ' + errFile;
-  const spawned = spawnSync(command, { cwd: REPO_ROOT, shell: true, stdio: 'ignore' });
+  const outFile = path.join(dir, 'stdout-' + redirectSeq + '.json');
+  const errFile = path.join(dir, 'stderr-' + redirectSeq + '.txt');
+  const outFd = openSync(outFile, 'w');
+  const errFd = openSync(errFile, 'w');
+  let spawned = null;
+  try {
+    spawned = spawnSync(PYTHON, [CLAIM_TOOL,
+      '--repo-root', '.',
+      '--evidence-dir', evidenceDirRel,
+      '--run-id', runId,
+      '--run-started-at', runStartedAt,
+      '--claimed-by', claimedBy],
+    { cwd: REPO_ROOT, stdio: ['ignore', outFd, errFd] });
+  } finally {
+    closeSync(outFd);
+    closeSync(errFd);
+  }
   const raw = existsSync(outFile) ? readFileSync(outFile, 'utf8') : '';
   let payload = null;
   try { payload = JSON.parse(raw); } catch (error) { payload = null; }
-  return { exitCode: spawned.status, payload: payload, raw: raw, stderr: existsSync(errFile) ? readFileSync(errFile, 'utf8') : '' };
+  return {
+    exitCode: spawned.status,
+    payload: payload,
+    raw: raw,
+    stderr: existsSync(errFile) ? readFileSync(errFile, 'utf8') : '',
+    spawnError: spawned.error
+  };
 }
 
 /** 本次测试运行的身份：runId 以真实 UTC 时间戳结尾，且与 runStartedAt 同秒（编排层的原子防覆盖要求）。 */
@@ -108,12 +166,14 @@ function integrationArgs(identity, evidenceDirRel) {
   return baseArgs({ runId: identity.runId, evidenceDir: evidenceDirRel, runStartedAt: identity.runStartedAt });
 }
 
-function setupScene(label) {
+function setupScene(label, parentName) {
   const identity = newRunIdentity(label);
-  // 证据目录必须落在 docs/evidence/ 之下，且最后一级目录必须等于 runId（编排层两条硬要求）
-  const evidenceDirRel = 'docs/evidence/itest-claim-' + process.pid + '/' + identity.runId;
+  // 证据目录必须落在 docs/evidence/ 之下，且最后一级目录必须等于 runId（编排层两条硬要求）；
+  // 中间父目录的名字不受限制，这里用它来验证"路径含空格"。
+  const parent = parentName || ('itest-claim-' + process.pid);
+  const evidenceDirRel = 'docs/evidence/' + parent + '/' + identity.runId;
   createdDirs.push(sceneDir(evidenceDirRel));
-  createdDirs.push(path.join(REPO_ROOT, 'docs', 'evidence', 'itest-claim-' + process.pid));
+  createdDirs.push(path.join(REPO_ROOT, 'docs', 'evidence', parent));
   return { identity: identity, evidenceDirRel: evidenceDirRel };
 }
 
@@ -280,6 +340,45 @@ if (!existsSync(RUNNER_DIR)) { mkdirSync(RUNNER_DIR, { recursive: true }); }
         check('工具回报的认领前状态是 empty', claim.payload.evidence_dir_state_before === 'empty',
           String(claim.payload.evidence_dir_state_before));
         check('认领文件已创建', existsSync(path.join(sceneDir(scene.evidenceDirRel), MARKER_NAME)), '未创建');
+      }
+    },
+    { resetClock: false }
+  );
+}
+
+// 场景 6：证据目录路径含空格 → 参数数组传参不经过 shell，认领与整条流水线照常成功
+{
+  const spaceParent = 'itest claim ' + process.pid;                                 // 父目录名含空格
+  const spaceRunner = path.join(SCRATCH, 'claim integration runner ' + process.pid); // 输出文件也放在含空格路径下
+  const scene = setupScene('space-path', spaceParent);
+  const claim = runClaimTool(scene.evidenceDirRel, scene.identity.runId, scene.identity.runStartedAt,
+    'integration-space', spaceRunner);
+  const marker = path.join(sceneDir(scene.evidenceDirRel), MARKER_NAME);
+  const plan = livePlan({ preflight: function () { return preflightFromTool(scene.evidenceDirRel, claim.payload); } });
+  setClock(scene.identity.nowMs);
+  await scenario(
+    '证据目录路径含空格 → 认领工具与预检门禁照常放行（参数数组、不经过 shell）',
+    plan, integrationArgs(scene.identity, scene.evidenceDirRel),
+    {
+      status: 'OK', ok: true, calls: 5,
+      extra: function (result, outcome, check) {
+        check('夹具本身确实含空格（防止空格被悄悄去掉）',
+          scene.evidenceDirRel.indexOf(' ') !== -1 && spaceRunner.indexOf(' ') !== -1,
+          scene.evidenceDirRel + ' / ' + spaceRunner);
+        check('子进程启动没有异常（不经过 shell）', claim.spawnError === undefined,
+          String(claim.spawnError && claim.spawnError.message));
+        check('工具退出码为 0', claim.exitCode === 0, '实际 ' + claim.exitCode + ' / stderr=' + claim.stderr);
+        check('工具报告的认领前状态是 missing',
+          claim.payload !== null && claim.payload.evidence_dir_state_before === 'missing',
+          String(claim.payload && claim.payload.evidence_dir_state_before));
+        check('认领文件创建在含空格的路径下', existsSync(marker), marker);
+        const expectedReal = REPO_ROOT_REAL + '/' + scene.evidenceDirRel;
+        check('含空格路径的 realpath 与编排层推导一致',
+          String(claim.payload.evidence_dir_realpath).replace(/\\/g, '/').toLowerCase() === expectedReal.toLowerCase(),
+          String(claim.payload.evidence_dir_realpath));
+        check('成功路径下证据目录里只有认领文件',
+          JSON.stringify(readdirSync(sceneDir(scene.evidenceDirRel)).sort()) === JSON.stringify([MARKER_NAME]),
+          readdirSync(sceneDir(scene.evidenceDirRel)).join(','));
       }
     },
     { resetClock: false }

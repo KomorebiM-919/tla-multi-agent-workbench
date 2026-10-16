@@ -28,7 +28,7 @@ node tests/workflow-logic.test.mjs
 
 ### 1a. 预检认领门禁的集成测试（真实认领工具 + 编排层门禁）
 
-`tests/preflight-claim-integration.test.mjs` 不使用手工拼写的认领结果：它**真的调用** `tools/claim_evidence_dir.py`，把工具打印的 JSON 原样接入编排层预检返回值，再看门禁放行还是拒绝。当前 **5 个场景 / 48 项断言**：
+`tests/preflight-claim-integration.test.mjs` 不使用手工拼写的认领结果：它**真的调用** `tools/claim_evidence_dir.py`，把工具打印的 JSON 原样接入编排层预检返回值，再看门禁放行还是拒绝。当前 **6 个场景 / 59 项断言**：
 
 ```powershell
 node tests/preflight-claim-integration.test.mjs
@@ -38,10 +38,12 @@ node tests/preflight-claim-integration.test.mjs
 - 重复认领（工具退出码 10）⇒ 门禁拒绝，且既有 `.run-owner.json` **逐字节不变**、目录里没有 `preflight.json`；
 - 目录非空且无认领文件（退出码 11）⇒ 拒绝，原目录内容与哈希不变、不创建认领文件、不写任何文件；
 - 已存在但为空的目录 ⇒ 可被认领（工具报告 `empty`）并放行；
-- 预检自报的认领前状态与工具回报的 `evidence_dir_state_before` 不一致 ⇒ `EVIDENCE_NOT_CLAIMED`。
+- 预检自报的认领前状态与工具回报的 `evidence_dir_state_before` 不一致 ⇒ `EVIDENCE_NOT_CLAIMED`；
+- 证据目录路径**含空格**（`docs/evidence/itest claim <pid>/<runId>`，工具输出文件也放在含空格的目录下）⇒ 照常认领并跑完整条流水线。
 
-> 该测试用 shell 重定向（`> out.json 2> err.txt`）而不是管道捕获子进程输出：DSH 文件沙箱下 Node 捕获子进程 stdout/stderr（管道）会 `EPERM`，`stdio: 'ignore'` + shell 重定向是可行路径。重定向的目标文件放在证据目录**之外**，否则目录会因"非空"被认领工具拒绝。
-> 该测试使用**真实当前时间**（`Date.now()`）构造 `runId` / `runStartedAt` 并让编排层时钟同步（`runWith(..., { resetClock: false })`），因为认领工具写的是真实时钟，固定夹具时钟会让工具产物落在运行窗口之外。临时证据目录建在 `docs/evidence/itest-claim-<pid>/<runId>`（编排层硬要求），用后即删。
+> **子进程的启动方式**：直接执行 Python 解释器（`resolvePython()` 从 `PATH` 里挑出真实 `python.exe`，跳过 Windows 应用商店别名占位程序，可用环境变量 `TLA_PYTHON` 覆盖），参数以**数组**传入，子进程输出写进**已打开的文件句柄**，全程不经过 shell。更早的版本把命令拼成一个字符串交给 shell（`shell: true` 加 `> out.json 2> err.txt` 重定向），它在审查环境里以 `0xC0000005` 崩溃，而且路径含空格时会被 shell 拆成多个参数——含空格的那个场景就是这条的回归。
+> 用文件句柄而不是管道捕获输出是环境约束：DSH 文件沙箱下 Node 捕获子进程 stdout/stderr（管道）会 `EPERM`，文件句柄不经过管道。输出文件放在证据目录**之外**，否则目录会因"非空"被认领工具拒绝。
+> 该测试使用**真实当前时间**（`Date.now()`）构造 `runId` / `runStartedAt` 并让编排层时钟同步（`runWith(..., { resetClock: false })`），因为认领工具写的是真实时钟，固定夹具时钟会让工具产物落在运行窗口之外。临时证据目录建在 `docs/evidence/<父目录>/<runId>`（编排层硬要求：必须在 `docs/evidence/` 之下且最后一级等于 `runId`），用后即删。
 
 ### 1b. 证据目录排他认领工具的进程级测试
 
@@ -64,7 +66,7 @@ python -m unittest discover -s tests -p "test_*.py"
 # 做法：把 harness 的 WORKFLOW_PATH 指向旧脚本副本，再跑同一批测试
 ```
 
-第三轮结果：旧脚本下**逻辑套件 54/81 场景通过，24 个场景返回了 `ok: true`（误放行）**，另有 **3 个场景虽被拒绝但状态码 / 原因不符合新契约**（`Coding test_succeeded=false` + 退出码 0 ⇒ 旧 `INCONSISTENT_EVIDENCE`（新契约 `CODING_REPORT_INCONSISTENT`）；`2026-02-30` 这类非法日历时间 ⇒ 靠 6 小时窗口"偶然"拒绝（原因是"不在运行窗口内"而不是"日历时间非法"）；把 `runId` 与 `runStartedAt` 一起伪造成一天前的旧时间 ⇒ 旧 `INVALID_TIMESTAMP` 且已经启动了预检子代理（新契约在启动前即 `INVALID_ARGS`））。集成套件在旧脚本下 4/5 通过：认领前状态不一致那个场景被拒绝，但走的是旧的"未完成认领"原因，说明 `evidence_dir_state_before` 当时并未被消费。
+第三轮结果：旧脚本下**逻辑套件 54/81 场景通过，24 个场景返回了 `ok: true`（误放行）**，另有 **3 个场景虽被拒绝但状态码 / 原因不符合新契约**（`Coding test_succeeded=false` + 退出码 0 ⇒ 旧 `INCONSISTENT_EVIDENCE`（新契约 `CODING_REPORT_INCONSISTENT`）；`2026-02-30` 这类非法日历时间 ⇒ 靠 6 小时窗口"偶然"拒绝（原因是"不在运行窗口内"而不是"日历时间非法"）；把 `runId` 与 `runStartedAt` 一起伪造成一天前的旧时间 ⇒ 旧 `INVALID_TIMESTAMP` 且已经启动了预检子代理（新契约在启动前即 `INVALID_ARGS`））。集成套件在旧脚本下 **5/6** 通过：认领前状态不一致那个场景被拒绝，但走的是旧的"未完成认领"原因，说明 `evidence_dir_state_before` 当时并未被消费；含空格路径那个场景在旧脚本下照样通过——它针对的是**子进程启动方式**（测试自身），不是编排层的门禁逻辑。
 
 ### 2. 演示项目的自动验证（普通测试脚本）
 
