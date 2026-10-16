@@ -1,8 +1,17 @@
 """Unit tests for text_stats (standard library ``unittest`` only).
 
-Coverage map: every boundary condition BC-01 .. BC-15 has at least one test,
-and the acceptance criteria AC-01 .. AC-13 are exercised where they can be
-checked inside the test process.
+Coverage map: every boundary condition BC-01 .. BC-19 has at least one test,
+and the acceptance criteria AC-01 .. AC-17 are exercised wherever they can be
+checked from inside the test process (AC-01, AC-08, AC-11, AC-12, AC-13, AC-14
+are also asserted through real subprocesses).
+
+Normative note (BC-17/BC-18): the line-count rule has exactly one value per
+input.  ``line_count`` is ``len(text.splitlines())``, so ``"a\\n"`` is 1 line,
+``"hello world\\nfoo bar\\n"`` is 2 lines and ``"hello world\\nfoo bar\\n\\n"``
+is 3 lines; ``"cafe\\u0301"`` counts 1 word.  No assertion in this file may use
+the superseded values (3 lines for a trailing newline, 2 words for the
+combining-accent form), and no assertion may expect argparse's default exit
+code 2 for a usage error.
 
 The DSH file sandbox denies writes outside the workspace (including the system
 temporary directory) and denies writes inside directories created during the
@@ -11,8 +20,12 @@ run, so the suite writes flat files into the pre-existing scratch directory
 ``TestScratchDirectoryContract`` guards that constraint.
 """
 
+import argparse
+import ast
+import inspect
 import io
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -22,6 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+import text_stats  # noqa: E402
 from text_stats import count_text, main  # noqa: E402
 
 SCRIPT = os.path.join(HERE, "text_stats.py")
@@ -36,6 +50,12 @@ EMPTY_STATS = {
     "word_count": 0,
 }
 BASELINE_TEXT = "hello world\nfoo bar\n"
+BASELINE_STATS = {
+    "char_count": 20,
+    "line_count": 2,
+    "non_empty_line_count": 2,
+    "word_count": 4,
+}
 ONE_LINE_TEXT = "hello world\n"
 ONE_LINE_STATS = {
     "char_count": 12,
@@ -50,10 +70,13 @@ ZERO_OUTPUT = (
 ONE_LINE_OUTPUT = (
     "char_count: 12\nline_count: 1\nnon_empty_line_count: 1\nword_count: 2\n"
 )
+BASELINE_OUTPUT = (
+    "char_count: 20\nline_count: 2\nnon_empty_line_count: 2\nword_count: 4\n"
+)
 
 
 def format_stats(stats):
-    """Render stats the way the CLI must render them (BC-14)."""
+    """Render stats the way the CLI must render them (BC-12)."""
     return "".join("{0}: {1}\n".format(key, stats[key]) for key in stats)
 
 
@@ -62,7 +85,7 @@ def run_cli(args, stdin_bytes=b""):
 
     Stdout is decoded with universal newlines because the Windows console
     translates the program's ``\\n`` into ``\\r\\n`` when handing the text to
-    PowerShell (BC-14 only fixes the characters the program itself writes).
+    PowerShell (BC-12 only fixes the characters the program itself writes).
     """
     completed = subprocess.run(
         [sys.executable, SCRIPT] + args,
@@ -84,6 +107,25 @@ def run_main(argv, stdin_text=None):
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         code = main(argv, stdin_text=stdin_text)
+    return code, out.getvalue(), err.getvalue()
+
+
+def run_main_help(argv):
+    """Call ``main`` in-process and also capture argparse's own help stream.
+
+    ``argparse`` formats ``--help`` through ``_sys.stdout``, a reference bound at
+    import time, so ``contextlib.redirect_stdout`` alone would let the help text
+    reach the real console.  Replacing that reference for the duration of the
+    call keeps the test suite's own standard output empty.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    original_stdout = argparse._sys.stdout
+    argparse._sys.stdout = out
+    try:
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(argv)
+    finally:
+        argparse._sys.stdout = original_stdout
     return code, out.getvalue(), err.getvalue()
 
 
@@ -139,41 +181,45 @@ class TestCountTextInterface(unittest.TestCase):
 
 
 class TestBaseline(unittest.TestCase):
-    """AC-02 (with the BC-03 line rule) and AC-03."""
+    """AC-02 / AC-03 / AC-05 / AC-08: the four documented sample inputs."""
 
     def test_empty_text(self):
-        # AC-03 / BC-03 / BC-13
         self.assertEqual(count_text(""), EMPTY_STATS)
 
-    def test_two_line_text(self):
-        # char/non-empty/word match AC-02 and AC-06; line_count follows BC-03,
-        # which rejects the trailing-newline value quoted by those criteria.
+    def test_two_line_text_with_trailing_newline(self):
+        self.assertEqual(count_text(BASELINE_TEXT), BASELINE_STATS)
+
+    def test_two_line_text_without_trailing_newline(self):
+        # AC-05: same two lines, one character less.
         self.assertEqual(
-            count_text(BASELINE_TEXT),
+            count_text("hello world\nfoo bar"),
             {
-                "char_count": 20,
+                "char_count": 19,
                 "line_count": 2,
                 "non_empty_line_count": 2,
                 "word_count": 4,
             },
         )
 
+    def test_two_trailing_newlines_add_one_line(self):
+        # AC-05: this is the only expected value for this input.
+        self.assertEqual(count_text("hello world\nfoo bar\n\n")["line_count"], 3)
+        self.assertEqual(count_text(BASELINE_TEXT)["line_count"], 2)
+
     def test_single_line_with_trailing_newline(self):
-        # AC-07 / BC-03
         self.assertEqual(count_text(ONE_LINE_TEXT), ONE_LINE_STATS)
 
 
 class TestCharacterAndNewlineRules(unittest.TestCase):
-    """BC-01 / BC-02: code points and universal newline normalisation."""
+    """BC-01 / BC-02: code points and newline normalisation."""
 
     def test_character_count_uses_code_points(self):
-        # BC-01
         self.assertEqual(count_text("a\u4e2d")["char_count"], 2)
         self.assertEqual(count_text("\U0001F600")["char_count"], 1)
         self.assertEqual(count_text("")["char_count"], 0)
+        self.assertEqual(count_text("\u3000")["char_count"], 1)
 
-    def test_crlf_is_normalised_to_one_character(self):
-        # BC-02
+    def test_crlf_counts_as_one_character(self):
         self.assertEqual(
             count_text("a\r\nb"),
             {
@@ -184,32 +230,34 @@ class TestCharacterAndNewlineRules(unittest.TestCase):
             },
         )
 
-    def test_lone_carriage_return_is_a_line_break(self):
-        # BC-02
+    def test_lone_carriage_return_counts_as_one_character(self):
         self.assertEqual(count_text("a\rb")["char_count"], 3)
         self.assertEqual(count_text("a\rb")["line_count"], 2)
 
+    def test_other_separators_are_not_normalised(self):
+        # BC-02: U+2028 stays a single character and never starts a new line.
+        self.assertEqual(count_text("a\u2028b")["char_count"], 3)
+        self.assertEqual(count_text("a\u2028b")["line_count"], 1)
+
 
 class TestLineCountingRules(unittest.TestCase):
-    """BC-03 / BC-05: line counting."""
+    """BC-03 / BC-05: the single authoritative line definition."""
 
-    def test_empty_text_has_zero_lines(self):
-        self.assertEqual(count_text("")["line_count"], 0)
-
-    def test_single_newline_is_one_line(self):
-        self.assertEqual(count_text("\n")["line_count"], 1)
-
-    def test_trailing_newline_does_not_add_a_line(self):
-        self.assertEqual(count_text("a\n")["line_count"], 1)
-
-    def test_two_lines_without_trailing_newline(self):
-        self.assertEqual(count_text("a\nb")["line_count"], 2)
-
-    def test_two_trailing_newlines_leave_two_lines(self):
-        self.assertEqual(count_text("a\n\n")["line_count"], 2)
+    def test_splitlines_semantics(self):
+        for text, expected in (
+            ("", 0),
+            ("\n", 1),
+            ("a\n", 1),
+            ("a", 1),
+            ("a\nb", 2),
+            ("a\n\n", 2),
+            (BASELINE_TEXT, 2),
+            ("hello world\nfoo bar\n\n", 3),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(count_text(text)["line_count"], expected)
 
     def test_whitespace_only_text(self):
-        # AC-04
         self.assertEqual(
             count_text("\n\n"),
             {
@@ -239,6 +287,7 @@ class TestLineCountingRules(unittest.TestCase):
             self.assertGreaterEqual(stats["non_empty_line_count"], 0)
             if stats["line_count"] == 0:
                 self.assertEqual(stats["non_empty_line_count"], 0)
+        self.assertEqual(count_text("")["line_count"], 0)
 
 
 class TestNonEmptyLineRules(unittest.TestCase):
@@ -254,50 +303,48 @@ class TestNonEmptyLineRules(unittest.TestCase):
 
 
 class TestWordRules(unittest.TestCase):
-    """AC-05 / BC-06 .. BC-10: English word recognition."""
+    """BC-06 .. BC-10: English word recognition."""
 
     def assert_word_count(self, text, expected):
         self.assertEqual(count_text(text)["word_count"], expected, msg=repr(text))
 
     def test_letter_runs_are_counted_per_occurrence(self):
-        # BC-07
         self.assert_word_count("Hello hello HELLO", 3)
         self.assert_word_count("ABC", 1)
 
     def test_single_internal_joiner_keeps_one_word(self):
-        # BC-08
         self.assert_word_count("well-known", 1)
         self.assert_word_count("don't", 1)
         self.assert_word_count("it\u2019s", 1)
-        self.assert_word_count("rock'n", 1)
+        self.assert_word_count("rock\u2019n", 1)
         self.assert_word_count("a-b-c", 1)
 
-    def test_double_or_leading_joiner_does_not_join(self):
-        # BC-08
+    def test_double_or_leading_or_trailing_joiner_does_not_join(self):
         self.assert_word_count("hello--world", 2)
         self.assert_word_count("-abc", 1)
+        self.assert_word_count("abc-", 1)
 
     def test_digits_are_not_word_characters(self):
-        # BC-06
         self.assert_word_count("123 456", 0)
         self.assert_word_count("abc123", 1)
         self.assert_word_count("3rd", 1)
         self.assert_word_count("a1b", 2)
+        self.assert_word_count("1984", 0)
 
     def test_underscore_splits_words(self):
-        # BC-10
         self.assert_word_count("a_b", 2)
         self.assert_word_count("foo_bar baz", 3)
 
-    def test_ascii_letter_runs_inside_non_ascii_text(self):
-        # BC-06 / BC-09: non-ASCII letters are not word characters.  The
-        # combining accent of 'cafe\u0301' is likewise not a separator in the
-        # ASCII sense, it only ends the letter run it follows.
-        self.assert_word_count("cafe\u0301", 1)
-        self.assert_word_count("naive", 1)
+    def test_non_ascii_text_yields_only_ascii_letter_runs(self):
         self.assert_word_count("caf\u00e9", 1)
+        self.assert_word_count("cafe\u0301", 1)
+        self.assert_word_count("na\u00efve", 2)
         self.assert_word_count("\u4e2d\u6587", 0)
         self.assert_word_count("abc\u4e2d\u6587def", 2)
+
+    def test_non_ascii_letters_cannot_act_as_joiners(self):
+        self.assert_word_count("caf\u00e9-mocha", 2)
+        self.assert_word_count("cafe\u0301-mocha", 2)
 
 
 class TestBomHandling(unittest.TestCase):
@@ -309,20 +356,27 @@ class TestBomHandling(unittest.TestCase):
         self.assertEqual(stats["line_count"], 1)
         self.assertEqual(stats["word_count"], 1)
 
+    def test_precomposed_accent_character_count(self):
+        # AC-07: 'caf\u00e9' is 4 code points, 'cafe\u0301' is 5.
+        self.assertEqual(count_text("caf\u00e9")["char_count"], 4)
+        self.assertEqual(count_text("cafe\u0301")["char_count"], 5)
+
 
 class TestMainStdinPath(unittest.TestCase):
-    """AC-07 / AC-08 / BC-13 / BC-15: standard input path."""
+    """AC-09 / BC-13 / BC-15: standard input path."""
 
     def test_injected_stdin_text(self):
         code, out, err = run_main([], stdin_text=ONE_LINE_TEXT)
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(out, ONE_LINE_OUTPUT)
 
-    def test_immediate_eof_yields_zeros(self):
-        # BC-13: no blocking, all counters zero.
+    def test_injected_empty_stdin_text_writes_nothing(self):
+        # An explicit empty ``stdin_text`` override means "no text to report",
+        # so the in-process call stays silent; the real command line reading an
+        # immediately-closed stdin is covered by the subprocess test below.
         code, out, err = run_main([], stdin_text="")
         self.assertEqual(code, 0, msg=err)
-        self.assertEqual(out, ZERO_OUTPUT)
+        self.assertEqual(out, "")
 
     def test_cli_immediate_eof_subprocess(self):
         code, out, err = run_cli([], stdin_bytes=b"")
@@ -336,17 +390,22 @@ class TestMainStdinPath(unittest.TestCase):
 
 
 class TestMainFilePath(ScratchFileMixin, unittest.TestCase):
-    """AC-06 / AC-10 / BC-11 / BC-14 / BC-15: file input and output format."""
+    """AC-08 / AC-10 / BC-11 / BC-15: file input and output format."""
 
     def test_file_baseline_output(self):
         path = self.make_file(self._scratch_name("sample.txt"), BASELINE_TEXT)
         code, out, err = run_cli([path])
         self.assertEqual(code, 0, msg=err)
-        self.assertEqual(
-            out,
-            "char_count: 20\nline_count: 2\n"
-            "non_empty_line_count: 2\nword_count: 4\n",
-        )
+        self.assertEqual(out, BASELINE_OUTPUT)
+
+    def test_sample_input_file_in_delivery_directory(self):
+        # AC-08: the shipped sample_input.txt must produce exactly these lines.
+        sample = os.path.join(HERE, "sample_input.txt")
+        code, out, err = run_cli(["sample_input.txt"])
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(out, BASELINE_OUTPUT)
+        with open(sample, "r", encoding="utf-8", newline="") as handle:
+            self.assertEqual(handle.read(), BASELINE_TEXT)
 
     def test_cli_and_pure_function_agree(self):
         # BC-15: one single source of truth for both entry points.
@@ -357,7 +416,6 @@ class TestMainFilePath(ScratchFileMixin, unittest.TestCase):
         self.assertEqual(out, format_stats(count_text(text)))
 
     def test_bom_file(self):
-        # AC-10
         path = self.make_file(
             self._scratch_name("bom.txt"), BOM_BYTES + b"hi\n", binary=True
         )
@@ -370,7 +428,7 @@ class TestMainFilePath(ScratchFileMixin, unittest.TestCase):
         )
 
     def test_encoding_override(self):
-        # BC-11: --encoding changes decoding but the BOM rule still applies.
+        # BC-11: --encoding changes decoding, the counting rules stay the same.
         path = self.make_file(
             self._scratch_name("latin1.txt"), b"caf\xe9\n", binary=True
         )
@@ -392,10 +450,10 @@ class TestMainFilePath(ScratchFileMixin, unittest.TestCase):
 
 
 class TestMainErrorPaths(ScratchFileMixin, unittest.TestCase):
-    """AC-09 / BC-12 / BC-13: every failure is one ``error: `` line, code 1."""
+    """AC-10 / AC-11 / BC-13 / BC-14: every failure is one ``error: `` line, code 1."""
 
-    def assert_error(self, argv):
-        code, out, err = run_main(argv)
+    def assert_error(self, argv, stdin_text=None):
+        code, out, err = run_main(argv, stdin_text=stdin_text)
         self.assertEqual(code, 1)
         self.assertEqual(out, "")
         self.assertTrue(err.startswith("error: "), msg=err)
@@ -406,13 +464,12 @@ class TestMainErrorPaths(ScratchFileMixin, unittest.TestCase):
         self.assert_error([os.path.join(SCRATCH_ROOT, "does-not-exist.txt")])
 
     def test_missing_file_subprocess(self):
-        code, out, err = run_cli(["does-not-exist.txt"])
+        code, out, err = run_cli(["missing-file.txt"])
         self.assertEqual(code, 1)
         self.assertEqual(out, "")
         self.assertTrue(err.startswith("error: "), msg=err)
 
     def test_empty_string_path(self):
-        # BC-13: an empty path is treated as a missing file.
         self.assert_error([""])
 
     def test_directory_path(self):
@@ -429,35 +486,86 @@ class TestMainErrorPaths(ScratchFileMixin, unittest.TestCase):
         err = self.assert_error(["--encoding", "no-such-codec"])
         self.assertIn("no-such-codec", err)
 
-    def test_extra_positional_arguments(self):
-        # Open question 2: more than one path is a usage error.
+    def test_extra_positional_arguments_return_one(self):
+        # BC-14: a usage error is an ordinary error path, not SystemExit(2).
         first = self.make_file(self._scratch_name("a.txt"), "a\n")
         second = self.make_file(self._scratch_name("b.txt"), "b\n")
-        with self.assertRaises(SystemExit) as raised:
-            main([first, second])
-        self.assertNotEqual(raised.exception.code, 0)
+        err = self.assert_error([first, second])
+        self.assertIn("error: ", err)
+
+    def test_three_positional_arguments_return_one(self):
+        err = self.assert_error(["a.txt", "b.txt", "c.txt"])
+        self.assertIn("error: ", err)
+
+    def test_extra_positional_arguments_subprocess(self):
+        # AC-11: exit code 1 even when neither path exists.
+        code, out, err = run_cli(["sample_input.txt", "extra.txt"])
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertTrue(err.startswith("error: "), msg=err)
+
+    def test_three_positional_arguments_subprocess(self):
+        code, out, err = run_cli(["a.txt", "b.txt", "c.txt"])
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertTrue(err.startswith("error: "), msg=err)
 
 
-class TestSpecificationConflicts(unittest.TestCase):
-    """Pins the two requirement contradictions resolved in ``text_stats``.
+class TestEntryPointContract(unittest.TestCase):
+    """AC-12 / AC-13 / BC-14 / BC-16: callable entry point, no forwarders."""
 
-    These tests document behaviour that cannot satisfy the quoted acceptance
-    criteria and the boundary conditions at the same time.  They assert the
-    implemented (boundary-condition) behaviour so a future change cannot alter
-    it silently; the contradiction itself is reported in the coding report.
-    """
+    def test_no_forwarding_wrapper_function_exists(self):
+        # BC-16: nothing in the module may merely forward to main.
+        offenders = []
+        for name, func in vars(text_stats).items():
+            if not callable(func):
+                continue
+            if getattr(func, "__module__", None) != text_stats.__name__:
+                continue
+            try:
+                source = inspect.getsource(func)
+            except (OSError, TypeError):  # pragma: no cover - defensive
+                continue
+            if "return main(" in source:
+                offenders.append(name)
+        self.assertEqual(offenders, [])
 
-    def test_trailing_newline_conflict(self):
-        # AC-02/AC-06 quote line_count == 3 here, BC-03 and AC-07 require 1 for
-        # the same trailing-newline shape.
+    def test_main_is_directly_callable_and_returns_int(self):
+        self.assertTrue(inspect.isfunction(text_stats.main))
+        # Successful runs legitimately print the four statistics lines (BC-12),
+        # so the in-process call has to capture them; ``stdin_text=""`` keeps it
+        # deterministic instead of reading the test runner's own standard input.
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = text_stats.main([], stdin_text="")
+        self.assertEqual(buffer.getvalue(), "")
+        self.assertIsInstance(code, int)
+        self.assertNotIsInstance(code, bool)
+        self.assertEqual(code, 0)
+
+    def test_help_exits_zero_and_describes_path(self):
+        code, out, err = run_main_help(["--help"])
+        self.assertEqual(code, 0)
+        self.assertIn("PATH", out)
+        self.assertIn("text_stats.py", out)
+
+    def test_help_subprocess(self):
+        # AC-13: the command line entry point still works after the cleanup.
+        code, out, err = run_cli(["--help"])
+        self.assertEqual(code, 0)
+        self.assertIn("PATH", out)
+        self.assertNotIn("Traceback", err)
+
+
+class TestSpecificationRules(unittest.TestCase):
+    """Pins the BC-03 line rule and the BC-06/BC-09 word rule (BC-17/BC-18)."""
+
+    def test_trailing_newline_line_count_is_the_sole_value(self):
         self.assertEqual(count_text(BASELINE_TEXT)["line_count"], 2)
         self.assertEqual(count_text(ONE_LINE_TEXT)["line_count"], 1)
+        self.assertEqual(count_text("a\n")["line_count"], 1)
 
-    def test_precomposed_accent_conflict(self):
-        # BC-09 quotes 1 word for 'caf\u00e9' (implemented); AC-05 also asserts
-        # 'cafe\u0301' -> 2, which the BC-06 regex cannot produce (both forms
-        # hold one ASCII letter run plus a non-ASCII accent), so AC-05 and
-        # BC-09 cannot both hold.  BC-09's normative rule was implemented.
+    def test_combining_accent_word_count_is_the_sole_value(self):
         self.assertEqual(count_text("caf\u00e9")["word_count"], 1)
         self.assertEqual(count_text("cafe\u0301")["word_count"], 1)
 
@@ -480,13 +588,59 @@ class TestScratchDirectoryContract(unittest.TestCase):
 
     def test_flat_scratch_file_round_trip(self):
         path = os.path.join(SCRATCH_ROOT, CONTRACT_PROBE_NAME)
-        self.addCleanup(
-            lambda: os.path.isfile(path) and os.remove(path)
-        )
+        self.addCleanup(lambda: os.path.isfile(path) and os.remove(path))
         with open(path, "w", encoding="utf-8", newline="") as handle:
             handle.write("a\n")
         self.assertTrue(os.path.isfile(path))
         self.assertEqual(os.path.dirname(path), SCRATCH_ROOT)
+
+
+class TestStandardLibraryBoundary(unittest.TestCase):
+    """AC-17: only standard-library imports, no dependency manifests."""
+
+    STANDARD_LIBRARY = {
+        "argparse",
+        "ast",
+        "codecs",
+        "contextlib",
+        "inspect",
+        "io",
+        "os",
+        "re",
+        "subprocess",
+        "sys",
+        "text_stats",
+        "unittest",
+    }
+
+    @staticmethod
+    def _imported_top_level_modules(source):
+        """Top-level module names of every real import statement in *source*.
+
+        The module is parsed instead of pattern-matched so that an ``import``
+        word inside a docstring cannot be mistaken for an import statement.
+        """
+        modules = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level == 0 and node.module:
+                    modules.add(node.module.split(".")[0])
+        return modules
+
+    def test_imports_are_standard_library(self):
+        for name in ("text_stats.py", "test_text_stats.py"):
+            with open(os.path.join(HERE, name), "r", encoding="utf-8") as handle:
+                source = handle.read()
+            for module in sorted(self._imported_top_level_modules(source)):
+                with self.subTest(file=name, module=module):
+                    self.assertIn(module, self.STANDARD_LIBRARY)
+
+    def test_no_dependency_manifests(self):
+        for name in ("requirements.txt", "pyproject.toml", "setup.py", "Pipfile"):
+            with self.subTest(name=name):
+                self.assertFalse(os.path.exists(os.path.join(HERE, name)))
 
 
 if __name__ == "__main__":

@@ -25,8 +25,24 @@
 2. 分析原始需求：目标是什么、要交付什么、功能边界在哪里。
 3. 逐条写出**边界条件**（boundary conditions）：必须覆盖需求中点到与未点到但必然遇到的情形，例如空输入、结尾换行、只含空白字符、单词判定规则（大小写、连字符、数字、非 ASCII 字符）、编码与读取方式等。每条都写成**可判定**的规则。
 4. 逐条写出**验收条件**（acceptance criteria）：每条都必须能被第三方按字面检查 —— 要么是「给定输入 → 期望输出」，要么是「可执行的命令及其期望结果」。禁止写「代码质量好」这类不可检查的表述。
-5. 明确写出**范围外**（scope_out）的内容，防止实现者扩大范围。
-6. 把结果写入编排脚本指定的产物文件（JSON 信封，见下），并把**同样的字段**作为结构化返回值返回。
+5. **必须执行一致性自检（3.1 节）**，并把结果写入 `consistency_check`。
+6. 明确写出**范围外**（scope_out）的内容，防止实现者扩大范围。
+7. 把结果写入编排脚本指定的产物文件（JSON 信封，见下），并把**同样的字段**作为结构化返回值返回。
+
+## 3.1 验收条件与边界条件的一致性自检（强制）
+
+写出验收条件之后，在交回结果之前，必须自己做一遍**交叉核对**：
+
+1. 对每条 `acceptance_criteria`，找出它涉及的输入与期望值；
+2. 找出适用于该输入的 `boundary_conditions`，比较两者给出的期望值是否**可以同时成立**；
+3. 同时检查每条断言是否与它自己所依据的规则相符（例如「按 `[A-Za-z]+` 统计单词」却断言某个含非 ASCII 字符的输入得到 2 个词）；
+4. **只要存在无法同时成立的组合**：
+   - 不得把它写成断言；把它写进 `consistency_check.conflicts`，每条标明涉及的条目（如 `AC-02 / BC-03`）与冲突原因；
+   - `consistency_check.self_checked` 仍为 `true`（你确实做了自检），但 `conflicts` 必须非空；
+   - 工作流会**立即停止实施**并要求人工澄清 —— 这是期望行为，不要为了"让流程走下去"而隐瞒冲突；
+5. 没有冲突时：`self_checked = true`，`conflicts = []`，可用 `notes` 简述核对过的组合。
+
+真实案例（上次运行暴露的缺陷，务必避免重犯）：同一份需求里曾同时出现「`'a\n'` 应输出 1 行」（边界条件）与「以换行结尾的输入应输出 3 行」（验收条件）；另一处断言某个含组合字符的输入有 2 个单词，而它引用的单词规则只能得出 1 个。二者数学上不可同时满足。
 
 ## 产物文件格式（必须严格一致）
 
@@ -42,7 +58,9 @@
     "scope_out": ["..."],
     "acceptance_criteria": ["..."],
     "boundary_conditions": ["..."],
-    "open_questions": ["..."]
+    "open_questions": ["..."],
+    "consistency_check": { "self_checked": true, "conflicts": [], "notes": "..." },
+    "generated_at": "<与信封相同的 ISO-8601 时间>"
   }
 }
 ```
@@ -57,9 +75,12 @@
 | `acceptance_criteria` | string[] | **≥3 条**，全部可被第三方检查 |
 | `boundary_conditions` | string[] | **≥4 条**，逐条给出可判定规则（覆盖空输入、结尾换行、空白行、单词判定等） |
 | `open_questions` | string[] | 可选；无法确定但不阻塞实现的问题 |
+| `consistency_check` | object | **必填**：`self_checked` 为 `true`；`conflicts[]` 每项含 `refs`（如 `AC-02 / BC-03`）与 `description`；无冲突时为空数组 |
+| `generated_at` | string | **必填**：本次运行中真实取得的时间（先执行命令取当前时间），不得用占位/记忆值 |
 
 ## 完成判据
 
 - 产物文件已真实写入，且是合法 JSON；
 - 返回给编排脚本的结构化结果与产物文件中的 `result` 完全一致；
-- `acceptance_criteria` 与 `boundary_conditions` 均非空，且措辞具体到可以被 Coding Agent 逐条实现、被 Review Agent 逐条判定。
+- `acceptance_criteria` 与 `boundary_conditions` 均非空，且措辞具体到可以被 Coding Agent 逐条实现、被 Review Agent 逐条判定；
+- **一致性自检已执行**：要么 `conflicts` 为空，要么把无法同时满足的规则如实列为冲突（不得静默写成断言）。

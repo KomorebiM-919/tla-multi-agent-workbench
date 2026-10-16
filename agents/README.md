@@ -6,11 +6,12 @@
 
 | 文件 | 角色 | 职责 |
 | --- | --- | --- |
-| `requirement-agent.md` | Requirement Agent | 把自然语言需求整理为明确任务、验收条件与边界条件 |
+| `requirement-agent.md` | Requirement Agent | 把自然语言需求整理为明确任务、验收条件与边界条件，并对二者做一致性自检 |
 | `coding-agent.md` | Coding Agent | 按需求在指定交付目录实现代码与单元测试，并真实运行测试 |
-| `review-agent.md` | Review Agent | 在独立上下文中读取需求与真实代码，独立复跑测试，给出 APPROVED / CHANGES_REQUESTED |
+| `verifier-agent.md` | Verifier Agent | 独立复跑规范化测试命令，只回传原始输出、退出码与文件指纹（不审核、不修改文件） |
+| `review-agent.md` | Review Agent | 在独立上下文中读取需求与真实代码，独立复跑测试，逐条判定验收条件，给出 APPROVED / CHANGES_REQUESTED |
 
-五角色完整流水线中的 `discussion`（方案讨论）与 `testing`（测试）角色属 V0.1 扩展目标，尚未建立。
+五角色完整流水线中的 `discussion`（方案讨论）与 `testing`（测试）角色属 V0.1 扩展目标，尚未建立。Verifier Agent 不是"测试角色"的替代：它只提供外部独立验证的原始证据，判定逻辑仍由编排脚本持有。
 
 ## 运行契约（与 `workflows/three-agent-mvp.js` 的约定）
 

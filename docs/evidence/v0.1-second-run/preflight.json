@@ -1,0 +1,48 @@
+{
+    "run_id":  "v0.1-second-run",
+    "agent":  "Verifier Agent",
+    "stage":  "preflight",
+    "generated_at":  "2026-10-16T19:49:59.5150373+08:00",
+    "result":  {
+                   "mode":  "preflight",
+                   "repo_root":  "<repo>",
+                   "evidence_dir":  "docs/evidence/v0.1-second-run",
+                   "evidence_dir_state":  "missing",
+                   "evidence_dir_entries":  [
+
+                                            ],
+                   "prompt_files":  [
+                                        {
+                                            "path":  "agents/requirement-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/coding-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/review-agent.md",
+                                            "exists":  true
+                                        }
+                                    ],
+                   "target_dir":  "examples/text-stats",
+                   "target_dir_state":  "present",
+                   "target_dir_resolved":  "<repo>\\examples\\text-stats",
+                   "resolved_paths":  [
+                                          "<repo>",
+                                          "<repo>\\docs\\evidence\\v0.1-second-run",
+                                          "<repo>\\docs\\evidence",
+                                          "<repo>\\examples\\text-stats",
+                                          "<repo>\\agents\\verifier-agent.md"
+                                      ],
+                   "problems":  [
+                                    "evidence dir docs/evidence/v0.1-second-run did not exist before this run (state=missing); writing the preflight artifact created docs/evidence/v0.1-second-run/, so no historical evidence was overwritten. Prior run evidence lives in the separate dir docs/evidence/v0.1-first-run (9 entries) and was not touched.",
+                                    "Evidence dir missing means the orchestrator must create it; run_id v0.1-second-run is referenced only in workflows/three-agent-mvp.js:29-30 (doc comment), no stale artifact with this run_id exists anywhere in the repo.",
+                                    "examples/text-stats/.test-scratch/ contains 11 stale temp entries (tmp5yuml3ir, tmpd5umizfc, tmpetnaz6yp, tmph71ek5k4, tmpjagfdglo, tmpl8ymy245, tmpmwydd9c8, tmpo0q7hkbr, tmptlafhlu7, tmptwz6gew6, tmpzjkypr0o, tmp_011ki5g) left over from the first run whose ACLs deny even read access (Get-ChildItem raised UnauthorizedAccessException); this pre-existing state is inside the delivery dir and may pollute later test runs.",
+                                    "Git worktree is dirty on branch feat/v0.1-three-agent-mvp (M agents/README.md, M agents/coding-agent.md, M agents/requirement-agent.md, M agents/review-agent.md, M workflows/three-agent-mvp.js, ?? agents/verifier-agent.md, ?? tests/workflow-logic.test.mjs); no path resolved outside the repository root.",
+                                    "This agent is a delegated subagent with read-only-plus-artifact scope: the artifact docs/evidence/v0.1-second-run/preflight.json is the only file written, plus the directory created to hold it."
+                                ],
+                   "generated_at":  "2026-10-16T19:49:59.5150373+08:00",
+                   "notes":  "Preflight is read-only apart from the mandated preflight.json artifact. No credentials read, no network access, no git write operations. Timestamp obtained in-run via PowerShell Get-Date -Format o."
+               }
+}

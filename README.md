@@ -38,6 +38,15 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   - 一次真实运行的完整证据链 `docs/evidence/v0.1-first-run/`：需求 → 编码 → 审核 → **修订 → 复审**，共 5 次子代理执行；首轮审核 `CHANGES_REQUESTED`，复审 `APPROVED`
   - 演示项目 `examples/text-stats/`：仅标准库的文本统计工具，44 个单元测试全绿；编排层另有 **45 项独立复核**全过
 
+- [x] 阶段四：**按首次代码审核意见加固工作流，并完成第二次真实运行**（分支 `feat/v0.1-three-agent-mvp`，2026-10-16）：
+
+  - 成功判定不再只看 Review 结论：必须同时满足「编码自述测试通过 ∧ Verifier 独立复跑通过 ∧ Review `APPROVED` 且其自测通过 ∧ 验收条件全覆盖且逐条满足 ∧ 需求一致性自检无冲突」；自述结果与独立验证结果分别记录并比对，矛盾即判定不通过
+  - 新增两个真实子代理角色：`agents/verifier-agent.md`（`preflight` 只读预检 / `verify` 独立复跑），工作流由三角色变为**五步子代理编排**
+  - 参数校验与证据保护：`runId`、`evidenceDir`（必须在 `docs/evidence/` 下且末段等于 `runId`）、目标目录与文件名（拒绝绝对路径与 `..` 穿越）、测试命令白名单、`maxCodingAttempts`（1–5 整数）、时间戳（拒绝占位时间）；**校验失败不启动任何子代理**；已存在的证据目录一律拒绝，绝不覆盖历史归档
+  - Requirement Agent 增加**验收条件与边界条件的一致性自检**，发现冲突即停止而非让 Coding Agent 自行选口径
+  - 编排逻辑回归测试 `tests/workflow-logic.test.mjs`：用 `node:vm` 装载真实脚本 + 模拟子代理返回值，覆盖 **31 个场景**（正常、各类失败、非法参数、修订循环、证据保护）
+  - 第二次真实运行证据 `docs/evidence/v0.1-second-run/`：5 次子代理执行、交付测试 **55 个全绿**、编排层 **266 项独立复核 0 失败**，并含从 DSH 原生会话日志提取的**脱敏执行事件**（会话标识、时间、turn/step、工具调用），可证明三个角色确实是独立子代理
+
 ### 规划中（未开始）
 
 - [ ] V0.1 剩余：**人工审批的安全拒绝测试**（受保护操作被拒绝后必须无实际副作用，是 V0.1 正式验收要求）
@@ -54,14 +63,14 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `.gitignore` | 忽略规则（密钥、凭据、缓存、虚拟环境等） |
 | `docs/ARCHITECTURE.md` | 技术架构与路线对比（DSH 原生 vs LangGraph） |
 | `docs/ROADMAP.md` | V0.1–V0.4 阶段计划与验收条件 |
-| `agents/` | 三个角色的职责说明与提示词（Requirement / Coding / Review） |
+| `agents/` | 角色职责说明与提示词（Requirement / Coding / Review / Verifier） |
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
 | `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |
-| `docs/evidence/` | 工作流运行证据归档（原始 Agent 产物、测试输出、独立复核） |
-| `tests/` | 项目级测试（当前仅有说明，见 `tests/README.md`） |
+| `docs/evidence/` | 工作流运行证据归档（原始 Agent 产物、DSH 原生事件、测试输出、独立复核） |
+| `tests/` | 编排逻辑回归测试与验证入口（见 `tests/README.md`） |
 | `src/`（规划中） | TLA 自有代码（如后续接入 LangGraph 时的编排层） |
 
-> `src/` 等标注「规划中」的目录尚不存在。`agents/`、`workflows/`、`examples/`、`docs/evidence/` 已随首个 MVP 创建。
+> `src/` 等标注「规划中」的目录尚不存在。`agents/`、`workflows/`、`examples/`、`docs/evidence/`、`tests/` 已随首个 MVP 及其加固轮创建。
 
 ## 安全约定
 
@@ -80,16 +89,22 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 ### 运行三 Agent 工作流
 
 1. 打开本机已安装的 **DeepSeek Harness** 桌面应用，新建一个会话，把该会话的工作目录指向**本项目根目录**。
-2. 把 [`workflows/three-agent-mvp.js`](workflows/three-agent-mvp.js) 的脚本交给 DSH 的 **Workflow 工具**执行（`args` 中指定 `targetDir`，例如 `examples/text-stats`）。脚本按顺序调用 `agent()`，每次都是一个**真实 Subagent**：需求 → 编码 → 审核；审核判为 `CHANGES_REQUESTED` 时，把审核意见交回同一编码 Agent 修订（默认最多 2 轮）。
-3. 运行结束后，证据文件写入 `docs/evidence/<runId>/`：需求 JSON、编码报告、审核结论、测试输出。
+2. 把 [`workflows/three-agent-mvp.js`](workflows/three-agent-mvp.js) 的脚本交给 DSH 的 **Workflow 工具**执行。脚本按顺序调用 `agent()`，每次都是一个**真实 Subagent**：预检 Verifier → 需求 → 编码 → 验证 Verifier → 审核；审核判为 `CHANGES_REQUESTED` 时，把审核意见交回新的编码 Agent 修订（默认最多 2 轮）。`args` 至少要给**一个新的 `runId`** 与对应的 `evidenceDir`（例如 `v0.1-third-run` / `docs/evidence/v0.1-third-run`），`targetDir` 例如 `examples/text-stats`。
+3. 运行结束后，证据文件写入 `docs/evidence/<runId>/`：预检结果、需求 JSON、编码报告、独立验证输出、审核结论。
 
 参数与细节见 [`workflows/README.md`](workflows/README.md)。
 
-### 运行演示项目的测试与独立复核
+### 运行测试与独立复核
 
 ```powershell
+# 编排逻辑回归测试（模拟子代理返回值，31 个场景）
+node tests/workflow-logic.test.mjs
+
+# 演示项目的单元测试
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
-python -B docs/evidence/v0.1-first-run/orchestrator-verification.py
+
+# 编排层独立复核（直接验算需求中的边界条件）
+python -B docs/evidence/v0.1-second-run/orchestrator-verification.py
 ```
 
-一次真实运行的完整记录（含三个 Agent 的产物与审核结论）见 [`docs/evidence/v0.1-first-run/README.md`](docs/evidence/v0.1-first-run/README.md)。
+两次真实运行的完整记录（含各角色的产物、审核结论、DSH 原生执行事件与诚实记录）见 [`docs/evidence/v0.1-first-run/README.md`](docs/evidence/v0.1-first-run/README.md) 与 [`docs/evidence/v0.1-second-run/README.md`](docs/evidence/v0.1-second-run/README.md)。

@@ -28,7 +28,8 @@
 2. 在交付目录内实现：模块文件（纯函数接口 + 命令行入口）。纯函数接口供测试直接调用，命令行入口供人工使用。
 3. 在交付目录内编写单元测试（`unittest`，文件名为约定名）：覆盖正常路径，并且**每条 `boundary_conditions` 至少一个用例**。
 4. **实际运行**测试命令，记录真实退出码与输出节选。若失败，修复后重跑，直到通过；若确实无法通过，如实报告失败原因，不得伪装成功。
-5. 把结果写入产物文件（JSON 信封），并把**同样的字段**作为结构化返回值返回。
+5. 注意运行顺序：**必须在最后一次修改文件之后再运行测试**。你报告 `test_succeeded` / `test_exit_code` 之后，流水线里的 **Verifier Agent 会独立复跑同一条规范化命令**并回传原始输出；你自述的结果与它的原始输出必须一致，否则本轮判定为不通过（`INCONSISTENT_EVIDENCE`），必须重新修复并重跑。**不得为了让结果好看而在报告里改写测试输出。**
+6. 把结果写入产物文件（JSON 信封），并把**同样的字段**作为结构化返回值返回。
 
 ## 产物文件格式（必须严格一致）
 
@@ -47,7 +48,8 @@
     "test_exit_code": "0",
     "test_output_excerpt": "...",
     "deviations_from_requirement": ["..."],
-    "report_file": "<产物文件路径>"
+    "report_file": "<产物文件路径>",
+    "generated_at": "<与信封相同的 ISO-8601 时间>"
   }
 }
 ```
@@ -59,15 +61,17 @@
 | `files_created` | {path,purpose}[] | 你真实创建/修改的文件（相对仓库根目录的路径） |
 | `implementation_summary` | string | 实现了什么、关键判定规则如何落地 |
 | `acceptance_criteria_addressed` | string[] | 对应需求中的哪些验收条件 |
-| `test_command` | string | 你实际执行的完整命令 |
+| `test_command` | string | 你实际执行的完整命令（必须是编排脚本给出的规范化命令） |
 | `test_succeeded` | boolean | 真实结果 |
 | `test_exit_code` | string | 真实退出码（如 `"0"`） |
 | `test_output_excerpt` | string | 真实输出节选（保留退出码与用例统计行） |
 | `deviations_from_requirement` | string[] | 与需求的任何偏差；无则空数组 |
 | `report_file` | string | 产物文件路径 |
+| `generated_at` | string | **必填**：本次运行中真实取得的时间（先执行命令取当前时间），不得用占位/记忆值 |
 
 ## 完成判据
 
 - 交付目录中的代码与测试**真实存在**，且能通过规范化测试命令；
+- 自述的测试结论与 Verifier Agent 独立复跑的原始输出一致；
 - 产物文件已真实写入，内容是本次实现的真实记录；
 - 返回值与产物文件的 `result` 完全一致。
