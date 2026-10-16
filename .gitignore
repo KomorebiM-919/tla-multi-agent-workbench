@@ -108,5 +108,11 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 
+# ===== 运行期误写产物（保留现场，不提交）=====
+# run 6 的 Coding Agent 把报告按错误的相对路径拼接写到了交付目录之外的 examples/docs/...；
+# 权威副本是 docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json，
+# 这里只忽略工作区残留、不删除文件（现场记录，见该目录 README §7 第 6 条）。
+examples/docs/
+
 # ===== 系统文件 =====
 .DS_Store

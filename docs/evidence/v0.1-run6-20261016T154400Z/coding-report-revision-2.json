@@ -1,0 +1,40 @@
+{
+  "run_id": "v0.1-run6-20261016T154400Z",
+  "agent": "Coding Agent",
+  "stage": "coding",
+  "generated_at": "2026-10-16T23:56:33.867170+08:00",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "修订轮修复：把 test_ac05_line_and_non_empty_counts_come_from_one_split 的注释块（原第 203-209 行）从『AC-05 为 6 / 冲突已记入 requirement_conflicts』的陈旧说法改写为本轮口径（AC-05 为 5，BC-02 把 7 个原始码点归一化为 '  \\n \\n'，BC-08 计为 5 个码点，本轮 requirement_conflicts 为空数组，README.md 同为 5）；并把文件头第 3 行 'BC-01 .. BC-23' 与第 615 行 docstring 'BC-21, BC-22, BC-23 and AC-19…' 更正为 BC-24。断言体未改动，无测试被放宽或删除。"
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "修订轮修复：第 122 行与第 130 行的 'BC-01 至 BC-23' 更正为 'BC-01 至 BC-24'，与需求产物（BC-01 至 BC-24，BC-24 为连接符字符可辨认性）及测试实际覆盖一致。示例数值与判定表未改动。"
+      },
+      {
+        "path": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json",
+        "purpose": "本轮 Coding Agent 产物文件（JSON 信封），记录本轮修复内容与真实复跑的测试证据。"
+      }
+    ],
+    "implementation_summary": "本轮为上一轮 CHANGES_REQUESTED 的文档一致性修订，功能实现（examples/text-stats/text_stats.py）未改动，未放宽也未删除任何测试。修复内容共 6 处、全部属于文档/注释计数与陈旧说法：(1) examples/text-stats/test_text_stats.py 第 203-208 行 AC-05 测试的注释块：原名『Its char_count figure of 6 is unreachable … the conflict is reported in requirement_conflicts of the coding report rather than resolved here by weakening either rule』，与需求产物 AC-05=5 及本轮 report 的 requirement_conflicts 为空相矛盾；现改写为『AC-05 gives this input char_count 5, not 6 … BC-02 normalises \"  \\r\\n \\r\\n\" (7 raw code points) to \"  \\n \\n\" and BC-08 counts that as 5 code points … this round's requirement_conflicts is an empty array.  README.md carries the same 5.』，与 examples/text-stats/README.md:137-157 表述一致；断言 count_text(\"  \\r\\n \\r\\n\") == {\"char_count\": 5, \"line_count\": 2, \"non_empty_line_count\": 0, \"word_count\": 0} 原样保留。(2) examples/text-stats/test_text_stats.py:3 'BC-01 .. BC-23' → 'BC-01 .. BC-24'。(3) examples/text-stats/test_text_stats.py:615 docstring 'BC-21, BC-22, BC-23 and AC-19, AC-20, AC-21, AC-22.' → 'BC-21, BC-22, BC-23, BC-24 and AC-19, AC-20, AC-21, AC-22.'（BC-24 由 test_ac21_no_bare_u2019_literal_in_delivery_sources 与 test_ac21_u2019_regex_literal_names_its_code_point 实际覆盖）。(4)(5) examples/text-stats/README.md:122 与 README.md:130 'BC-01 至 BC-23' → 'BC-01 至 BC-24'。另复核 examples/text-stats/README.md:157 所述『此前记录在 docs/evidence/v0.1-run5-20261016T152321Z/coding-report.json 的 requirement_conflicts 已随本轮口径统一而消解，本轮 requirement_conflicts 为空数组』，该句描述的是历史事实且与本轮报告一致，保留不改。修复后以本轮口径脚本复扫交付目录：裸 U+2019 行数为 0（有 U+2019 的行必须同时含 \\u2019 转义或 U+2019 码点标注）。所有代码口径未变：count_text(text) 先剥一个前导 U+FEFF、再把 CRLF 与单独 CR 归一化为 LF、只按 LF 切分（line_count，末尾空片段不计）、对同一次切分逐行 strip() 计 non_empty_line_count、word_count 用 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*，char_count 用 len(归一化文本)；main(argv=None, stdin_text=None) 在 stdin_text 非 None 时只返回整数退出码且不写标准输出，命令行调用输出恰好 4 行 '<名称>: <整数>'，五类错误路径退出码 1 且标准错误以 'error: ' 开头，--help 退出码 0。",
+    "acceptance_criteria_addressed": [
+      "AC-05：CRLF 输入四项统计自洽 —— 断言仍为 {char_count 5, line_count 2, non_empty_line_count 0, word_count 0}；仅改写紧邻注释，使其不再声称 AC-05 为 6 或称冲突记入 requirement_conflicts，与 README.md:137-157 及本轮 requirement_conflicts 为空一致",
+      "AC-21：文档中的连接符字符可辨认 —— README.md 与 .py 文档/注释中描述连接符处不出现裸 U+2019，脚本复扫结果 0 处命中",
+      "AC-22：可复制示例与样例输入一致 —— 未改动任何示例数值；本次改动只涉及边界条件编号文字，不触及 README 中 20/2/2/4、12/1/1/2、0/0/0/0、5/3/3/3 等示例数值",
+      "AC-23：单元测试与纯函数接口 —— count_text 四键整数映射不变；规范化命令复跑 81 个用例全部通过、退出码 0；改动仅为注释与 docstring，测试未被放宽或删除",
+      "AC-19 / AC-20：仅标准库；无冗余转发函数、__main__ 守卫直接 sys.exit(main()) —— 本轮未改动实现，既有对应测试继续通过"
+    ],
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.143s\n\nOK\nEXITCODE=0",
+    "deviations_from_requirement": [
+      "无功能性偏差。本轮仅按上一轮 CHANGES_REQUESTED 修复文档/注释，未改动 examples/text-stats/text_stats.py 的任何实现逻辑，未改动任何断言值。"
+    ],
+    "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json",
+    "generated_at": "2026-10-16T23:56:33.867170+08:00",
+    "requirement_conflicts": []
+  }
+}
