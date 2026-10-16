@@ -1,0 +1,73 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+wheels/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.ipynb_checkpoints/
+
+# 虚拟环境（禁止提交，也禁止复制旧项目 venv 到本仓库）
+.venv/
+venv/
+env/
+ENV/
+
+# ===== Node.js =====
+node_modules/
+.pnpm-store/
+pnpm-debug.log*
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== 密钥与凭据（公开仓库，绝对禁止提交）=====
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.*
+credentials*.yaml
+.credentials*.yaml
+tokens.json
+*.token
+
+# ===== 日志与缓存 =====
+*.log
+logs/
+log/
+.cache/
+.tmp/
+tmp/
+
+# DSH 本地配置（若被复制进仓库，一律忽略）
+.dsh/
+.dshw-*
+
+# ===== 编辑器 / IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Windows =====
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ===== 系统文件 =====
+.DS_Store
