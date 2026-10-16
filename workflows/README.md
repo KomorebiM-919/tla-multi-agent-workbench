@@ -84,8 +84,15 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 `target_dir`、`target_dir_realpath`、`evidence_dir_realpath` 必须与本次配置逐项对应（⇒ `PATH_TARGET_MISMATCH`）；
 解算路径中出现指向仓库之外的链接组件 ⇒ `LINK_ESCAPE`；证据目录必须由 `tools/claim_evidence_dir.py` 本次排他认领成功
 （`evidence_dir_claimed: true`、`claim_created: true`、`claim_tool: "tools/claim_evidence_dir.py"`、`claim_exit_code: 0`、`owner_marker_path` 属于本次运行）⇒ 否则 `EVIDENCE_NOT_CLAIMED`。
+预检自报的 `evidence_dir_state`（它认领**之前**观察到的状态）必须与认领工具自报的 `evidence_dir_state_before` 完全一致，
+且后者只接受 `missing` / `empty`：两者不一致、或工具报告 `exists`（目录里已有内容）⇒ 同样是 `EVIDENCE_NOT_CLAIMED`
+——这条把"目录到底是不是空的"从代理的自述变成工具实测，认领之后再出现的 `.run-owner.json` 属于正常的"认领后"状态，不作为 `EVIDENCE_EXISTS` 判据。
 预检产物的 `problems` 数组非空 ⇒ `PREFLIGHT_PROBLEMS`（先由人处理，再以新 `runId` 重跑）：凡是代理认为"可能越出仓库、与 `runId` 冲突、缺失或不确定"的观察都必须写进 `problems`，写进去就会停跑；结构化字段仍必须填准。
 Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Windows 上不得用文本模式读文件，否则行尾转换会让哈希偏离）。
+
+**两个时钟分开**（复审后的收口）：`runStartedAt` 只与**启动时钟**（脚本开始执行时读到的当前时间）比较，用于确认"这确实是本次运行的起点"；
+每个 Agent 返回后脚本都**重新读取**当前时间，再与该阶段产物里的 `generated_at` 比较——这样"阶段时间戳晚于当前时间"是拿判定当刻的时钟判的，
+而不是拿启动时刻判的（否则一个跑了很久的运行会误判）。窗口判定仍以 `runStartedAt` 为锚点（默认 6 小时 + 60 秒偏差容差）。
 
 **证据保护**：若 `evidenceDir` 已存在（含指向 `v0.1-first-run` 这类历史归档的情形），脚本以 `EVIDENCE_EXISTS` 拒绝运行，绝不覆盖已有证据——每次运行必须使用新的 `runId`；新目录也必须先由预检调用认领工具成功创建 `.run-owner.json` 才会继续，而在预检拒绝（未认领 / 路径越界 / 已有认领）时认领工具**不写任何文件**。
 
@@ -140,7 +147,8 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 ## 相关
 
 - 角色提示词：`agents/`（含 `agents/verifier-agent.md`，说明 Verifier 只提供独立验证的原始证据，判定逻辑由本脚本持有）
-- 工作流逻辑的回归测试（模拟子代理返回值，不调用真实子代理）：`tests/workflow-logic.test.mjs`
+- 工作流逻辑的回归测试（模拟子代理返回值，不调用真实子代理）：`tests/workflow-logic.test.mjs`（夹具与可控时钟在 `tests/workflow-harness.mjs`）
+- 预检认领门禁的集成测试（真实调用认领工具，把它的 JSON 接入门禁）：`tests/preflight-claim-integration.test.mjs`
 - 证据目录排他认领工具（预检调用，`O_EXCL` 创建 `.run-owner.json`）：`tools/claim_evidence_dir.py`；其进程级测试：`tests/test_claim_evidence_dir.py`
 - 证据核查工具（都在 `docs/evidence/v0.1-second-run/`）：`cross-check-workflow-result.py`（返回值 ↔ 磁盘证据，逐次尝试核对指纹与 ID 集合；历史运行加 `--archived`）、`extract-native-events.mjs`（从 DSH 会话日志提取脱敏原生执行事件）、`make-review-manifest.py`（材料清单 + 逐文件 sha256 / git blob SHA-1）
 - 真实运行的完整记录：`docs/evidence/v0.1-first-run/`、`docs/evidence/v0.1-second-run/`，以及首个通过运行的 `docs/evidence/v0.1-run6-20261016T154400Z/`（另有被门禁拦下的 run 3/4/5，见 `docs/evidence/` 与 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`）

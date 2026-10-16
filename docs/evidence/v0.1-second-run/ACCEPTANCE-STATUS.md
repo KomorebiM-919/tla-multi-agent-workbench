@@ -174,3 +174,30 @@ run 6 是**第一个真实通过**的完整运行（两轮：首轮 Review 判 `
 - "人工审批的安全拒绝测试"（`docs/ROADMAP.md`）仍是 V0.1 的正式验收缺口，本轮未做。
 - 本轮**没有**重跑真实子代理：run 6 仍是唯一一次成功的真实重跑，其证据冻结为 e3c27c1 快照。
   **门禁通过 ≠ 最终验收通过**：本轮只能证明"上述 7 类异常不再能判为成功"，不能证明真实子代理在新门禁下跑通。
+
+## 9. 复审后的第三轮收口（本轮，未重跑真实子代理）
+
+背景：仓库所有者对 `b003651` 的审查材料包做了独立复核（75/75 场景、342 断言、11 项进程级认领测试、
+81 项交付测试全部复现，旧脚本 + 新测试的 24 个场景失败也已复现），本轮只收口复审指定的 3 项。
+
+| # | 复审要求 | 本轮处理 | 测试 |
+| --- | --- | --- | --- |
+| 1 | 启动时钟与阶段检查时钟分开；每次 Agent 返回后重新读取当前时间；补"时钟推进 120 秒"与"跨多个阶段的成功"测试，保留真正未来时间戳的拒绝测试 | `const startupNowMs = currentTimeMs();` 只用于 `validateRunConfig()` 的"运行起点"锚定；此后每个 Agent 返回后重新读时钟：`preflightNowMs` / `claimNowMs` / `requirementNowMs` / `codingNowMs` / `verifyNowMs` / `reviewNowMs`，逐个传给 `judgeTimestamp()`。文件头说明两个时钟的用途与原因（长运行的判定基准会过期） | 时钟推进 120 秒、每个阶段都用"当时的"时间戳、跨 Requirement→Coding→Verifier→Review 四个阶段仍 `OK`（旧代码会因判定基准过期误判为未来时间）；时钟推进 7 小时越出窗口 ⇒ `INVALID_TIMESTAMP`；阶段时间戳比判定当刻晚 120 秒 ⇒ `INVALID_TIMESTAMP`。全部用可控时钟，无真实等待 |
+| 2 | 预检明确消费认领工具的 `evidence_dir_state_before`，区分认领前后状态；补真实工具结果接入预检门禁的集成测试（首次认领通过、重复认领拒绝且已有证据字节不变、认领失败不写 `preflight.json`） | `PREFLIGHT_SCHEMA` 必填 `evidence_dir_state_before`（枚举 `missing` / `empty` / `exists`）；门禁要求它只接受 `missing` / `empty`，且必须与预检自报的 `evidence_dir_state` 一致（⇒ 否则 `EVIDENCE_NOT_CLAIMED`）；注释明确"认领成功后目录里的 `.run-owner.json` 是正常的认领后状态，不作为 `EVIDENCE_EXISTS` 判据"；`preflightPrompt` 要求认领失败（工具退出码非 0）时**不写任何文件**（尤其不写自己的产物文件，否则污染别的运行的证据），直接返回结构化结果让编排层以 `EVIDENCE_NOT_CLAIMED` 终止 | 新增 `tests/preflight-claim-integration.test.mjs`：**真实调用** `tools/claim_evidence_dir.py` 并把其 JSON 原样接入预检返回值（5 场景 / 48 断言）——首次认领 ⇒ 全流程 `OK` 且证据目录只有认领文件；重复认领（退出码 10）⇒ 拒绝、既有 `.run-owner.json` 逐字节不变、目录里没有 `preflight.json`；目录非空且无认领文件（退出码 11）⇒ 拒绝且原内容与哈希不变、不创建认领文件、不写任何文件；已存在但为空 ⇒ 可认领并放行；自报状态与工具回报不一致 ⇒ `EVIDENCE_NOT_CLAIMED`。逻辑回归另加 2 场景（`state_before=exists` ⇒ 拒绝；自报与工具不一致 ⇒ 拒绝） |
+| 3 | 修正文档中"旧脚本对新增异常全部返回 `ok:true`"的概括，区分误放行与"拒绝状态码不符合新契约" | 该过度概括出现在**未跟踪**的 `docs/review/b003651/README.md:3` 与 `:129`；为不改变已交付材料包的字节（其哈希已记录），本轮不在该目录内改写，而是在**新审查包**与本节给出精确分类 | 旧脚本（`e3c27c1`）+ 新测试：新场景中 **24 个返回 `ok:true`（真正的误放行）**，另有 **3 个虽被拒绝但状态码/原因不符合新契约**——`Coding test_succeeded=false` + 退出码 `0` ⇒ 旧 `INCONSISTENT_EVIDENCE`（新契约 `CODING_REPORT_INCONSISTENT`）；`2026-02-30` 这类非法日历时间 ⇒ 靠 6 小时窗口"偶然"拒绝（原因不是"日历时间非法"）；`runId` 与 `runStartedAt` 一起伪造成旧时间 ⇒ 旧 `INVALID_TIMESTAMP` 且已经启动过预检子代理（新契约在启动前即 `INVALID_ARGS`）。集成套件在旧脚本下 4/5 通过：认领前状态不一致那场景被拒绝，但走的是旧的"未完成认领"原因，说明 `evidence_dir_state_before` 当时确实未被消费 |
+
+本轮计数（全部离线，未调用真实子代理）：
+
+- 编排层逻辑回归 **81 场景 / 372 断言 / 0 失败**（`node tests/workflow-logic.test.mjs`，退出码 0）；
+  夹具与可控时钟抽到 `tests/workflow-harness.mjs`，由两个测试文件共享；
+- 预检认领集成测试 **5 场景 / 48 断言 / 0 失败**（`node tests/preflight-claim-integration.test.mjs`，退出码 0）；
+- 认领工具进程级测试 **11 用例 / 0 失败**（`python -m unittest discover -s tests -p "test_*.py"`，退出码 0）；
+- 交付项目测试 **81 用例 / 0 失败**（`python -m unittest discover -s examples/text-stats -p "test_*.py"`，退出码 0；交付代码本轮未改动）。
+
+遗留与口径（沿用第 8 节，本条未变）：
+
+- P-1 – P-6（`docs/REQUIREMENT-CALIBER.md` 第 3 节）仍未裁定，本轮不自行选边；
+- "人工审批的安全拒绝测试"仍是 V0.1 正式验收缺口，本轮未做；
+- `.test-scratch/.gitkeep` 的跟踪状态与 12 个不可读 `tmp*` 残留目录的说明见第 8 节；
+- 本轮**没有**重跑真实子代理：run 6 仍是唯一一次成功的真实重跑，其证据仍未变。
+  **门禁通过 ≠ 最终验收通过**：本轮只证明"时钟判定与认领前状态这两处不再能被绕过"。
