@@ -32,18 +32,57 @@ yarn-debug.log*
 yarn-error.log*
 
 # ===== 密钥与凭据（公开仓库，绝对禁止提交）=====
+# 说明：.gitignore 只是第一道防线，不是完整的安全措施。
+#   - 已被 Git 跟踪的文件不会因新增规则而停止跟踪（需 git rm --cached 并清理历史）；
+#   - `git add -f` 可强制添加被忽略的文件；
+#   - 命名未知的密钥文件不会被任何规则覆盖。
+# 因此 AGENTS.md 第 8 节「提交前检查清单」中的敏感信息扫描必须保留。
+# 规则不带前导斜杠，对仓库内任意子目录生效（不会误伤正常源码与测试样例）。
+
+# --- .env 及其变体（保留公开占位模板）---
 .env
 .env.*
 !.env.example
+!.env.sample
+!.env.template
+
+# --- 凭据文件（yaml / json 等常见扩展名）---
+credentials*.yaml
+.credentials*.yaml
+credentials*.json
+.credentials*.json
+secrets.*
+tokens.json
+*.token
+# 公开占位模板（仅占位符，仍须通过 AGENTS.md 第 8 节敏感信息扫描）
+!credentials.example.json
+!credentials.sample.json
+!credentials.template.json
+
+# --- 私钥 / 证书容器 ---
 *.key
 *.pem
 *.p12
 *.pfx
-secrets.*
-credentials*.yaml
-.credentials*.yaml
-tokens.json
-*.token
+*.jks
+*.keystore
+*.ppk
+*.p8
+
+# --- SSH 私钥（含常见命名变体：id_rsa、id_rsa_old、id_ed25519、id_ecdsa、id_dsa 等）---
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+id_xmss*
+!*.pub
+
+# --- 其他常见凭据存储 ---
+.netrc
+_netrc
+*.kdbx
+*.kwl
+.kwallet
 
 # ===== 日志与缓存 =====
 *.log
