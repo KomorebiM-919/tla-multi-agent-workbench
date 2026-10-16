@@ -16,23 +16,18 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   - `.gitignore`（密钥/凭据/缓存/虚拟环境等忽略规则）
   - `docs/ARCHITECTURE.md`（DSH 原生能力 vs LangGraph 路线对比与推荐）
   - `docs/ROADMAP.md`（本文件）
+- 阶段三：**首个三 Agent MVP 跑通**（分支 `feat/v0.1-three-agent-mvp`，2026-10-16）：
+  - `agents/`：Requirement / Coding / Review 三个角色的独立职责说明与提示词；
+  - `workflows/three-agent-mvp.js`：DSH Workflow 脚本，逐步调用真实 Subagent，由编排逻辑保证执行顺序与结果传递；
+  - 演示项目 `examples/text-stats/`：仅标准库的文本统计工具（纯函数 + CLI），44 个单元测试全绿；
+  - 证据归档 `docs/evidence/v0.1-first-run/`：5 次子代理执行，首轮 `CHANGES_REQUESTED` → 编码 Agent 修订 → 复审 `APPROVED`，含编排层 45 项独立复核记录；
+  - 本轮已满足验收条件 2（真实可核验的运行记录）与条件 4（敏感信息检查、`.gitignore` 实测）。
 
-### 待完成（规划）
+### 待完成
 
-**首个 MVP（V0.1 首次运行目标，2026-10-16 审核确认范围）**
-
-- 定义三个真实、独立的 Agent 角色与提示词（`agents/`）：
-  - `Requirement Agent`：整理需求与验收标准；
-  - `Coding Agent`：接收需求并实现小型 Python 功能；
-  - `Review Agent`：独立检查实现是否符合需求。
-- 基于 DSH 原生 Subagent / Workflow 实现首个 MVP 工作流：需求 → 编码 → 审核（执行顺序与结果传递由脚本编排逻辑保证；`phase` 仅用于进度展示，不构成执行依赖）。
-- 自动验证使用**普通测试脚本**（首个 MVP 不设独立测试 Agent）。
-- 关键节点接入人工审批（宿主平台审批机制），如：提交前审核、依赖安装确认。
-- 建立敏感信息提交前检查流程并实际执行。
-
-**后续 V0.1 扩展目标（不取消，但不是首次运行成功的前提）**
-
-- 增加方案讨论（discussion）与测试（testing）两个角色，构成五角色完整流水线：需求 → 讨论 → 编码 → 审核 → 测试。
+- **人工审批的安全拒绝测试**（V0.1 正式验收要求，对应验收条件 3）：完成一次被拒绝的受保护操作，证明拒绝后无实际副作用（工作区未变、无远端写入、未安装依赖、权限未变），并归档测试记录。
+- **人工审批的强制拦截覆盖面**：首个 MVP 已把审批的三层区分写入 `docs/ARCHITECTURE.md` §2.1，但「一句提示词即强制拦截」的假设不成立；强制拦截只能来自沙箱 + 审批策略 + 操作自身的审批点，需逐条验证（见 `docs/ARCHITECTURE.md` §7 未验证项 #11）。
+- **后续 V0.1 扩展目标（不取消，但不是首次运行成功的前提）**：增加方案讨论（discussion）与测试（testing）两个角色，构成五角色完整流水线：需求 → 讨论 → 编码 → 审核 → 测试。
 
 ### V0.1 验收条件
 

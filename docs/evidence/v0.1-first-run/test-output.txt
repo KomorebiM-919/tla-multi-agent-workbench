@@ -1,0 +1,75 @@
+command: python -m unittest discover -s examples/text-stats -p "test_*.py" -v
+exit_code: 0
+
+python.exe : test_empty_text (test_text_stats.TestBaseline.test_empty_text) ... ok
+所在位置 行:15 字符: 8
++ $out = & python -m unittest discover -s examples/text-stats -p "test_ ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (test_empty_text...ty_text) ... ok:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+test_single_line_with_trailing_newline (test_text_stats.TestBaseline.test_single_line_with_trailing_newline) ... ok
+test_two_line_text (test_text_stats.TestBaseline.test_two_line_text) ... ok
+test_pure_function_strips_bom (test_text_stats.TestBomHandling.test_pure_function_strips_bom) ... ok
+test_character_count_uses_code_points (test_text_stats.TestCharacterAndNewlineRules.test_character_count_uses_code_poin
+ts) ... ok
+test_crlf_is_normalised_to_one_character (test_text_stats.TestCharacterAndNewlineRules.test_crlf_is_normalised_to_one_c
+haracter) ... ok
+test_lone_carriage_return_is_a_line_break (test_text_stats.TestCharacterAndNewlineRules.test_lone_carriage_return_is_a_
+line_break) ... ok
+test_all_values_are_integers (test_text_stats.TestCountTextInterface.test_all_values_are_integers) ... ok
+test_returns_dict_with_exactly_the_four_keys (test_text_stats.TestCountTextInterface.test_returns_dict_with_exactly_the
+_four_keys) ... ok
+test_empty_text_has_zero_lines (test_text_stats.TestLineCountingRules.test_empty_text_has_zero_lines) ... ok
+test_non_empty_line_invariants (test_text_stats.TestLineCountingRules.test_non_empty_line_invariants) ... ok
+test_single_newline_is_one_line (test_text_stats.TestLineCountingRules.test_single_newline_is_one_line) ... ok
+test_trailing_newline_does_not_add_a_line (test_text_stats.TestLineCountingRules.test_trailing_newline_does_not_add_a_l
+ine) ... ok
+test_two_lines_without_trailing_newline (test_text_stats.TestLineCountingRules.test_two_lines_without_trailing_newline)
+ ... ok
+test_two_trailing_newlines_leave_two_lines (test_text_stats.TestLineCountingRules.test_two_trailing_newlines_leave_two_
+lines) ... ok
+test_whitespace_only_text (test_text_stats.TestLineCountingRules.test_whitespace_only_text) ... ok
+test_directory_path (test_text_stats.TestMainErrorPaths.test_directory_path) ... ok
+test_empty_string_path (test_text_stats.TestMainErrorPaths.test_empty_string_path) ... ok
+test_extra_positional_arguments (test_text_stats.TestMainErrorPaths.test_extra_positional_arguments) ... usage: text_st
+ats.py [-h] [--encoding ENCODING] [path]
+text_stats.py: error: unrecognized arguments: <repo>\examples\text-stats\.test-scratch\tes
+t_extra_positional_arguments-b.txt
+ok
+test_missing_file (test_text_stats.TestMainErrorPaths.test_missing_file) ... ok
+test_missing_file_subprocess (test_text_stats.TestMainErrorPaths.test_missing_file_subprocess) ... ok
+test_undecodable_bytes (test_text_stats.TestMainErrorPaths.test_undecodable_bytes) ... ok
+test_unknown_encoding (test_text_stats.TestMainErrorPaths.test_unknown_encoding) ... ok
+test_bom_file (test_text_stats.TestMainFilePath.test_bom_file) ... ok
+test_bom_is_stripped_even_with_explicit_encoding (test_text_stats.TestMainFilePath.test_bom_is_stripped_even_with_expli
+cit_encoding) ... ok
+test_cli_and_pure_function_agree (test_text_stats.TestMainFilePath.test_cli_and_pure_function_agree) ... ok
+test_encoding_override (test_text_stats.TestMainFilePath.test_encoding_override) ... ok
+test_file_baseline_output (test_text_stats.TestMainFilePath.test_file_baseline_output) ... ok
+test_cli_immediate_eof_subprocess (test_text_stats.TestMainStdinPath.test_cli_immediate_eof_subprocess) ... ok
+test_cli_stdin_pipe (test_text_stats.TestMainStdinPath.test_cli_stdin_pipe) ... ok
+test_immediate_eof_yields_zeros (test_text_stats.TestMainStdinPath.test_immediate_eof_yields_zeros) ... ok
+test_injected_stdin_text (test_text_stats.TestMainStdinPath.test_injected_stdin_text) ... ok
+test_ascii_whitespace (test_text_stats.TestNonEmptyLineRules.test_ascii_whitespace) ... ok
+test_unicode_whitespace (test_text_stats.TestNonEmptyLineRules.test_unicode_whitespace) ... ok
+test_flat_scratch_file_round_trip (test_text_stats.TestScratchDirectoryContract.test_flat_scratch_file_round_trip) ...
+ok
+test_scratch_root_exists (test_text_stats.TestScratchDirectoryContract.test_scratch_root_exists) ... ok
+test_precomposed_accent_conflict (test_text_stats.TestSpecificationConflicts.test_precomposed_accent_conflict) ... ok
+test_trailing_newline_conflict (test_text_stats.TestSpecificationConflicts.test_trailing_newline_conflict) ... ok
+test_ascii_letter_runs_inside_non_ascii_text (test_text_stats.TestWordRules.test_ascii_letter_runs_inside_non_ascii_tex
+t) ... ok
+test_digits_are_not_word_characters (test_text_stats.TestWordRules.test_digits_are_not_word_characters) ... ok
+test_double_or_leading_joiner_does_not_join (test_text_stats.TestWordRules.test_double_or_leading_joiner_does_not_join)
+ ... ok
+test_letter_runs_are_counted_per_occurrence (test_text_stats.TestWordRules.test_letter_runs_are_counted_per_occurrence)
+ ... ok
+test_single_internal_joiner_keeps_one_word (test_text_stats.TestWordRules.test_single_internal_joiner_keeps_one_word) .
+.. ok
+test_underscore_splits_words (test_text_stats.TestWordRules.test_underscore_splits_words) ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 0.268s
+
+OK

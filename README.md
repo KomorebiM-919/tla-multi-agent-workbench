@@ -31,10 +31,18 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   - 路线图 `docs/ROADMAP.md`（V0.1–V0.4）
   - 忽略规则 `.gitignore`
 
+- [x] 阶段三：**首个三 Agent MVP 跑通**（分支 `feat/v0.1-three-agent-mvp`，2026-10-16）：
+
+  - 三个真实、独立的角色提示词：`agents/requirement-agent.md`、`agents/coding-agent.md`、`agents/review-agent.md`
+  - 工作流脚本 `workflows/three-agent-mvp.js`：由 DSH **Workflow** 工具执行，逐步调用真实 **Subagent**，由脚本编排逻辑保证执行顺序与结果传递（`phase()` 仅用于进度展示，不构成执行依赖）
+  - 一次真实运行的完整证据链 `docs/evidence/v0.1-first-run/`：需求 → 编码 → 审核 → **修订 → 复审**，共 5 次子代理执行；首轮审核 `CHANGES_REQUESTED`，复审 `APPROVED`
+  - 演示项目 `examples/text-stats/`：仅标准库的文本统计工具，44 个单元测试全绿；编排层另有 **45 项独立复核**全过
+
 ### 规划中（未开始）
 
-- [ ] V0.1 剩余工作：首个 DSH 原生多 Agent 工作流 **MVP**（Requirement → Coding → Review 三个独立 Agent，允许用普通测试脚本自动验证；五角色完整流水线为 V0.1 扩展目标，不作为首次运行成功的前提）
-- [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、LangGraph 互补路线评估
+- [ ] V0.1 剩余：**人工审批的安全拒绝测试**（受保护操作被拒绝后必须无实际副作用，是 V0.1 正式验收要求）
+- [ ] V0.1 扩展目标：加入 discussion、testing 两个角色，构成五角色完整流水线（不是首次运行成功的前提）
+- [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、ChatGPT Plus/Codex 兼容性验证、LangGraph 互补路线评估
 - 详见 [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## 目录说明
@@ -46,12 +54,14 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `.gitignore` | 忽略规则（密钥、凭据、缓存、虚拟环境等） |
 | `docs/ARCHITECTURE.md` | 技术架构与路线对比（DSH 原生 vs LangGraph） |
 | `docs/ROADMAP.md` | V0.1–V0.4 阶段计划与验收条件 |
-| `agents/`（规划中） | 各角色 Agent 的定义与提示词 |
-| `workflows/`（规划中） | 工作流编排脚本（DSH Workflow） |
-| `tests/`（规划中） | 项目级测试 |
+| `agents/` | 三个角色的职责说明与提示词（Requirement / Coding / Review） |
+| `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
+| `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |
+| `docs/evidence/` | 工作流运行证据归档（原始 Agent 产物、测试输出、独立复核） |
+| `tests/` | 项目级测试（当前仅有说明，见 `tests/README.md`） |
 | `src/`（规划中） | TLA 自有代码（如后续接入 LangGraph 时的编排层） |
 
-> 标注「规划中」的目录尚不存在，将在对应阶段创建。
+> `src/` 等标注「规划中」的目录尚不存在。`agents/`、`workflows/`、`examples/`、`docs/evidence/` 已随首个 MVP 创建。
 
 ## 安全约定
 
@@ -65,4 +75,21 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ## 快速开始
 
-当前阶段仅有文档与骨架，无需安装依赖。后续阶段的运行方式将在对应版本中补充。
+演示项目与工作流**不需要安装任何第三方依赖**（仅 Python 标准库 + DSH 原生工具）。
+
+### 运行三 Agent 工作流
+
+1. 打开本机已安装的 **DeepSeek Harness** 桌面应用，新建一个会话，把该会话的工作目录指向**本项目根目录**。
+2. 把 [`workflows/three-agent-mvp.js`](workflows/three-agent-mvp.js) 的脚本交给 DSH 的 **Workflow 工具**执行（`args` 中指定 `targetDir`，例如 `examples/text-stats`）。脚本按顺序调用 `agent()`，每次都是一个**真实 Subagent**：需求 → 编码 → 审核；审核判为 `CHANGES_REQUESTED` 时，把审核意见交回同一编码 Agent 修订（默认最多 2 轮）。
+3. 运行结束后，证据文件写入 `docs/evidence/<runId>/`：需求 JSON、编码报告、审核结论、测试输出。
+
+参数与细节见 [`workflows/README.md`](workflows/README.md)。
+
+### 运行演示项目的测试与独立复核
+
+```powershell
+python -m unittest discover -s examples/text-stats -p "test_*.py" -v
+python -B docs/evidence/v0.1-first-run/orchestrator-verification.py
+```
+
+一次真实运行的完整记录（含三个 Agent 的产物与审核结论）见 [`docs/evidence/v0.1-first-run/README.md`](docs/evidence/v0.1-first-run/README.md)。
