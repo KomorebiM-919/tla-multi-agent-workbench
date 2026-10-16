@@ -75,7 +75,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 - 角色/工作流模板库：新项目可复用「需求-讨论-编码-审核-测试」流水线模板。
 - 知识沉淀：利用宿主平台记忆能力（Hindsight）沉淀项目决策与经验。
-- 更多模型接入评估：按 DSH 适配器能力扩展第三方模型。
+- 更多模型接入：按角色分配模型——DSH 内置 provider 目录已含 `openai`、`anthropic`、`zai`(GLM)、`moonshotai`(Kimi)、`openai-codex`、`minimax` 等（见 `docs/ARCHITECTURE.md` §2.1）；目录外端点走 "Custom model API" 手写 OpenAI 兼容路由（三协议：`openai-completions`/`openai-responses`/`anthropic-messages`）；评估外部 Agent 后端（`subagent-codex`、`subagent-claude-code`）的接入条件与代价。
 - 可视化与报告：流程执行摘要、审批记录、质量指标面板（如 DSH Web GUI 客户端插件）。
 
 ### 验收条件（初稿，实施前细化）
