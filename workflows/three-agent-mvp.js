@@ -15,21 +15,23 @@
  * 执行顺序与结果传递由本脚本的编排逻辑保证（顺序 await + 上一阶段结构化结果原样注入）；
  * `phase()` 只用于进度展示，不产生执行依赖（见 2026-10-16 架构审核意见四）。
  *
- * 成功判定（本脚本的计算逻辑，不依赖任何单个 Agent 的自述；见审核意见一）：
+ * 成功判定（本脚本的计算逻辑，不依赖任何单个 Agent 的自述；见审核意见一、复审意见四）：
  *   ok = true 当且仅当全部成立：
- *     A. 需求自检未报告冲突（consistency_check.conflicts 为空）；
- *     B. Coding Agent 自述测试通过（test_succeeded === true）；
- *     C. Verifier 回传的**原始输出**经本脚本解析为通过（退出码 0、`Ran N tests`、`OK` 标记、无 FAILED）；
- *     D. Review 结论为 APPROVED，且其**自己的**复跑结果也通过；
- *     E. Review 的 criteria_check 覆盖全部验收条件且逐条 satisfied === true。
+ *     A. 需求自检未报告冲突（consistency_check.conflicts 为空），且验收条件 ID 齐备、不重复；
+ *     B. 任何阶段（Coding / Verifier / Review）都没有报告「未解决的需求冲突」（requirement_conflicts 非空即失败）；
+ *     C. Coding Agent 自述测试通过（test_succeeded === true）；
+ *     D. Verifier 回传的**原始输出**经本脚本解析为通过（退出码 0、`Ran N tests`、`OK` 标记、无 FAILED）；
+ *     E. Review 结论为 APPROVED，且其**自己的**复跑结果也通过；
+ *     F. Review 的 criteria_check 与需求的验收 ID 集合**逐项对应**：无缺失、无重复、无未知 ID，且逐条 satisfied === true；
+ *     G. 验证前后（Verifier 与 Review 各自回传的）被验证文件 sha256 指纹完全一致。
  *   任一环节自述与外部证据矛盾 → 判定不通过（status = INCONSISTENT_EVIDENCE），进入修订流程，绝不放行。
  *
- * args 契约（全部可选，缺省即运行仓库内置的演示任务）：
+ * args 契约（runId 必填；未提供 task.requirement 时运行仓库内置的演示任务）：
  * {
- *   "runId": "v0.1-second-run",
- *   "evidenceDir": "docs/evidence/v0.1-second-run",
+ *   "runId": "v0.1-run-20261016T123456Z",   // 必须以 -<UTC 紧凑时间戳> 结尾，并与 runStartedAt 表示同一秒
+ *   "evidenceDir": "docs/evidence/v0.1-run-20261016T123456Z",
  *   "promptDir": "agents",
- *   "runStartedAt": "2026-10-16T19:40:00+08:00",
+ *   "runStartedAt": "2026-10-16T20:34:56+08:00",
  *   "task": {
  *     "requirement": "<自然语言需求>",
  *     "targetDir": "examples/text-stats",
@@ -48,6 +50,11 @@
 // 纯函数区：不调用 agent()，由 tests/workflow-logic.test.mjs 用模拟返回值覆盖。
 
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// runId 必须以 -<UTC 紧凑时间戳>（YYYYMMDDTHHMMSSZ）结尾：把运行标识绑定到真实运行时间，
+// 同一秒内不可能产生两个相同的 runId，从命名上消除"两次运行共用一个证据目录"的窗口。
+const RUN_ID_STAMP_PATTERN = /^(.*[A-Za-z0-9])-(\d{8}T\d{6}Z)$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
+const CRITERIA_ID_PATTERN = /^\s*([A-Za-z]{2,8}-[A-Za-z0-9]{1,4})/;
 const BASENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const PY_MODULE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*\.py$/;
 const PY_TEST_PATTERN = /^test_[A-Za-z0-9_-]*\.py$/;
@@ -61,6 +68,125 @@ function hasText(v) { return typeof v === 'string' && v.trim().length > 0; }
 function hasItems(v) { return Array.isArray(v) && v.length > 0; }
 function isInteger(v) { return typeof v === 'number' && Number.isInteger(v); }
 function asString(v) { return typeof v === 'string' ? v.trim() : ''; }
+
+/**
+ * 把 ISO-8601 时间转成 UTC 紧凑时间戳 `YYYYMMDDTHHMMSSZ`（用于把 runId 绑定到真实运行时间）。
+ * 运行环境不提供 Date 时返回 null（调用方降级为"只校验格式"）。
+ */
+function toUtcStamp(value) {
+  if (typeof Date !== 'function' || typeof Date.parse !== 'function') { return null; }
+  const ms = Date.parse(asString(value));
+  if (isNaN(ms)) { return null; }
+  const d = new Date(ms);
+  function pad(n, width) { return String(n).padStart(width, '0'); }
+  return pad(d.getUTCFullYear(), 4) + pad(d.getUTCMonth() + 1, 2) + pad(d.getUTCDate(), 2) +
+    'T' + pad(d.getUTCHours(), 2) + pad(d.getUTCMinutes(), 2) + pad(d.getUTCSeconds(), 2) + 'Z';
+}
+
+/** 反向操作：把 runId 里的紧凑 UTC 时间戳 `YYYYMMDDTHHMMSSZ` 还原成 ISO-8601；格式不符返回 null。 */
+function fromUtcStamp(stamp) {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(asString(stamp));
+  if (m === null) { return null; }
+  return m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + 'Z';
+}
+
+/** 绝对路径归一化：统一分隔符并去掉末尾斜杠（比较时另行小写化）。 */
+function normalizeAbsPath(value) {
+  return asString(value).replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/** childPath 是否等于 repoTarget 或位于其下（按归一化后的字符串前缀判断）。 */
+function pathUnderRepo(childPath, repoTarget) {
+  const child = normalizeAbsPath(childPath).toLowerCase();
+  const root = normalizeAbsPath(repoTarget).toLowerCase();
+  if (child === '' || root === '') { return false; }
+  return child === root || child.indexOf(root + '/') === 0;
+}
+
+/** 从 "AC-01 ..." 形式的条目里取验收 ID。 */
+function criterionId(text) {
+  const m = CRITERIA_ID_PATTERN.exec(asString(text));
+  return m === null ? null : m[1].toUpperCase();
+}
+
+/** 校验验收条件 ID 集合：每条都必须带 ID，且不得重复（复审意见四）。 */
+function parseCriteriaIds(items) {
+  const ids = [];
+  const errors = [];
+  const list = Array.isArray(items) ? items : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const id = criterionId(list[i]);
+    if (id === null) {
+      errors.push('第 ' + (i + 1) + ' 条验收条件缺少可识别的 ID（应以 AC-xx 开头）：' + asString(list[i]).slice(0, 60));
+      continue;
+    }
+    if (ids.indexOf(id) !== -1) { errors.push('验收条件 ID 重复：' + id); continue; }
+    ids.push(id);
+  }
+  return { ids: ids, errors: errors };
+}
+
+/** 收集任一阶段报告的「未解决需求冲突」（复审意见四：任何阶段报告冲突都不得成功）。 */
+function collectStageConflicts(codingReport, verification, review) {
+  const found = [];
+  function take(stage, container) {
+    if (!isObject(container)) { return; }
+    const list = container.requirement_conflicts;
+    if (!Array.isArray(list) || list.length === 0) { return; }
+    for (let i = 0; i < list.length; i += 1) {
+      const item = list[i];
+      found.push(stage + ': ' + (isObject(item)
+        ? (asString(item.refs) + ' ' + asString(item.description)).trim()
+        : String(item)));
+    }
+  }
+  take('Coding Agent', codingReport);
+  take('Verifier (verify)', verification);
+  take('Review Agent', review);
+  return found;
+}
+
+/**
+ * 比对「验证前 / 验证后」的文件指纹：文件集合必须完全一致、每个 sha256 必须是 64 位十六进制，
+ * 且同一路径的哈希必须相同（复审意见五：验证前后文件指纹）。
+ */
+function judgeFingerprints(verifyArtifacts, reviewArtifacts) {
+  const reasons = [];
+  function collect(list, label) {
+    const map = {};
+    if (!hasItems(list)) { reasons.push(label + ' 未回传被验证文件的哈希清单'); return map; }
+    for (let i = 0; i < list.length; i += 1) {
+      const item = list[i];
+      if (!isObject(item)) { reasons.push(label + ' 的哈希项不是对象'); continue; }
+      const path = normalizeAbsPath(item.path);
+      const sha = asString(item.sha256).toLowerCase();
+      if (path === '' || path.indexOf('..') !== -1 || path.charAt(0) === '/' || /^[A-Za-z]:/.test(path)) {
+        reasons.push(label + ' 的文件路径非法（必须是仓库内相对路径）：' + JSON.stringify(item.path));
+        continue;
+      }
+      if (!SHA256_PATTERN.test(sha)) {
+        reasons.push(label + ' 的 sha256 不是 64 位十六进制：' + JSON.stringify(item.sha256));
+        continue;
+      }
+      map[path.toLowerCase()] = sha;
+    }
+    return map;
+  }
+  const before = collect(verifyArtifacts, 'Verifier');
+  const after = collect(reviewArtifacts, 'Review');
+  const keysBefore = Object.keys(before).sort();
+  const keysAfter = Object.keys(after).sort();
+  if (keysBefore.join('|') !== keysAfter.join('|')) {
+    reasons.push('验证前后被哈希的文件集合不一致：' + JSON.stringify(keysBefore) + ' vs ' + JSON.stringify(keysAfter));
+  } else {
+    for (let i = 0; i < keysBefore.length; i += 1) {
+      if (before[keysBefore[i]] !== after[keysBefore[i]]) {
+        reasons.push('文件在验证前后指纹发生变化：' + keysBefore[i] + '（' + before[keysBefore[i]] + ' -> ' + after[keysBefore[i]] + '）');
+      }
+    }
+  }
+  return { ok: reasons.length === 0, reasons: reasons, files: keysBefore };
+}
 
 /**
  * 相对路径安全校验：拒绝绝对路径、盘符、`..`、反斜杠、空段与首尾空白。
@@ -115,8 +241,17 @@ function validateRunConfig(rawArgs) {
 
   // runId 必填，不提供默认值：默认值会指向已归档的运行目录，存在覆盖历史证据的风险。
   const runId = asString(cfg.runId);
+  let runIdStamp = null;
   if (!RUN_ID_PATTERN.test(runId)) {
     errors.push('runId 非法（只允许字母/数字/._-，长度 1-64，且不得以 . - _ 开头）：' + JSON.stringify(cfg.runId));
+  } else {
+    const stampMatch = RUN_ID_STAMP_PATTERN.exec(runId);
+    if (stampMatch === null) {
+      errors.push('runId 必须以 -<UTC 紧凑时间戳 YYYYMMDDTHHMMSSZ> 结尾（例如 v0.1-run-20261016T123456Z）：' +
+        JSON.stringify(runId));
+    } else {
+      runIdStamp = stampMatch[2];
+    }
   }
 
   const evidenceDirRaw = cfg.evidenceDir === undefined ? EVIDENCE_ROOT + runId : cfg.evidenceDir;
@@ -187,6 +322,19 @@ function validateRunConfig(rawArgs) {
     if (ISO_TIME_PATTERN.test(value)) { runStartedAt = value; }
     else { errors.push('runStartedAt 非法（必须是带时区的 ISO-8601 时间）：' + JSON.stringify(cfg.runStartedAt)); }
   }
+  // runStartedAt 省略时由 runId 里的 UTC 时间戳还原：时间窗门禁必须始终生效，
+  // 否则只要省略该参数就能让所有时间戳校验失效（fail-closed）。
+  if (runStartedAt === null && runIdStamp !== null) {
+    runStartedAt = fromUtcStamp(runIdStamp);
+  }
+  // runId 里的 UTC 时间戳必须与 runStartedAt 表示同一秒：运行标识不可事后编造或复用。
+  if (runIdStamp !== null && runStartedAt !== null) {
+    const expectedStamp = toUtcStamp(runStartedAt);
+    if (expectedStamp !== null && expectedStamp !== runIdStamp) {
+      errors.push('runId 的时间戳部分（' + runIdStamp + '）与 runStartedAt（' + runStartedAt +
+        ' → UTC ' + expectedStamp + '）不是同一秒');
+    }
+  }
 
   let requirementInput = null;
   if (task.requirement !== undefined) {
@@ -199,6 +347,7 @@ function validateRunConfig(rawArgs) {
 
   const config = {
     runId: runId,
+    runIdStamp: runIdStamp,
     evidenceDir: evidenceDir,
     promptDir: promptDir,
     requirementInput: requirementInput,
@@ -262,16 +411,27 @@ function judgeTestEvidence(evidence, canonicalCommand) {
   if (declaredMarker !== '' && !parsed.failedMarker && declaredMarker.toUpperCase() !== 'OK') {
     reasons.push('Verifier 自述 ' + declaredMarker + ' 与原始输出中的 OK 标记不一致');
   }
-  if (!hasItems(evidence.artifacts)) { reasons.push('Verifier 未回传被验证文件的哈希清单'); }
+  // 与自身比较：只用来校验"哈希清单本身可用"（非空、路径合法、sha256 为 64 位十六进制）。
+  const artifactShape = judgeFingerprints(evidence.artifacts, evidence.artifacts);
+  if (!artifactShape.ok) {
+    for (let i = 0; i < artifactShape.reasons.length; i += 1) {
+      reasons.push('哈希清单不可用：' + artifactShape.reasons[i]);
+    }
+  }
 
   return { passed: reasons.length === 0, reasons: reasons, parsed: parsed };
 }
 
-/** 判定 Review 结论与其自身证据、与需求的一致性（审核意见一.2 / 一.3）。 */
-function judgeReviewConsistency(review, expectedCriteria, canonicalCommand) {
+/**
+ * 判定 Review 结论与其自身证据、与需求的一致性（审核意见一.2 / 一.3，复审意见四）。
+ * expectedIds 来自需求工件，是验收条件的唯一权威 ID 集合：缺失 / 重复 / 未知一律不得通过。
+ */
+function judgeReviewConsistency(review, expectedIds, canonicalCommand) {
   const reasons = [];
+  const expected = (Array.isArray(expectedIds) ? expectedIds : []).map(function (id) { return String(id).toUpperCase(); });
   if (!isObject(review)) {
     return { approved: false, allSatisfied: false, coversAll: false, ownTestsPassed: false,
+      missingIds: expected, duplicateIds: [], unknownIds: [], reviewConflicts: 0,
       criteriaTotal: 0, criteriaSatisfied: 0, reasons: ['Review Agent 未返回结构化结论'] };
   }
   const verdict = asString(review.verdict);
@@ -279,29 +439,49 @@ function judgeReviewConsistency(review, expectedCriteria, canonicalCommand) {
   if (!approved) { reasons.push('Review 结论为 ' + (verdict === '' ? '(空)' : verdict)); }
 
   const checks = Array.isArray(review.criteria_check) ? review.criteria_check : [];
+  const seen = [];
+  const duplicateIds = [];
+  const unknownIds = [];
   let satisfied = 0;
   for (let i = 0; i < checks.length; i += 1) {
-    if (isObject(checks[i]) && checks[i].satisfied === true) { satisfied += 1; }
+    const item = checks[i];
+    if (!isObject(item)) { reasons.push('criteria_check 第 ' + (i + 1) + ' 项不是对象'); continue; }
+    const id = criterionId(item.criterion);
+    if (id === null) {
+      reasons.push('criteria_check 第 ' + (i + 1) + ' 项缺少可识别的验收 ID：' + asString(item.criterion).slice(0, 40));
+    } else if (seen.indexOf(id) !== -1) {
+      if (duplicateIds.indexOf(id) === -1) { duplicateIds.push(id); }
+    } else {
+      seen.push(id);
+      if (expected.indexOf(id) === -1) { unknownIds.push(id); }
+    }
+    if (item.satisfied === true) { satisfied += 1; }
   }
+  const missingIds = expected.filter(function (id) { return seen.indexOf(id) === -1; });
+  const coversAll = expected.length > 0 && missingIds.length === 0;
+  if (!coversAll) { reasons.push('criteria_check 未逐项覆盖需求的验收 ID，缺失：' + (missingIds.join(', ') || '(需求无 ID)')); }
+  if (duplicateIds.length > 0) { reasons.push('criteria_check 中出现重复的验收 ID：' + duplicateIds.join(', ')); }
+  if (unknownIds.length > 0) { reasons.push('criteria_check 中出现需求里不存在的验收 ID：' + unknownIds.join(', ')); }
+
   const allSatisfied = checks.length > 0 && satisfied === checks.length;
   if (!allSatisfied) {
     reasons.push('验收条件未全部满足：' + satisfied + '/' + checks.length +
       '（未满足项：' + checks.filter(function (c) { return !isObject(c) || c.satisfied !== true; })
-        .map(function (c) { return isObject(c) ? asString(c.criterion) : '(非法项)'; }).join(' | ') + '）');
-  }
-  const expected = isInteger(expectedCriteria) ? expectedCriteria : null;
-  const coversAll = expected !== null && checks.length >= expected;
-  if (!coversAll) {
-    reasons.push('criteria_check 覆盖不全：' + checks.length + ' 条，需求中有 ' + expected + ' 条验收条件');
+        .map(function (c) { return isObject(c) ? (criterionId(c.criterion) || asString(c.criterion).slice(0, 24)) : '(非法项)'; })
+        .join(' | ') + '）');
   }
 
   const ownCommand = asString(review.independent_test_command);
-  if (ownCommand !== canonicalCommand) {
-    reasons.push('Review 的独立复跑命令不是规范化命令：' + JSON.stringify(ownCommand));
-  }
+  const ownCommandMatches = ownCommand === canonicalCommand;
   const ownParsed = parseUnittestOutput(review.independent_test_output);
-  let ownTestsPassed = ownParsed.textPresent && ownParsed.ran !== null && !ownParsed.failedMarker && ownParsed.okMarker;
-  if (!ownTestsPassed) {
+  const ownParseOk = ownParsed.textPresent && ownParsed.ran !== null && !ownParsed.failedMarker && ownParsed.okMarker;
+  // 命令不一致必须是致命的：Review 必须原样执行规范化命令，否则"独立复跑"不能算数（审核发现的可绕过路径）。
+  let ownTestsPassed = ownParseOk && ownCommandMatches;
+  if (!ownCommandMatches) {
+    reasons.push('Review 的独立复跑命令不是规范化命令：' + JSON.stringify(ownCommand) +
+      '（必须原样执行：' + canonicalCommand + '）');
+  }
+  if (!ownParseOk) {
     reasons.push('Review 的独立复跑证据不成立（' + (ownParsed.failedMarker ? '输出含 ' + ownParsed.failedMarker :
       '缺少 Ran/OK 标记或原始输出为空') + '）');
   }
@@ -310,24 +490,41 @@ function judgeReviewConsistency(review, expectedCriteria, canonicalCommand) {
     reasons.push('Review 自述的复跑退出码非 0：' + JSON.stringify(review.independent_test_exit_code));
   }
 
+  const reviewConflicts = Array.isArray(review.requirement_conflicts) ? review.requirement_conflicts : [];
+  if (reviewConflicts.length > 0) {
+    reasons.push('Review 报告了未解决的需求冲突 ' + reviewConflicts.length + ' 条：不得判为通过，必须先由人工统一口径');
+  }
+
   return { approved: approved, allSatisfied: allSatisfied, coversAll: coversAll, ownTestsPassed: ownTestsPassed,
+    missingIds: missingIds, duplicateIds: duplicateIds, unknownIds: unknownIds, reviewConflicts: reviewConflicts.length,
     criteriaTotal: checks.length, criteriaSatisfied: satisfied, reasons: reasons };
 }
 
 /**
- * 单轮判定：只有"测试真实通过 + 审核结论为通过且其证据一致"才算通过。
- * 返回 { ok, status, reasons, selfReportVsVerified }。
+ * 单轮判定：只有"测试真实通过 + 审核结论为通过且其证据一致 + 无未解决需求冲突 + 指纹一致"才算通过。
+ * 返回 { ok, status, reasons, reviewEval, verified, fingerprints, stageConflicts, selfReportVsVerified }。
  */
-function judgeAttempt(codingReport, verification, review, expectedCriteria, canonicalCommand, codingOutputValid) {
+function judgeAttempt(codingReport, verification, review, expectedIds, canonicalCommand, codingOutputValid, verificationVerdict) {
   const reasons = [];
   let status = 'OK';
 
-  const verified = judgeTestEvidence(verification, canonicalCommand);
+  // 复用调用方已算好的验证判定（含 Verifier 时间窗检查）；没有传入时才自行计算，
+  // 否则时间窗门禁会变成死代码（审核发现的缺陷：编排出题时算过、判定时又丢掉了）。
+  const verified = isObject(verificationVerdict) ? verificationVerdict : judgeTestEvidence(verification, canonicalCommand);
   if (!verified.passed) { reasons.push('外部独立验证未通过：' + verified.reasons.join('；')); }
 
-  const reviewEval = judgeReviewConsistency(review, expectedCriteria, canonicalCommand);
+  const reviewEval = judgeReviewConsistency(review, expectedIds, canonicalCommand);
   if (!reviewEval.approved || !reviewEval.allSatisfied || !reviewEval.coversAll || !reviewEval.ownTestsPassed) {
     reasons.push('审核结论不可用：' + reviewEval.reasons.join('；'));
+  }
+
+  const fingerprints = judgeFingerprints(isObject(verification) ? verification.artifacts : null,
+    isObject(review) ? review.artifacts_after : null);
+  if (!fingerprints.ok) { reasons.push('文件指纹检查未通过：' + fingerprints.reasons.join('；')); }
+
+  const stageConflicts = collectStageConflicts(codingReport, verification, review);
+  if (stageConflicts.length > 0) {
+    reasons.push('有阶段报告了未解决的需求冲突：' + stageConflicts.join(' | '));
   }
 
   const codingExit = isObject(codingReport) ? asString(codingReport.test_exit_code) : '';
@@ -339,7 +536,15 @@ function judgeAttempt(codingReport, verification, review, expectedCriteria, cano
     agreement: (isObject(codingReport) ? codingReport.test_succeeded === true : false) === verified.passed
   };
 
-  if (!codingOutputValid) {
+  // 优先级说明：只要任一阶段报告了未解决的需求冲突，状态就必须是该冲突（而不是别的原因，
+  // 例如 Coding Agent 未返回可用报告）——否则冲突会被次要原因掩盖，违背"冲突即硬失败"的语义。
+  if (stageConflicts.length > 0) {
+    status = 'STAGE_REPORTS_REQUIREMENT_CONFLICT';
+    reasons.push('任何阶段报告未解决的需求冲突时都不得判定为成功：必须先由人工统一口径，再以全新 runId 重跑');
+  } else if (verified.timestampOk === false) {
+    status = 'INVALID_TIMESTAMP';
+    reasons.push('Verifier 证据的时间戳不在运行窗口内：疑似占位时间，验证结果不予采信');
+  } else if (!codingOutputValid) {
     status = 'CODING_OUTPUT_INVALID';
     reasons.push('Coding Agent 未返回可用的实现报告（files_created 缺失或子代理失败）');
   } else if (!selfReportVsVerified.agreement) {
@@ -349,41 +554,59 @@ function judgeAttempt(codingReport, verification, review, expectedCriteria, cano
       '）与外部独立验证（' + (verified.passed ? '通过' : '未通过') + '，exit=' +
       JSON.stringify(selfReportVsVerified.verification_exit_code) + '）矛盾：自述不能当作验证结果');
   } else if (!verified.passed) {
+    // 走到这里时自述与独立验证已一致，因此这里必然也是"Coding 自述失败"：
+    // 曾另设 CODING_SELF_REPORTED_FAILURE 分支，但它永远不可达（自述失败而验证通过会先被 INCONSISTENT_EVIDENCE 拦下），已删除。
     status = 'TEST_NOT_VERIFIED';
-  } else if (isObject(codingReport) && codingReport.test_succeeded !== true) {
-    status = 'CODING_SELF_REPORTED_FAILURE';
-    reasons.push('Coding Agent 自述测试未通过（test_succeeded=' + JSON.stringify(codingReport.test_succeeded) + '）');
+    reasons.push('独立复核未通过（Coding 自述与复核结论一致地判为失败）：测试结果不予采信');
   } else if (!reviewEval.ownTestsPassed) {
     status = 'INCONSISTENT_REVIEW';
+  } else if (!fingerprints.ok) {
+    status = 'ARTIFACT_FINGERPRINT_MISMATCH';
   } else if (!reviewEval.approved) {
     status = 'REVIEW_NOT_APPROVED';
   } else if (!reviewEval.allSatisfied) {
     status = 'CRITERIA_NOT_SATISFIED';
+  } else if (reviewEval.duplicateIds.length > 0) {
+    status = 'CRITERIA_CHECK_DUPLICATE_IDS';
+  } else if (reviewEval.unknownIds.length > 0) {
+    status = 'CRITERIA_CHECK_UNKNOWN_IDS';
   } else if (!reviewEval.coversAll) {
     status = 'CRITERIA_CHECK_INCOMPLETE';
   }
 
   return { ok: status === 'OK', status: status, reasons: reasons, reviewEval: reviewEval,
-    verified: verified, selfReportVsVerified: selfReportVsVerified };
+    verified: verified, fingerprints: fingerprints, stageConflicts: stageConflicts,
+    selfReportVsVerified: selfReportVsVerified };
 }
 
 /** 需求自检结果：出现冲突就必须停止，不得让 Coding Agent 自选一套解释（审核意见三）。 */
 function judgeRequirementConsistency(requirement) {
-  if (!isObject(requirement)) { return { ok: false, conflicts: ['Requirement Agent 未返回结构化需求'] }; }
+  if (!isObject(requirement)) {
+    return { ok: false, conflicts: ['Requirement Agent 未返回结构化需求'], idErrors: [], criteriaIds: [] };
+  }
+  const idInfo = parseCriteriaIds(requirement.acceptance_criteria);
+  if (idInfo.errors.length > 0) {
+    return { ok: false, conflicts: [], idErrors: idInfo.errors, criteriaIds: idInfo.ids };
+  }
   const check = requirement.consistency_check;
   if (!isObject(check) || check.self_checked !== true) {
-    return { ok: false, conflicts: ['Requirement Agent 未完成验收条件与边界条件的一致性自检（consistency_check.self_checked != true）'] };
+    return { ok: false, criteriaIds: idInfo.ids, idErrors: [],
+      conflicts: ['Requirement Agent 未完成验收条件与边界条件的一致性自检（consistency_check.self_checked != true）'] };
   }
   const conflicts = Array.isArray(check.conflicts) ? check.conflicts : [];
   if (conflicts.length > 0) {
-    return { ok: false, conflicts: conflicts.map(function (c) {
+    return { ok: false, criteriaIds: idInfo.ids, idErrors: [], conflicts: conflicts.map(function (c) {
       return isObject(c) ? (asString(c.refs) + ' ' + asString(c.description)).trim() : String(c);
     }) };
   }
-  return { ok: true, conflicts: [] };
+  return { ok: true, conflicts: [], idErrors: [], criteriaIds: idInfo.ids };
 }
 
 /** 时间戳真实性：必须是 ISO-8601 且在运行起始时间窗口内（防止占位时间冒充真实记录）。 */
+const TIMESTAMP_WINDOW_HOURS = 6;
+const TIMESTAMP_CLOCK_SKEW_MS = 60000;
+const MS_PER_HOUR = 3600000;
+
 function judgeTimestamp(value, runStartedAt, windowHours) {
   const text = asString(value);
   if (!ISO_TIME_PATTERN.test(text)) { return { ok: false, reason: '时间戳不是带时区的 ISO-8601：' + JSON.stringify(value) }; }
@@ -393,9 +616,9 @@ function judgeTimestamp(value, runStartedAt, windowHours) {
   const started = parse(runStartedAt);
   const stamp = parse(text);
   if (isNaN(started) || isNaN(stamp)) { return { ok: true, reason: '' }; }
-  const windowMs = (isInteger(windowHours) ? windowHours : 6) * 3600 * 1000;
-  if (stamp < started - 60000 || stamp > started + windowMs) {
-    return { ok: false, reason: '时间戳 ' + text + ' 不在运行窗口内（起始 ' + runStartedAt + '，窗口 ' + (windowMs / 3600000) + ' 小时）：疑似占位时间' };
+  const windowMs = (isInteger(windowHours) ? windowHours : TIMESTAMP_WINDOW_HOURS) * MS_PER_HOUR;
+  if (stamp < started - TIMESTAMP_CLOCK_SKEW_MS || stamp > started + windowMs) {
+    return { ok: false, reason: '时间戳 ' + text + ' 不在运行窗口内（起始 ' + runStartedAt + '，窗口 ' + (windowMs / MS_PER_HOUR) + ' 小时）：疑似占位时间' };
   }
   return { ok: true, reason: '' };
 }
@@ -414,11 +637,18 @@ function failure(status, error, extra) {
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['repo_root', 'evidence_dir_state', 'prompt_files', 'target_dir', 'generated_at'],
+  required: ['repo_root', 'repo_root_realpath', 'evidence_dir_state', 'evidence_dir_realpath', 'evidence_dir_claimed',
+    'owner_marker_path', 'link_components', 'prompt_files', 'target_dir', 'target_dir_state', 'target_dir_realpath',
+    'resolved_paths', 'generated_at'],
   properties: {
     repo_root: { type: 'string' },
+    repo_root_realpath: { type: 'string' },
     evidence_dir_state: { type: 'string', enum: ['missing', 'empty', 'exists'] },
     evidence_dir_entries: { type: 'array', items: { type: 'string' } },
+    evidence_dir_realpath: { type: 'string' },
+    evidence_dir_claimed: { type: 'boolean' },
+    owner_marker_path: { type: 'string' },
+    link_components: { type: 'array', items: { type: 'string' } },
     prompt_files: {
       type: 'array',
       items: {
@@ -430,6 +660,7 @@ const PREFLIGHT_SCHEMA = {
     },
     target_dir: { type: 'string' },
     target_dir_state: { type: 'string', enum: ['present', 'missing'] },
+    target_dir_realpath: { type: 'string' },
     resolved_paths: { type: 'array', items: { type: 'string' } },
     problems: { type: 'array', items: { type: 'string' } },
     generated_at: { type: 'string' }
@@ -472,7 +703,7 @@ const REQUIREMENT_SCHEMA = {
 const CODING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['files_created', 'implementation_summary', 'test_command', 'test_succeeded', 'test_exit_code', 'test_output_excerpt', 'report_file', 'generated_at'],
+  required: ['files_created', 'implementation_summary', 'test_command', 'test_succeeded', 'test_exit_code', 'test_output_excerpt', 'requirement_conflicts', 'report_file', 'generated_at'],
   properties: {
     files_created: {
       type: 'array',
@@ -490,6 +721,15 @@ const CODING_SCHEMA = {
     test_exit_code: { type: 'string' },
     test_output_excerpt: { type: 'string' },
     deviations_from_requirement: { type: 'array', items: { type: 'string' } },
+    requirement_conflicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['refs', 'description'],
+        properties: { refs: { type: 'string' }, description: { type: 'string' } }
+      }
+    },
     report_file: { type: 'string' },
     generated_at: { type: 'string' }
   }
@@ -498,7 +738,7 @@ const CODING_SCHEMA = {
 const VERIFY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['command', 'exit_code', 'raw_output', 'ran_tests', 'result_marker', 'artifacts', 'generated_at'],
+  required: ['command', 'exit_code', 'raw_output', 'ran_tests', 'result_marker', 'artifacts', 'requirement_conflicts', 'generated_at'],
   properties: {
     command: { type: 'string' },
     exit_code: { type: 'string' },
@@ -514,6 +754,15 @@ const VERIFY_SCHEMA = {
         properties: { path: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' } }
       }
     },
+    requirement_conflicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['refs', 'description'],
+        properties: { refs: { type: 'string' }, description: { type: 'string' } }
+      }
+    },
     notes: { type: 'string' },
     generated_at: { type: 'string' }
   }
@@ -522,7 +771,8 @@ const VERIFY_SCHEMA = {
 const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['verdict', 'criteria_check', 'issues', 'independent_test_command', 'independent_test_exit_code', 'independent_test_output', 'summary', 'report_file', 'generated_at'],
+  required: ['verdict', 'criteria_check', 'issues', 'independent_test_command', 'independent_test_exit_code',
+    'independent_test_output', 'artifacts_after', 'requirement_conflicts', 'summary', 'report_file', 'generated_at'],
   properties: {
     verdict: { type: 'string', enum: ['APPROVED', 'CHANGES_REQUESTED'] },
     criteria_check: {
@@ -555,6 +805,24 @@ const REVIEW_SCHEMA = {
     independent_test_command: { type: 'string' },
     independent_test_exit_code: { type: 'string' },
     independent_test_output: { type: 'string' },
+    artifacts_after: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path', 'sha256'],
+        properties: { path: { type: 'string' }, sha256: { type: 'string' }, bytes: { type: 'integer' } }
+      }
+    },
+    requirement_conflicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['refs', 'description'],
+        properties: { refs: { type: 'string' }, description: { type: 'string' } }
+      }
+    },
     consistency_note: { type: 'string' },
     summary: { type: 'string' },
     report_file: { type: 'string' },
@@ -568,26 +836,35 @@ function envelopeNote(artifactPath) {
   return [
     '### 你必须写入的产物文件',
     '- 产物文件路径: ' + artifactPath,
+    '- 该路径**相对于仓库根目录**：写入前先确认仓库根（`git rev-parse --show-toplevel` 或查找 `workflows/three-agent-mvp.js`），',
+    '  并把路径拼到仓库根之后（或直接使用仓库根的绝对路径）；不要在别的目录下创建同名文件，',
+    '  也不要把同一份报告写两次到不同位置——错位的副本会留在工作区里成为脏文件。',
     '- JSON 信封字段：run_id / agent / stage / generated_at / result（result 内也要有同样的 generated_at）。',
     '- `generated_at` 必须是**你本次运行中真实取得**的时间：先执行命令取当前时间（例如 PowerShell `Get-Date -Format o`，或 python `datetime.now().astimezone().isoformat()`），',
     '  不得使用记忆里的、占位的或猜测的时间戳；本脚本会校验时间戳必须落在本次运行窗口内。'
   ].join('\n');
 }
 
-function preflightPrompt(artifactPath) {
+function preflightPrompt(artifactPath, ownerMarkerPath) {
   return [
     '你是 TLA 流水线中的 **Verifier Agent**，本次以 `MODE=preflight`（环境预检）执行，在独立上下文中工作。',
     '',
     '【第一步】完整读取你的角色规范文件：' + C.promptDir + '/verifier-agent.md，并逐条遵守。',
     '',
-    '【第二步】只做只读检查，**不要创建、修改或删除任何文件**，并逐项报告事实：',
-    '1. 当前工作目录（仓库根）的绝对路径，写入 `repo_root`。',
-    '2. 证据目录 `' + C.evidenceDir + '` 的状态：不存在 → `missing`；存在且为空 → `empty`；存在且有内容 → `exists`，',
-    '   并把已有条目名写入 `evidence_dir_entries`（这是"不得覆盖历史证据"的判定依据，必须如实报告）。',
-    '3. 三个角色提示词文件是否存在：' + promptPaths.requirement + '、' + promptPaths.coding + '、' + promptPaths.review + '，写入 `prompt_files`。',
-    '4. 交付目录 `' + C.targetDir + '` 是否存在（present/missing），以及它解析后的绝对路径。',
-    '5. 把它能核实的绝对路径写入 `resolved_paths`（至少包含交付目录与证据目录的解析结果）。',
-    '6. 任何与本次 run_id `' + C.runId + '` 冲突、或可能越出仓库目录的问题，写入 `problems`。',
+    '【第二步】只做只读检查 + 本次运行的目录认领。**除了下面明确允许的两个写操作，不得创建、修改或删除任何其他文件**：',
+    '  (a) 认领文件 `' + ownerMarkerPath + '`：内容为 JSON `{runId, runStartedAt, claimedAt, claimedBy}`，`claimedAt` 用你本次真实取得的时间；**先写它**。',
+    '  (b) 你自己的产物文件 `' + artifactPath + '`。',
+    '1. 仓库根目录的绝对路径写入 `repo_root`；把它解算后的**真实路径**（软链接 / 目录联接解析之后）写入 `repo_root_realpath`。',
+    '2. 证据目录 `' + C.evidenceDir + '` 当前状态：不存在 → `missing`；存在且为空 → `empty`；存在且有内容 → `exists`，',
+    '   并把已有条目名写入 `evidence_dir_entries`（这是"不得覆盖历史证据"的判定依据，必须如实报告；',
+    '   若目录里已有别的 run_id 的认领文件，必须如实报告）。',
+    '3. 证据目录的真实路径写入 `evidence_dir_realpath`；认领文件写成功后 `evidence_dir_claimed` 置为 true，写不成功必须为 false。',
+    '4. 检查从仓库根到交付目录、证据目录的**每一级路径分量**是否为软链接、Windows 目录联接（junction）或其他重解析点，',
+    '   把这些分量**解算后的真实路径**写入 `link_components`（一个都没有就写空数组 `[]`）。',
+    '   某个分量是链接、且解算后的真实路径已经越出仓库根时，它的真实路径必须出现在 `link_components` 里，并把该情况写入 `problems`。',
+    '5. 本次运行会用到的四个角色提示词文件是否存在：' + promptPaths.requirement + '、' + promptPaths.coding + '、' + promptPaths.review + '、' + promptPaths.verifier + '，写入 `prompt_files`。',
+    '6. 交付目录 `' + C.targetDir + '` 是否存在（present/missing），其真实路径写入 `target_dir_realpath`。',
+    '7. 其余能核实的绝对路径写入 `resolved_paths`；任何可能越出仓库、或与本次 run_id `' + C.runId + '` 冲突的问题写入 `problems`。',
     '',
     '【第三步】只报告你亲自核实的事实，不得推测；不得读取任何凭据文件、不得访问网络。',
     '返回结构化结果（见 schema），并写入产物文件：',
@@ -620,6 +897,18 @@ function requirementPrompt(artifactPath) {
     '  必须写入 `consistency_check.conflicts`（标明涉及的条目编号与冲突原因），**不得把它们当作断言写进验收条件**；',
     '- 自检通过时 `consistency_check.self_checked = true` 且 `conflicts` 为空数组。',
     '  一旦报告冲突，工作流会立即停止并要求人工澄清，不会交给 Coding Agent 自行选择解释。',
+    '- 凡是你自己写进需求的**数值示例**，必须逐字段按你写下的规则重算一遍（字符数按归一化后码点、行数按切分规则、',
+    '  非空行数按判空规则、单词数按单词规则）；只写重算一致的数字，并**优先复用原始需求给出的示例**，不得凭印象新造数字示例。',
+    '- `conflicts` 只用于「**本次需求内部**两条规则、对**同一类调用、同一输入**给出不可同时成立的期望」；',
+    '- 「现有实现与本需求不一致」**不是冲突** —— 那正是本次要修改的内容，必须写进验收条件或 `scope_in`；',
+    '  「实现细节没有写明」也不是冲突 —— 把它写成一条明确的边界条件即可；',
+    '- 原始需求已经给出的权威口径必须**按原意**保留（尤其是"命令行调用"与"程序化注入调用"的作用域区分）：',
+    '  不得用另一套口径替代、不得把两类调用合并成同一条契约；只有当你确信该权威口径本身不可实现时，才写入 `conflicts` 并停止。',
+    '',
+    '【第三步】编号要求（编排脚本按 ID 逐项核对，缺号 / 重号 / 未知 ID 一律判为不通过）：',
+    '- `acceptance_criteria` 必须是非空字符串数组，每条以 `AC-01`、`AC-02`… 形式开头（连续、唯一、不得重复）；',
+    '- `boundary_conditions` 同样每条以 `BC-01`、`BC-02`… 形式开头；',
+    '- 每条正文必须自包含：写清"哪一类调用、哪个输入 → 期望值"，不要依赖未写出的上下文。',
     '',
     '【第四步】返回与产物文件 result 完全一致的结构化结果。只返回结构化结果。',
     '',
@@ -670,11 +959,19 @@ function codingPrompt(attempt, previousReview) {
     );
   }
 
+  lines.push(
+    '',
+    '### 需求冲突的报告要求（强制）',
+    '- 若你在实现过程中确认需求本身自相矛盾（两条验收/边界条件对同一调用给出互斥期望），',
+    '  把每条冲突写入 `requirement_conflicts`（refs + description），**不要自行选择一套解释**：',
+    '  只要该字段非空，本轮就会被判为不通过，并交人工统一口径后才能重跑；',
+    '- 没有发现冲突就写空数组 `[]`。'
+  );
+
   lines.push('', '【第三步】返回与产物文件 result 完全一致的结构化结果。只返回结构化结果。', '',
     envelopeNote(artifact(attempt, 'coding-report')));
   return lines.join('\n');
 }
-
 function verifyPrompt(artifactPath) {
   return [
     '你是 TLA 流水线中的 **Verifier Agent**，本次以 `MODE=verify`（独立验证）执行，在独立上下文中工作。',
@@ -686,8 +983,14 @@ function verifyPrompt(artifactPath) {
     '- 在交付目录 `' + C.targetDir + '` 存在的前提下，从仓库根目录执行它；',
     '- 把命令的完整输出（含 `Ran N tests` 与 `OK`/`FAILED` 行）原样放进 `raw_output`；不得摘要、不得改写、不得为了让结果好看而重跑别的命令；',
     '- `exit_code` 填真实退出码；`ran_tests` 填原始输出里的用例数；`result_marker` 填 `OK` 或 `FAILED`；',
-    '- 同时给出被验证文件的 sha256 与字节数（模块文件与测试文件），写入 `artifacts`；',
-    '- 不要修改任何交付文件，不要修复任何缺陷（发现问题只需如实报告）。',
+    '- 复跑测试**之后**，对交付目录中的**模块文件与测试文件**（只这两类，文件名由本次运行参数给出）计算 sha256（含 `bytes`）写入 `artifacts`；哈希必须是复跑之后的最新值；',
+    '  不要把 README、.gitignore、样例输入等一并列入 `artifacts`：Review 的 `artifacts_after` 只覆盖这两类文件，集合不一致会被判为指纹不一致；',
+    '  哈希一律对文件的**原始字节**计算（二进制读取，不做任何换行/编码转换，Windows 上尤其不要用文本模式读取）；',
+    '- 你在本次运行中**唯一允许的写操作**是把结果写入产物文件 `' + artifactPath + '`；',
+    '  不得修改交付目录或仓库中任何其他文件（不修复缺陷、不格式化代码、不删除文件、不新建文件）；发现问题只需如实报告。',
+    '- `requirement_conflicts`：若你在复跑或阅读中发现需求本身自相矛盾（两条验收/边界条件对同一调用给出互斥期望），',
+    '  把每条冲突写入该字段（refs + description）；没有发现就写空数组 `[]`。**报告了冲突就不要擅自选一套口径继续验证**，',
+    '  照实报告即可，编排脚本会停止本次运行、交人工统一口径。',
     '',
     '【第三步】返回结构化结果并写入产物文件（只报告原始事实，不做通过/不通过的最终裁定；裁定由编排脚本按原始输出计算）：',
     envelopeNote(artifactPath)
@@ -725,9 +1028,15 @@ function reviewPrompt(attempt, codingReport, verification, artifactPath) {
     '```',
     '',
     '### 结论一致性要求（强制）',
-    '- `criteria_check` 必须**覆盖全部 ' + requirement.acceptance_criteria.length + ' 条验收条件**，每条都要有 `satisfied` 与证据；',
+    '- `criteria_check` 必须**逐项覆盖需求中的验收 ID 集合：一条不多、一条不少、不重复**：',
+    '  ' + (parseCriteriaIds(requirement.acceptance_criteria).ids.join('、') || '(需求未给出可识别的 ID)') + '；',
+    '  每项的 `criterion` 必须以对应 ID 开头，并给出你自己的验证证据；不得给出需求里不存在的 ID，也不得把同一 ID 写两次（编排脚本会拒绝）。',
     '- **只要有任意一条 `satisfied: false`，`verdict` 就必须是 `CHANGES_REQUESTED`**；',
-    '- `verdict: APPROVED` 必须同时满足：全部验收条件 satisfied、你自己复跑的测试退出码为 0 且输出含 `OK`；',
+    '- `verdict: APPROVED` 必须同时满足：全部验收 ID 均 satisfied、你自己复跑的测试退出码为 0 且输出含 `OK`；',
+    '- `artifacts_after`：在你**自己复跑测试之后**，对交付文件（模块文件与测试文件）重新计算 sha256 写入该字段（同样按**原始字节**计算，不做换行/编码转换，须与 Verifier 的算法一致，否则会被判为指纹不一致）；',
+    '  这些哈希必须与 Verifier 的 `artifacts` 完全一致；若你发现文件在验证前后发生变化，必须写入 `issues` 并把 verdict 判为 `CHANGES_REQUESTED`；',
+    '- `requirement_conflicts`：若你在审核中发现需求本身自相矛盾，把每条冲突写入该字段（refs + description）；没有就写空数组 `[]`。',
+    '  **只要该字段非空，本轮就不可能判定为通过**：不得一边报告冲突、一边给出 APPROVED（那会被判为不通过）；',
     '- 若你发现 Coding Agent 的自述、Verifier 的原始输出、你自己的复跑结果三者之间存在矛盾，',
     '  必须在 `consistency_note` 中写明矛盾点，并把 `verdict` 判为 `CHANGES_REQUESTED`。',
     '  编排脚本会独立重算这些判定：矛盾结论不会被当作通过。',
@@ -750,26 +1059,55 @@ if (!validated.ok) {
 const C = validated.config;
 
 // 内置演示任务（工作流测试样例，不属于 TLA 工作台自身功能）
+// 口径说明：本次需求把上一轮暴露的 AC-12/BC-12（同一调用既要求"不打印"又要求"恰好 4 行"）与
+// BC-03/BC-02（splitlines 语义 vs 行边界集合）两处冲突按"作用域分开规定 + 显式行边界集合"消除，
+// 使 Requirement Agent 的自检有明确权威口径可依，不再需要 Coding/Review 自行选边。
 const demoRequirement = [
-  '请为一个 Python 文本统计命令行工具编写需求说明与可检查的验收条件（在既有实现基础上改进，不要重写）。',
-  '工具读取一段文本（命令行参数给出文件路径；未给出路径时读取标准输入），输出四项统计结果：',
+  '请为仓库中已有的 Python 文本统计命令行工具（examples/text-stats/text_stats.py）编写需求说明与可检查的验收条件：',
+  '在既有实现基础上改进，不要重写、不要改变交付目录，也不要更改工作流本身。',
+  '工具功能：读取一段文本（命令行给出一个文件路径；未给出路径时读取标准输入），输出四项统计结果：',
   '1) 总字符数；2) 总行数；3) 非空行数；4) 英文单词数。',
-  '需要明确到可以被逐条测试的程度，至少覆盖：空文本、以换行结尾的文本、只含空白行的文本、',
-  '以及"英文单词"的判定规则（大小写、连字符、数字、非 ASCII 字符如何处理）。',
-  '已知需要一并修正的既有缺陷（来自上一次运行的真实记录）：',
-  'a) 行数口径曾出现矛盾：请给出唯一、无歧义的定义（例如按 Python splitlines 语义：以换行结尾不产生额外的空行）；',
-  'b) 提供多个多余位置参数时，argparse 目前以退出码 2 退出，但需求约定应为 1；',
-  'c) 模块内有一个仅做单行转发的冗余函数，应删除并由命令行入口直接调用主函数；',
-  'd) 文档中描述连接符时使用了两个外观相同的引号字符，其中之一其实是 U+2019，需改为可辨认的写法。',
-  '实现需要同时提供可被单元测试直接调用的纯函数接口与命令行入口。',
-  '约束：只允许使用 Python 标准库，禁止引入任何第三方依赖。'
+  '必须明确到可以逐条测试的程度，并消除历史运行中出现过的自相矛盾。以下口径是本次需求的权威定义，',
+  '任何验收条件与边界条件都不得与之冲突：',
+  '（1）行边界：只有 LF（\\n）、CR（\\r）、CRLF（\\r\\n）三种序列构成换行；',
+  '     U+2028、U+2029、\\x0b、\\x0c、\\x1c、\\x1d、\\x1e、\\x85 一律不构成换行。',
+  '（2）总行数 line_count：按上面的行边界切分后的行数；以换行结尾的文本不产生额外空行',
+  '     （"a\\n" 是 1 行，"a\\nb" 是 2 行，"a\\n\\n" 是 2 行，"hello world\\nfoo bar\\n" 是 2 行，空文本是 0 行）；',
+  '     仅含空白字符的行仍然是行："  \\n\\t\\n" 是 2 行（两行都是空白行），其 non_empty_line_count 是 0；',
+  '     任何验收条件与边界条件的示例都必须与上述示例一致，不得把末尾换行之后的空片段另计为一行（该输入不得写成 3 行）。',
+  '     不得把 str.splitlines() 当作唯一实现依据（它会把 U+2028/U+2029 等当作换行）。',
+  '（3）总字符数 char_count：按归一化后的文本长度计数；归一化＝剥除一个前导 BOM（U+FEFF）、把 CRLF 与单独的 CR 统一为 LF。',
+  '（4）非空行数 non_empty_line_count：切分出的行中，去掉首尾空白字符后仍非空的行数。',
+  '（5）英文单词 word_count：按正则 [A-Za-z]+(?:[-\'\\u2019][A-Za-z]+)* 匹配计数；数字、下划线、中文等非 ASCII 字符不算单词的一部分。',
+  '（6）命令行成功路径的输出格式：标准输出恰好 4 行，顺序为 char_count、line_count、non_empty_line_count、word_count，',
+  '     每行形如 "<名称>: <整数>"，不输出其他内容。',
+  '（7）作用域区分（权威口径，必须按原意保留，不得改写、不得把两类调用合并）：',
+  '     a) 程序化调用：调用方**显式传入 stdin_text**（传入空串 "" 或非空文本都算）时，main() 只返回整数退出码、**不写标准输出**；',
+  '         例如 main([], stdin_text="") 返回 0，且标准输出为空（调用方自己负责打印结果）。',
+  '     b) 命令行调用：程序作为命令行运行（给出 PATH，或未给出 PATH 时读取进程标准输入）时，成功路径必须输出（6）规定的 4 行。',
+  '     c) 因此"成功路径恰好 4 行"只约束 b；a 与 b 适用于不同调用方式，不得写成对同一调用的互斥期望，也不得反过来要求 a 也打印 4 行。',
+  '（8）错误路径：文件不存在、文件不可读、编码名非法、位置参数多于 1 个，一律以退出码 1 结束，',
+  '     并在标准错误输出一行以 "error: " 开头的说明；不得沿用 argparse 默认的退出码 2；--help 仍为退出码 0。',
+  '（9）已知需要一并修正的既有缺陷：a) 行数口径矛盾（按上面第 2 条统一）；b) 多余位置参数退出码为 2（应为 1）；',
+  '     c) 模块内存在一个仅做单行转发的冗余函数（应删除，命令行入口直接调用主函数）；',
+  '     d) 文档中描述连接符时使用了外观相同、实为 U+2019 的字符（应改为可辨认的写法，例如纯 ASCII 撇号）。',
+  '（10）依赖约束：只允许 Python 标准库，禁止任何第三方依赖；不得在交付目录内新增依赖声明文件。',
+  '（11）实现必须同时提供可被单元测试直接调用的纯函数接口与命令行入口，并提供可在仓库内复制的示例。'
 ].join('\n');
 
 const originalRequirement = hasText(C.requirementInput) ? C.requirementInput : demoRequirement;
 const depsBoundary = '仅允许 Python 标准库（禁止引入任何第三方依赖）';
 const priorConflictNote = [
-  '- 上一次运行（v0.1-first-run）中，"总行数"曾同时出现两种互斥断言（换行结尾计 3 行 vs 计 2 行），',
-  '  "cafe\\u0301" 的单词数也曾同时出现 1 与 2 两种断言：这属于需求缺陷，必须自检并避免。'
+  '- 历史记录（前两次运行的真实需求缺陷，本次必须避免重犯）：',
+  '  a) "总行数"曾同时出现互斥期望：以换行结尾的 "hello world\\nfoo bar\\n" 被同时要求计 2 行与 3 行；',
+  '  b) "cafe\\u0301" 的单词数曾被同时要求为 1 与 2；',
+  '  c) 第二次运行又出现一对互斥要求：一条要求 main([], stdin_text="") 的标准输出恰好是 "True 0 int"，',
+  '     另一条要求成功路径的标准输出恰好 4 行——同一调用不可能同时满足。',
+  '  消除办法：先写清"哪一类调用"（命令行 / 程序化注入 / --help），再写该调用的期望值；',
+  '  不同调用方式可以有不同期望，但同一种调用方式在同一输入下只能有一个期望。',
+  '  本次原始需求在（7）中已经自行给出"命令行 / 程序化注入"的作用域区分：请按其原意保留，不要据此把两类调用合并。',
+  '  另注：本工作流已把"未解决的需求冲突"设为硬失败（状态 STAGE_REPORTS_REQUIREMENT_CONFLICT）；',
+  '  但「现有实现与本次需求不一致」不是冲突，它必须出现在 scope_in / 验收条件里。'
 ].join('\n');
 
 const promptPaths = {
@@ -778,6 +1116,9 @@ const promptPaths = {
   review: C.promptDir + '/review-agent.md',
   verifier: C.promptDir + '/verifier-agent.md'
 };
+
+/** 本次运行的认领文件：证明证据目录由本次运行独占（复审意见五：原子防覆盖）。 */
+const ownerMarkerPath = C.evidenceDir + '/.run-owner.json';
 
 /** 证据文件路径：第 1 轮用 <kind>.json，修订轮用 <kind>-revision-<n>.json */
 function artifact(attempt, kind) {
@@ -798,7 +1139,7 @@ phaseStatic('preflight');
 log('run_id=' + C.runId + ' | evidence_dir=' + C.evidenceDir + ' | target_dir=' + C.targetDir);
 log('step 1/5: Verifier (preflight) -> ' + artifact(1, 'preflight'));
 
-const preflight = await agent(preflightPrompt(artifact(1, 'preflight')), {
+const preflight = await agent(preflightPrompt(artifact(1, 'preflight'), ownerMarkerPath), {
   label: 'Verifier (preflight)',
   phase: 'preflight',
   schema: PREFLIGHT_SCHEMA
@@ -807,7 +1148,7 @@ const preflight = await agent(preflightPrompt(artifact(1, 'preflight')), {
 if (!isObject(preflight)) {
   return failure('PREFLIGHT_FAILED', '环境预检子代理失败（返回空结果），工作流终止', { runId: C.runId, evidenceDir: C.evidenceDir });
 }
-const preflightTime = judgeTimestamp(preflight.generated_at, C.runStartedAt, 6);
+const preflightTime = judgeTimestamp(preflight.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS);
 if (!preflightTime.ok) {
   return failure('INVALID_TIMESTAMP', '环境预检的时间戳不可信：' + preflightTime.reason,
     { runId: C.runId, evidenceDir: C.evidenceDir, preflight: preflight });
@@ -825,20 +1166,37 @@ if (missingPrompts.length > 0) {
   return failure('PROMPT_MISSING', '角色提示词文件缺失：' + missingPrompts.join(', '),
     { runId: C.runId, promptDir: C.promptDir });
 }
-const repoRoot = asString(preflight.repo_root).replace(/[\\/]+$/, '');
+const repoRoot = normalizeAbsPath(preflight.repo_root);
+const repoRootReal = normalizeAbsPath(preflight.repo_root_realpath);
+const targetDirReal = normalizeAbsPath(preflight.target_dir_realpath);
+const evidenceDirReal = normalizeAbsPath(preflight.evidence_dir_realpath);
 const resolvedPaths = Array.isArray(preflight.resolved_paths) ? preflight.resolved_paths : [];
-function insideRepo(suffix) {
-  const normalizedRoot = repoRoot.replace(/\\/g, '/').toLowerCase();
-  for (let i = 0; i < resolvedPaths.length; i += 1) {
-    const p = asString(resolvedPaths[i]).replace(/\\/g, '/').toLowerCase();
-    if (p.indexOf(normalizedRoot) === 0 && p.indexOf(suffix.toLowerCase()) !== -1) { return true; }
-  }
-  return false;
-}
-if (repoRoot === '' || !insideRepo(C.targetDir)) {
+if (repoRoot === '' || repoRootReal === '') {
   return failure('TARGET_DIR_OUTSIDE_REPO',
-    '交付目录未能确认落在仓库内（' + C.targetDir + '；预检报告的仓库根为 ' + repoRoot + '）',
+    '预检未回报仓库根目录的真实路径（realpath），无法确认交付目录落在仓库内',
     { runId: C.runId, resolvedPaths: resolvedPaths, preflight: preflight });
+}
+// fail-closed：交付目录与证据目录「解算后的真实路径」都必须落在仓库根的真实路径之内。
+if (!pathUnderRepo(targetDirReal, repoRootReal) || !pathUnderRepo(evidenceDirReal, repoRootReal)) {
+  return failure('TARGET_DIR_OUTSIDE_REPO',
+    '交付目录或证据目录的真实路径不在仓库根之内（target=' + targetDirReal + '；evidence=' + evidenceDirReal + '；repo=' + repoRootReal + '）',
+    { runId: C.runId, resolvedPaths: resolvedPaths, preflight: preflight });
+}
+// 路径分量中的软链接 / 目录联接若解算后越出仓库，直接终止（复审意见五：链接逃逸）。
+const linkComponents = Array.isArray(preflight.link_components) ? preflight.link_components : [];
+const escapingLinks = linkComponents.map(normalizeAbsPath).filter(function (p) {
+  return p !== '' && !pathUnderRepo(p, repoRootReal);
+});
+if (escapingLinks.length > 0) {
+  return failure('LINK_ESCAPE',
+    '工作目录路径中存在解算后越出仓库的重解析点（软链接 / 目录联接）：' + escapingLinks.join(', '),
+    { runId: C.runId, linkComponents: linkComponents, preflight: preflight });
+}
+// 没有认领成功的证据目录不得继续：两个运行共用同一目录会互相覆盖证据。
+if (preflight.evidence_dir_claimed !== true) {
+  return failure('EVIDENCE_NOT_CLAIMED',
+    '预检未能完成证据目录认领（' + ownerMarkerPath + ' 未写入或报告失败）；为防止两个运行同时写入同一目录，已终止',
+    { runId: C.runId, evidenceDir: C.evidenceDir, preflight: preflight });
 }
 log('环境预检通过：repo_root=' + repoRoot + ' | 证据目录状态=' + preflight.evidence_dir_state +
   ' | 交付目录状态=' + preflight.target_dir_state);
@@ -858,12 +1216,17 @@ if (!isObject(requirement) || !hasText(requirement.goal) ||
     'Requirement Agent 输出不完整或子代理失败（goal/acceptance_criteria/boundary_conditions 缺失）',
     { runId: C.runId, evidenceDir: C.evidenceDir, received: requirement });
 }
-const requirementTime = judgeTimestamp(requirement.generated_at, C.runStartedAt, 6);
+const requirementTime = judgeTimestamp(requirement.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS);
 if (!requirementTime.ok) {
   return failure('INVALID_TIMESTAMP', '需求阶段的时间戳不可信：' + requirementTime.reason,
     { runId: C.runId, evidenceDir: C.evidenceDir, requirement: requirement });
 }
 const requirementConsistency = judgeRequirementConsistency(requirement);
+if (hasItems(requirementConsistency.idErrors)) {
+  return failure('REQUIREMENT_IDS_INVALID',
+    '需求中的验收条件 ID 不合法（缺失或重复），无法逐项核对：' + requirementConsistency.idErrors.join('；'),
+    { runId: C.runId, evidenceDir: C.evidenceDir, requirement: requirement, idErrors: requirementConsistency.idErrors });
+}
 if (!requirementConsistency.ok) {
   log('需求自检报告冲突，停止实施并等待人工澄清（不会交给 Coding Agent 自行选择解释）');
   return failure('REQUIREMENT_CONFLICT',
@@ -871,9 +1234,11 @@ if (!requirementConsistency.ok) {
     { runId: C.runId, evidenceDir: C.evidenceDir, requirement: requirement, conflicts: requirementConsistency.conflicts });
 }
 log('Requirement Agent 完成：验收条件 ' + requirement.acceptance_criteria.length +
-  ' 条、边界条件 ' + requirement.boundary_conditions.length + ' 条、自检冲突 0 条');
+  ' 条（ID ' + requirementConsistency.criteriaIds.join('、') + '）、边界条件 ' +
+  requirement.boundary_conditions.length + ' 条、自检冲突 0 条');
 
-const requirementItemCount = requirement.acceptance_criteria.length;
+/** 验收条件 ID 的权威集合：缺失 / 重复 / 未知一律不得通过（复审意见四）。 */
+const expectedCriteriaIds = requirementConsistency.criteriaIds;
 const attemptsDetail = [];
 let previousReview = null;
 let attempt = 1;
@@ -892,7 +1257,7 @@ while (attempt <= C.maxCodingAttempts) {
   });
   const codingOutputValid = isObject(codingReport) && hasItems(codingReport.files_created);
   if (codingOutputValid) {
-    const codingTime = judgeTimestamp(codingReport.generated_at, C.runStartedAt, 6);
+    const codingTime = judgeTimestamp(codingReport.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS);
     if (!codingTime.ok) {
       return failure('INVALID_TIMESTAMP', '编码阶段的时间戳不可信：' + codingTime.reason,
         { runId: C.runId, evidenceDir: C.evidenceDir, attempt: attempt, received: codingReport });
@@ -913,7 +1278,8 @@ while (attempt <= C.maxCodingAttempts) {
   });
   const verificationJudge = judgeTestEvidence(verification, C.testCommand);
   if (isObject(verification)) {
-    const verifyTime = judgeTimestamp(verification.generated_at, C.runStartedAt, 6);
+    const verifyTime = judgeTimestamp(verification.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS);
+    verificationJudge.timestampOk = verifyTime.ok;
     if (!verifyTime.ok) { verificationJudge.passed = false; verificationJudge.reasons.push(verifyTime.reason); }
   }
   log('Verifier' + revTag + ' 判定：' + (verificationJudge.passed ? '测试通过（外部独立验证）' : '未通过'));
@@ -927,14 +1293,14 @@ while (attempt <= C.maxCodingAttempts) {
     schema: REVIEW_SCHEMA
   });
   if (isObject(review)) {
-    const reviewTime = judgeTimestamp(review.generated_at, C.runStartedAt, 6);
+    const reviewTime = judgeTimestamp(review.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS);
     if (!reviewTime.ok) {
       review.consistency_note = asString(review.consistency_note) + ' [编排层：' + reviewTime.reason + ']';
       review.verdict = 'CHANGES_REQUESTED';
     }
   }
 
-  const decision = judgeAttempt(codingReport, verification, review, requirementItemCount, C.testCommand, codingOutputValid);
+  const decision = judgeAttempt(codingReport, verification, review, expectedCriteriaIds, C.testCommand, codingOutputValid, verificationJudge);
   if (!decision.ok) { reportProblems('第 ' + attempt + ' 轮判定未通过', decision.reasons); }
   log('第 ' + attempt + ' 轮判定：' + (decision.ok ? 'PASS' : decision.status));
 
@@ -948,16 +1314,26 @@ while (attempt <= C.maxCodingAttempts) {
   lastDecision = decision;
 
   if (decision.ok) { break; }
+  if (hasItems(decision.stageConflicts)) {
+    log('有阶段报告了未解决的需求冲突：本轮不进入修订循环（需求冲突无法由 Coding Agent 自行修复，须人工统一口径）');
+    break;
+  }
   if (attempt >= C.maxCodingAttempts) {
     log('已达到最大编码轮次（' + C.maxCodingAttempts + '），工作流以不通过结束并保留全部证据');
     break;
   }
 
-  previousReview = isObject(review) ? review : { verdict: 'CHANGES_REQUESTED', issues: [], summary: 'Review Agent 未返回有效结论（子代理失败）' };
-  if (isObject(review) && !Array.isArray(review.issues)) { previousReview.issues = []; }
-  if (!isObject(review)) {
-    previousReview.issues = [{ file: '(unknown)', location: '-',
-      problem: 'Review Agent 本次未返回结构化结论', suggestion: '重新运行审核并确认输出符合 schema' }];
+  if (isObject(review)) {
+    // 复制后再追加编排层的意见：否则会改写已存档的 Review 结论，使返回值与磁盘 review.json 不一致（审核发现）。
+    previousReview = Object.assign({}, review);
+    previousReview.issues = Array.isArray(review.issues) ? review.issues.slice() : [];
+  } else {
+    previousReview = {
+      verdict: 'CHANGES_REQUESTED',
+      issues: [{ file: '(unknown)', location: '-',
+        problem: 'Review Agent 本次未返回结构化结论', suggestion: '重新运行审核并确认输出符合 schema' }],
+      summary: 'Review Agent 未返回有效结论（子代理失败）'
+    };
   }
   if (hasItems(decision.reasons)) {
     previousReview.issues = (Array.isArray(previousReview.issues) ? previousReview.issues : []).concat([
@@ -973,20 +1349,35 @@ const finalOk = isObject(finalAttempt) && finalAttempt.decision.ok === true;
 const verifiedFinal = isObject(finalAttempt) ? finalAttempt.decision.verified : { passed: false, reasons: ['无有效轮次'] };
 const reviewFinal = isObject(finalAttempt) ? finalAttempt.decision.reviewEval : { approved: false, allSatisfied: false, coversAll: false, ownTestsPassed: false, criteriaTotal: 0, criteriaSatisfied: 0, reasons: ['无有效轮次'] };
 let status = finalOk ? 'OK' : (isObject(finalAttempt) ? finalAttempt.decision.status : 'NO_ATTEMPT');
-if (!finalOk && C.maxCodingAttempts > 1 && attemptsDetail.length >= C.maxCodingAttempts) {
+const finalStageConflicts = isObject(finalAttempt) ? (finalAttempt.decision.stageConflicts || []) : [];
+const finalFingerprints = isObject(finalAttempt) ? finalAttempt.decision.fingerprints : null;
+if (!finalOk && C.maxCodingAttempts > 1 && attemptsDetail.length >= C.maxCodingAttempts &&
+    finalStageConflicts.length === 0) {
   status = 'MAX_ATTEMPTS_' + status;
 }
 
 return {
   ok: finalOk,
   status: status,
+  // 失败原因同样要回传（编排层判定不得只给状态码，复审意见四）。
+  error: finalOk ? '' : (isObject(finalAttempt) ? finalAttempt.decision.reasons.join('；') : '没有任何有效轮次'),
+  errors: isObject(finalAttempt) ? finalAttempt.decision.reasons : ['没有任何有效轮次'],
   runId: C.runId,
   evidenceDir: C.evidenceDir,
+  ownerMarkerPath: ownerMarkerPath,
   runStartedAt: C.runStartedAt,
   pipeline: ['Verifier(preflight)', 'Requirement Agent', 'Coding Agent', 'Verifier(verify)', 'Review Agent'],
   targetDir: C.targetDir,
   testCommand: C.testCommand,
   maxCodingAttempts: C.maxCodingAttempts,
+  criteriaIds: expectedCriteriaIds,
+  evidenceFiles: attemptsDetail.reduce(function (list, d) {
+    return list.concat([
+      artifact(d.attempt, 'coding-report'),
+      artifact(d.attempt, 'verify'),
+      artifact(d.attempt, 'review')
+    ]);
+  }, [ownerMarkerPath, artifact(1, 'preflight'), artifact(1, 'requirement')]),
   attempts: attemptsDetail.length,
   originalRequirement: originalRequirement,
   requirement: requirement,
@@ -1014,6 +1405,10 @@ return {
     criteriaTotal: reviewFinal.criteriaTotal,
     allCriteriaSatisfied: reviewFinal.allSatisfied === true,
     criteriaCheckCoversAll: reviewFinal.coversAll === true,
-    reviewIndependentTestsPassed: reviewFinal.ownTestsPassed === true
+    reviewIndependentTestsPassed: reviewFinal.ownTestsPassed === true,
+    fingerprintsMatch: isObject(finalFingerprints) ? finalFingerprints.ok === true : false,
+    fingerprintReasons: isObject(finalFingerprints) ? finalFingerprints.reasons : ['无有效轮次'],
+    stageReportedRequirementConflicts: finalStageConflicts,
+    criteriaIds: expectedCriteriaIds
   }
 };
