@@ -18,7 +18,8 @@
  * 成功判定（本脚本的计算逻辑，不依赖任何单个 Agent 的自述；见审核意见一、复审意见四、复审要求一至七）：
  *   ok = true 当且仅当全部成立：
  *     0. 环境预检：证据目录由本次运行**排他认领**（认领工具退出码 0、claim_created 为 true、owner marker 与本次
- *        runId 一致）、上报路径均已规范化且与本次配置目标一一对应、且 `problems` 为空（非空即终止）；
+ *        runId 一致、工具自报的认领**前**状态 evidence_dir_state_before 与预检自报的 evidence_dir_state 一致且
+ *        均为 missing / empty）、上报路径均已规范化且与本次配置目标一一对应、且 `problems` 为空（非空即终止）；
  *     A. 需求自检未报告冲突（consistency_check.conflicts 为空），且验收条件 ID 齐备、不重复；
  *     B. 任何阶段（Coding / Verifier / Review）都没有报告「未解决的需求冲突」（requirement_conflicts 非空即失败）；
  *     C. Coding Agent 的自述**内部自洽**（规范化命令、退出码为非负整数、test_succeeded 与退出码及输出摘录一致）；
@@ -30,6 +31,8 @@
  *   任一环节自述与外部证据矛盾 → 判定不通过（status = INCONSISTENT_EVIDENCE 等），进入修订流程，绝不放行。
  *   时间戳门禁：必须是真实存在的日历时间（2026-02-30 之类失败）+ 落在运行窗口内 + 不晚于编排层当前时间；
  *   runStartedAt（及其 runId 时间戳）与编排层时钟的偏差有上限，伪造/复用运行标识会被拒绝。
+ *   时间戳比较使用**两个独立的时钟**：启动时钟只用于锚定 runId/runStartedAt 一次；此后每个 Agent 返回后
+ *   重新读取当前时间作为"未来时间"的判定基准，避免长运行的判定基准过期（复审要求一）。
  *
  * args 契约（runId 必填；未提供 task.requirement 时运行仓库内置的演示任务）：
  * {
@@ -356,7 +359,8 @@ function isAllowedTestCommand(command, canonical) {
 /**
  * 校验并归一化运行参数。任何不合法输入都返回结构化错误，不抛异常、不产生空对象访问。
  */
-function validateRunConfig(rawArgs, orchestratorNowMs) {
+// startupNowMs 是脚本启动时读到的时钟，只用于确认 runId/runStartedAt 来自这次真实运行（复审要求一、五）。
+function validateRunConfig(rawArgs, startupNowMs) {
   const errors = [];
   if (rawArgs !== undefined && rawArgs !== null && !isObject(rawArgs)) {
     return { ok: false, errors: ['args 必须是 JSON 对象，实际为 ' + typeof rawArgs], config: null };
@@ -463,12 +467,12 @@ function validateRunConfig(rawArgs, orchestratorNowMs) {
         ' → UTC ' + expectedStamp + '）不是同一秒');
     }
   }
-  // 时间窗必须绑定编排层自己的时钟：把 runId 与 runStartedAt 一起改成一个伪造的旧时间
-  // （两者"同一秒"，上面那条查不出来）时，只有与编排层实际时间比对才能拦住（复审要求五）。
-  if (runStartedAt !== null && isInteger(orchestratorNowMs)) {
+  // 时间窗必须绑定编排层的**启动时钟**：把 runId 与 runStartedAt 一起改成一个伪造的旧时间
+  // （两者"同一秒"，上面那条查不出来）时，只有与启动时的实际时间比对才能拦住（复审要求五）。
+  if (runStartedAt !== null && isInteger(startupNowMs)) {
     const started = parseIsoTimestamp(runStartedAt);
-    if (started !== null && started.ms !== null && Math.abs(started.ms - orchestratorNowMs) > RUN_START_MAX_SKEW_MS) {
-      errors.push('runStartedAt（' + started.text + '）与编排层实际时间（' + isoFromMs(orchestratorNowMs) +
+    if (started !== null && started.ms !== null && Math.abs(started.ms - startupNowMs) > RUN_START_MAX_SKEW_MS) {
+      errors.push('runStartedAt（' + started.text + '）与编排层实际时间（' + isoFromMs(startupNowMs) +
         '）相差超过 ' + (RUN_START_MAX_SKEW_MS / MS_PER_HOUR) + ' 小时：运行标识疑似伪造或过期');
     }
   }
@@ -817,7 +821,8 @@ const MS_PER_HOUR = 3600000;
 // 运行起点与编排层实际时间的最大允许偏差：runId 里的时间戳必须来自这次真实运行（复审要求五）。
 const RUN_START_MAX_SKEW_MS = MS_PER_HOUR;
 
-function judgeTimestamp(value, runStartedAt, windowHours, orchestratorNowMs) {
+// nowMs 是**判定当刻**读到的时钟（每个阶段返回后重新读取），不是启动时刻：这样长运行的判定基准不会过期（复审要求一）。
+function judgeTimestamp(value, runStartedAt, windowHours, nowMs) {
   const parsed = parseIsoTimestamp(value);
   // 格式对但日期不存在（2026-02-30、25:00、+25:00 等）同样是无效时间：必须失败，不得当成"格式正确"放行。
   if (parsed === null) {
@@ -834,9 +839,9 @@ function judgeTimestamp(value, runStartedAt, windowHours, orchestratorNowMs) {
     return { ok: false, reason: '时间戳 ' + parsed.text + ' 不在运行窗口内（起始 ' + started.text +
       '，窗口 ' + (windowMs / MS_PER_HOUR) + ' 小时）：疑似占位时间' };
   }
-  // 时间窗绑定编排层实际时间：明显晚于此刻（超出容差）的时间戳只能是被编造出来的（复审要求五）。
-  if (isInteger(orchestratorNowMs) && parsed.ms > orchestratorNowMs + TIMESTAMP_CLOCK_SKEW_MS) {
-    return { ok: false, reason: '时间戳 ' + parsed.text + ' 晚于编排层当前时间（' + isoFromMs(orchestratorNowMs) +
+  // 时间窗绑定判定当刻的时钟：明显晚于此刻（超出容差）的时间戳只能是被编造出来的（复审要求五）。
+  if (isInteger(nowMs) && parsed.ms > nowMs + TIMESTAMP_CLOCK_SKEW_MS) {
+    return { ok: false, reason: '时间戳 ' + parsed.text + ' 晚于编排层当前时间（' + isoFromMs(nowMs) +
       '）：不可能由本次运行真实取得' };
   }
   return { ok: true, reason: '' };
@@ -856,13 +861,15 @@ function failure(status, error, extra) {
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['repo_root', 'repo_root_realpath', 'evidence_dir_state', 'evidence_dir_realpath', 'evidence_dir_claimed',
-    'owner_marker_path', 'claim_tool', 'claim_created', 'claim_exit_code', 'claimed_at', 'link_components', 'prompt_files',
-    'target_dir', 'target_dir_state', 'target_dir_realpath', 'resolved_paths', 'generated_at'],
+  required: ['repo_root', 'repo_root_realpath', 'evidence_dir_state', 'evidence_dir_state_before', 'evidence_dir_realpath',
+    'evidence_dir_claimed', 'owner_marker_path', 'claim_tool', 'claim_created', 'claim_exit_code', 'claimed_at',
+    'link_components', 'prompt_files', 'target_dir', 'target_dir_state', 'target_dir_realpath', 'resolved_paths',
+    'generated_at'],
   properties: {
     repo_root: { type: 'string' },
     repo_root_realpath: { type: 'string' },
     evidence_dir_state: { type: 'string', enum: ['missing', 'empty', 'exists'] },
+    evidence_dir_state_before: { type: 'string', enum: ['missing', 'empty', 'exists'] },
     evidence_dir_entries: { type: 'array', items: { type: 'string' } },
     evidence_dir_realpath: { type: 'string' },
     evidence_dir_claimed: { type: 'boolean' },
@@ -1082,12 +1089,17 @@ function preflightPrompt(artifactPath, ownerMarkerPath) {
     '      退出码非 0 = 目录已被别的运行认领或创建失败——**不得覆写已有的认领文件、不得改用别的写法**，如实报告即可。**先做这一步**。',
     '  (b) 你自己的产物文件 `' + artifactPath + '`。',
     '1. 仓库根目录的绝对路径写入 `repo_root`；把它解算后的**真实路径**（软链接 / 目录联接解析之后）写入 `repo_root_realpath`。',
-    '2. 证据目录 `' + C.evidenceDir + '` 当前状态：不存在 → `missing`；存在且为空 → `empty`；存在且有内容 → `exists`，',
+    '2. 证据目录 `' + C.evidenceDir + '` 在**认领之前**的状态：不存在 → `missing`；存在且为空 → `empty`；存在且有内容 → `exists`，',
     '   并把已有条目名写入 `evidence_dir_entries`（这是"不得覆盖历史证据"的判定依据，必须如实报告；',
     '   若目录里已有别的 run_id 的认领文件，必须如实报告）。',
+    '   `evidence_dir_state` 写的是**认领之前**的观察；认领成功后目录里会多出 `' + ownerMarkerPath + '`，',
+    '   那是正常的"认领后"状态，**不要**因此把它改写成 `exists`。',
     '3. 证据目录的真实路径写入 `evidence_dir_realpath`；把认领工具的实测结果**原样**写入 `evidence_dir_claimed`（退出码为 0 才是 true）、',
     '   `claim_tool`（固定填 `' + EVIDENCE_CLAIM_TOOL + '`）、`claim_created`（工具报告"新建成功"才为 true）、',
-    '   `claim_exit_code`（工具的**真实**退出码）、`claimed_at`（认领工具写入的时间）。任一字段与工具实测不符，编排脚本会立即终止本次运行。',
+    '   `claim_exit_code`（工具的**真实**退出码）、`claimed_at`（认领工具写入的时间）、',
+    '   `evidence_dir_state_before`（工具自报的**认领前**状态，逐字回填，不得用你自己观察到的值替代）。任一字段与工具实测不符，编排脚本会立即终止本次运行。',
+    '   **认领失败时（工具的退出码非 0）：不要写任何文件** —— 尤其不要写你自己的产物文件 `' + artifactPath + '`：',
+    '   那个目录属于别的运行，写进去会污染它的证据；直接返回结构化结果（把拒绝原因写进 `problems`），让编排层以 EVIDENCE_NOT_CLAIMED 终止。',
     '4. 检查从仓库根到交付目录、证据目录的**每一级路径分量**是否为软链接、Windows 目录联接（junction）或其他重解析点，',
     '   把这些分量**解算后的真实路径**写入 `link_components`（一个都没有就写空数组 `[]`）。',
     '   某个分量是链接、且解算后的真实路径已经越出仓库根时，它的真实路径必须出现在 `link_components` 里，并把该情况写入 `problems`。',
@@ -1291,8 +1303,9 @@ function reviewPrompt(attempt, codingReport, verification, artifactPath) {
 // ================================================================ 运行期装配
 
 // 编排层自己的时钟：所有"时间窗 / 未来时间 / 伪造起点"判定都以它为锚点，绝不由子代理提供。
-const orchestratorNowMs = currentTimeMs();
-const validated = validateRunConfig(args, orchestratorNowMs);
+// 启动时钟：只用于「运行标识是否与本机当前时间相符」这一次锚定（见 validateRunConfig）。
+const startupNowMs = currentTimeMs();
+const validated = validateRunConfig(args, startupNowMs);
 if (!validated.ok) {
   phaseStatic('validation');
   log('输入参数校验失败，工作流未启动任何子代理');
@@ -1390,7 +1403,10 @@ const preflight = await agent(preflightPrompt(artifact(1, 'preflight'), ownerMar
 if (!isObject(preflight)) {
   return failure('PREFLIGHT_FAILED', '环境预检子代理失败（返回空结果），工作流终止', { runId: C.runId, evidenceDir: C.evidenceDir });
 }
-const preflightTime = judgeTimestamp(preflight.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, orchestratorNowMs);
+// 阶段检查时钟：每次 Agent 返回后**重新读取**当前时间，而不是复用启动时那一次（复审要求一）。
+// 复用启动时钟会让"未来时间戳"的判定基准随运行时长过期：一个跑了很久的运行会把诚实的阶段时间戳误判为未来时间。
+const preflightNowMs = currentTimeMs();
+const preflightTime = judgeTimestamp(preflight.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, preflightNowMs);
 if (!preflightTime.ok) {
   return failure('INVALID_TIMESTAMP', '环境预检的时间戳不可信：' + preflightTime.reason,
     { runId: C.runId, evidenceDir: C.evidenceDir, preflight: preflight });
@@ -1471,6 +1487,19 @@ if (asString(preflight.claim_tool) !== EVIDENCE_CLAIM_TOOL) {
   claimProblems.push('claim_tool 报告为 ' + JSON.stringify(preflight.claim_tool) +
     '，本次运行只承认 ' + JSON.stringify(EVIDENCE_CLAIM_TOOL) + ' 的排他创建结果');
 }
+// 认领前后状态必须分开：`evidence_dir_state` 是预检自己在认领**之前**观察到的状态，
+// `evidence_dir_state_before` 是排他创建工具在**创建认领文件之前**读到的权威状态（复审要求二）。
+// 两者不一致说明报告与工具结果对不上；认领前的状态只接受 missing / empty（有内容的目录工具会拒绝认领）。
+// 认领之后目录里会有 `.run-owner.json`（这就是"认领后"的状态，属正常，不作为 EVIDENCE_EXISTS 判据）。
+const claimStateBefore = asString(preflight.evidence_dir_state_before);
+if (claimStateBefore !== 'missing' && claimStateBefore !== 'empty') {
+  claimProblems.push('认领工具回报的认领前状态 evidence_dir_state_before=' +
+    JSON.stringify(preflight.evidence_dir_state_before) + '（只接受 missing / empty：已有内容的目录不得被认领）');
+}
+if (claimStateBefore !== asString(preflight.evidence_dir_state)) {
+  claimProblems.push('预检自报的认领前状态 evidence_dir_state=' + JSON.stringify(preflight.evidence_dir_state) +
+    ' 与认领工具回报的 evidence_dir_state_before=' + JSON.stringify(preflight.evidence_dir_state_before) + ' 不一致');
+}
 if (preflight.claim_created !== true) {
   claimProblems.push('claim_created 不是 true（认领文件已存在或创建失败：已有认领不得覆写）');
 }
@@ -1479,9 +1508,10 @@ if (preflight.claim_exit_code !== 0) {
 }
 // 认领时间必须落在本次运行窗口内：否则报上来的可能是别的运行（或很久以前）留下的旧认领文件。
 const claimedAt = asString(preflight.claimed_at);
+const claimNowMs = currentTimeMs();
 const claimTime = claimedAt === ''
   ? { ok: false, reason: '未回报认领时间' }
-  : judgeTimestamp(claimedAt, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, orchestratorNowMs);
+  : judgeTimestamp(claimedAt, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, claimNowMs);
 if (!claimTime.ok) {
   claimProblems.push('claimed_at 不可信（' + claimTime.reason + '）：认领可能不属于本次运行');
 }
@@ -1522,7 +1552,8 @@ if (!isObject(requirement) || !hasText(requirement.goal) ||
     'Requirement Agent 输出不完整或子代理失败（goal/acceptance_criteria/boundary_conditions 缺失）',
     { runId: C.runId, evidenceDir: C.evidenceDir, received: requirement });
 }
-const requirementTime = judgeTimestamp(requirement.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, orchestratorNowMs);
+const requirementNowMs = currentTimeMs();
+const requirementTime = judgeTimestamp(requirement.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, requirementNowMs);
 if (!requirementTime.ok) {
   return failure('INVALID_TIMESTAMP', '需求阶段的时间戳不可信：' + requirementTime.reason,
     { runId: C.runId, evidenceDir: C.evidenceDir, requirement: requirement });
@@ -1566,13 +1597,14 @@ while (attempt <= C.maxCodingAttempts) {
     schema: CODING_SCHEMA
   });
   const codingOutputValid = isObject(codingReport) && hasItems(codingReport.files_created);
+  const codingNowMs = currentTimeMs();
   // Coding 自述的内部一致性（命令 / 退出码 / test_succeeded）：报告"看起来可用"也不能自相矛盾（复审要求四）。
   const codingConsistency = judgeCodingReportConsistency(codingReport, C.testCommand);
   if (!codingConsistency.ok) {
     log('Coding Agent' + revTag + ' 的测试自述内部不一致：' + codingConsistency.reasons.join('；'));
   }
   if (codingOutputValid) {
-    const codingTime = judgeTimestamp(codingReport.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, orchestratorNowMs);
+    const codingTime = judgeTimestamp(codingReport.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, codingNowMs);
     if (!codingTime.ok) {
       return failure('INVALID_TIMESTAMP', '编码阶段的时间戳不可信：' + codingTime.reason,
         { runId: C.runId, evidenceDir: C.evidenceDir, attempt: attempt, received: codingReport });
@@ -1592,8 +1624,9 @@ while (attempt <= C.maxCodingAttempts) {
     schema: VERIFY_SCHEMA
   });
   const verificationJudge = judgeTestEvidence(verification, C.testCommand);
+  const verifyNowMs = currentTimeMs();
   if (isObject(verification)) {
-    const verifyTime = judgeTimestamp(verification.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, orchestratorNowMs);
+    const verifyTime = judgeTimestamp(verification.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, verifyNowMs);
     verificationJudge.timestampOk = verifyTime.ok;
     if (!verifyTime.ok) { verificationJudge.passed = false; verificationJudge.reasons.push(verifyTime.reason); }
   }
@@ -1607,8 +1640,9 @@ while (attempt <= C.maxCodingAttempts) {
     phase: 'review' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: REVIEW_SCHEMA
   });
+  const reviewNowMs = currentTimeMs();
   if (isObject(review)) {
-    const reviewTime = judgeTimestamp(review.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, orchestratorNowMs);
+    const reviewTime = judgeTimestamp(review.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, reviewNowMs);
     if (!reviewTime.ok) {
       review.consistency_note = asString(review.consistency_note) + ' [编排层：' + reviewTime.reason + ']';
       review.verdict = 'CHANGES_REQUESTED';

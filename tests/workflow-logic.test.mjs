@@ -2,284 +2,23 @@
 //
 // 编排层逻辑回归测试（**不调用真实子代理**）
 //
-// 做法：用 node:vm 读取生产脚本 workflows/three-agent-mvp.js，把它包成一个函数后注入
-// 模拟的 agent() / log() / phase() 钩子，断言编排层在各种"自述与真实证据不一致"场景下的判定。
-// 生产脚本只有一份，测试直接跑它，不复制逻辑。
+// 做法：tests/workflow-harness.mjs 用 node:vm 读取生产脚本 workflows/three-agent-mvp.js，
+// 包成函数后注入模拟的 agent() / log() / phase() 钩子；本文件负责声明场景与期望值，
+// 断言编排层在各种"自述与真实证据不一致"场景下的判定。生产脚本只有一份，测试直接跑它，不复制逻辑。
 //
 // 运行：node tests/workflow-logic.test.mjs
-// 仅使用 Node 标准库（node:vm / node:fs / node:path / node:url），未安装任何依赖。
+// 仅使用 Node 标准库，未安装任何依赖。
 
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
-import { fileURLToPath } from 'node:url';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORKFLOW_PATH = path.join(HERE, '..', 'workflows', 'three-agent-mvp.js');
-const SOURCE = readFileSync(WORKFLOW_PATH, 'utf8');
+import {
+  NOW, TARGET_DIR, REPO_ROOT, TEST_SHA, CANONICAL, FAILED_OUTPUT, criteria, preflightOk, requirementOk,
+  codingOk, verifyOk, verifyFailed, reviewOk, baseArgs, happyPlan, advanceClock, clockIso, clockNowMs,
+  makeRunner
+} from './workflow-harness.mjs';
 
-/** 固定的"编排层当前时间"（生产脚本用 Date.now() 锚定运行起点）。 */
-const FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z');
-
-/**
- * 造一个 Date 替身：Date.now() 固定，其余（parse / new Date(ms) / toISOString）保持真实行为。
- * 必须注入：生产脚本会核对 runStartedAt 与编排层实际时间的差值，否则测试夹具里的
- * 2026-10-16 会被真实机器时间判成"伪造起点"，正常成功路径也会失败。
- */
-function makeFixedDate(fixedMs) {
-  return class FixedDate extends Date {
-    constructor(...parts) {
-      if (parts.length === 0) { super(fixedMs); } else { super(...parts); }
-    }
-    static now() { return fixedMs; }
-  };
-}
-
-/** 把生产脚本包成 async 函数（脚本正文在 workflow 工具里是顶层代码，含顶层 return）。 */
-function loadWorkflowBody() {
-  const wrapper =
-    'async function __workflowBody(args, agent, log, phase, parallel, pipeline) {\n' +
-    SOURCE +
-    '\n}\n__workflowBody;';
-  return vm.runInNewContext(wrapper, { console: console, Date: makeFixedDate(FIXED_NOW_MS) });
-}
-const workflowBody = loadWorkflowBody();
-
-// ---------------------------------------------------------------- 测试夹具
-
-const NOW = '2026-10-16T12:00:00+08:00';            // 对应 UTC 时间戳 20261016T040000Z
-const RUN_ID = 'test-run-20261016T040000Z';          // runId 必须以 -<UTC 时间戳> 结尾（原子防覆盖）
-const EVIDENCE_DIR = 'docs/evidence/' + RUN_ID;
-const TARGET_DIR = 'examples/text-stats';
-// 夹具时间必须与注入的"编排层当前时间"同一瞬间，否则时钟锚定判定会把夹具判成伪造起点。
-if (Date.parse(NOW) !== FIXED_NOW_MS) {
-  throw new Error('测试夹具的 NOW 与 FIXED_NOW_MS 不是同一瞬间：' + Date.parse(NOW) + ' != ' + FIXED_NOW_MS);
-}
-// 仓库根从测试文件位置推导，不写死本机路径（否则换个检出位置就断言失败，也把作者机器路径带进公开仓库）。
-const REPO_ROOT = path.resolve(HERE, '..').replace(/\\/g, '/');
-const MODULE_SHA = 'a'.repeat(64);
-const TEST_SHA = 'b'.repeat(64);
-const CANONICAL = 'python -m unittest discover -s ' + TARGET_DIR + ' -p "test_*.py"';
-const OK_OUTPUT = '...........\n' +
-  '----------------------------------------------------------------------\n' +
-  'Ran 44 tests in 0.021s\n\nOK\n';
-const FAILED_OUTPUT = 'F...\n' +
-  '======================================================================\n' +
-  'FAIL: test_trailing_newline (test_text_stats.TestCountText)\n' +
-  '----------------------------------------------------------------------\n' +
-  'Ran 44 tests in 0.030s\n\nFAILED (failures=1)\n';
-
-function criteria(count) {
-  const list = [];
-  for (let i = 0; i < count; i += 1) {
-    list.push({ criterion: 'AC-' + String(i + 1).padStart(2, '0'), satisfied: true, evidence: 'text_stats.py:' + (90 + i) });
-  }
-  return list;
-}
-
-function preflightOk(over) {
-  const base = {
-    repo_root: REPO_ROOT,
-    repo_root_realpath: REPO_ROOT,
-    evidence_dir_state: 'missing',
-    evidence_dir_entries: [],
-    evidence_dir_realpath: REPO_ROOT + '/' + EVIDENCE_DIR,
-    evidence_dir_claimed: true,
-    claim_tool: 'tools/claim_evidence_dir.py',
-    claim_created: true,
-    claim_exit_code: 0,
-    claimed_at: NOW,
-    owner_marker_path: EVIDENCE_DIR + '/.run-owner.json',
-    link_components: [],
-    prompt_files: ['requirement', 'coding', 'review', 'verifier'].map(function (n) {
-      return { path: 'agents/' + n + '-agent.md', exists: true };
-    }),
-    target_dir: TARGET_DIR,
-    target_dir_state: 'present',
-    target_dir_realpath: REPO_ROOT + '/' + TARGET_DIR,
-    resolved_paths: [REPO_ROOT + '/' + TARGET_DIR, REPO_ROOT + '/' + EVIDENCE_DIR],
-    problems: [],
-    generated_at: NOW
-  };
-  return Object.assign(base, over || {});
-}
-
-function requirementOk(criteriaCount, conflicts) {
-  const acs = [];
-  for (let i = 0; i < criteriaCount; i += 1) { acs.push('AC-' + String(i + 1).padStart(2, '0') + '（可检查描述）'); }
-  return {
-    goal: '交付文本统计 CLI',
-    scope_in: ['count_text', 'main'],
-    scope_out: ['词频统计'],
-    acceptance_criteria: acs,
-    boundary_conditions: ['BC-01 空文本', 'BC-02 以换行结尾', 'BC-03 空白行', 'BC-04 单词规则'],
-    consistency_check: { self_checked: true, conflicts: conflicts || [], notes: '已交叉核对' },
-    generated_at: NOW
-  };
-}
-
-function codingOk(over) {
-  const base = {
-    files_created: [{ path: TARGET_DIR + '/text_stats.py', purpose: '实现' }],
-    implementation_summary: '实现 count_text 与 CLI',
-    acceptance_criteria_addressed: ['AC-01'],
-    test_command: CANONICAL,
-    test_succeeded: true,
-    test_exit_code: '0',
-    test_output_excerpt: OK_OUTPUT,
-    deviations_from_requirement: [],
-    requirement_conflicts: [],
-    report_file: EVIDENCE_DIR + '/coding-report.json',
-    generated_at: NOW
-  };
-  return Object.assign(base, over || {});
-}
-
-function verifyOk(over) {
-  const base = {
-    command: CANONICAL,
-    exit_code: '0',
-    raw_output: OK_OUTPUT,
-    ran_tests: 44,
-    result_marker: 'OK',
-    artifacts: [
-      { path: TARGET_DIR + '/text_stats.py', sha256: MODULE_SHA, bytes: 1024 },
-      { path: TARGET_DIR + '/test_text_stats.py', sha256: TEST_SHA, bytes: 2048 }
-    ],
-    requirement_conflicts: [],
-    notes: '',
-    generated_at: NOW
-  };
-  return Object.assign(base, over || {});
-}
-
-function verifyFailed() {
-  return verifyOk({ exit_code: '1', raw_output: FAILED_OUTPUT, result_marker: 'FAILED' });
-}
-
-function reviewOk(over) {
-  const base = {
-    verdict: 'APPROVED',
-    criteria_check: criteria(3),
-    issues: [],
-    independent_test_command: CANONICAL,
-    independent_test_exit_code: '0',
-    independent_test_output: OK_OUTPUT,
-    artifacts_after: [
-      { path: TARGET_DIR + '/text_stats.py', sha256: MODULE_SHA, bytes: 1024 },
-      { path: TARGET_DIR + '/test_text_stats.py', sha256: TEST_SHA, bytes: 2048 }
-    ],
-    requirement_conflicts: [],
-    consistency_note: 'none',
-    summary: '全部验收条件满足',
-    report_file: EVIDENCE_DIR + '/review.json',
-    generated_at: NOW
-  };
-  return Object.assign(base, over || {});
-}
-
-function baseArgs(over) {
-  const o = over || {};
-  const task = Object.assign({
-    targetDir: TARGET_DIR,
-    moduleFile: 'text_stats.py',
-    testFile: 'test_text_stats.py',
-    sampleFile: 'sample_input.txt',
-    maxCodingAttempts: 2
-  }, o.task || {});
-  const args = { runId: RUN_ID, evidenceDir: EVIDENCE_DIR, promptDir: 'agents', task: task };
-  ['runId', 'evidenceDir', 'promptDir', 'runStartedAt'].forEach(function (key) {
-    if (o[key] !== undefined) { args[key] = o[key]; }
-  });
-  return args;
-}
-
-// ---------------------------------------------------------------- 运行夹具
-
-function pickKey(label) {
-  if (label.indexOf('Verifier (preflight)') === 0) { return 'preflight'; }
-  if (label.indexOf('Requirement Agent') === 0) { return 'requirement'; }
-  if (label.indexOf('Coding Agent') === 0) { return 'coding'; }
-  if (label.indexOf('Verifier (verify)') === 0) { return 'verify'; }
-  if (label.indexOf('Review Agent') === 0) { return 'review'; }
-  return 'unknown';
-}
-
-/** plan: { preflight, requirement, coding, verify, review } 每项为 (attempt, label) => 返回值 */
-async function runWith(plan, args) {
-  const calls = [];
-  const logs = [];
-  const agent = async function (prompt, opts) {
-    const label = opts && typeof opts.label === 'string' ? opts.label : '(无 label)';
-    calls.push(label);
-    const key = pickKey(label);
-    const responder = plan[key];
-    if (typeof responder !== 'function') {
-      throw new Error('模拟环境未提供 ' + key + ' 的返回值（实际调用：' + label + '）');
-    }
-    const match = /revision (\d+)/.exec(label);
-    return await responder(match ? Number(match[1]) : 1, label);
-  };
-  const log = function (message) { logs.push(String(message)); };
-  const phase = function () {};
-  const result = await workflowBody(args, agent, log, phase, undefined, undefined);
-  return { result: result, calls: calls, logs: logs };
-}
-
-/** 简化的"默认成功计划"，场景只需覆盖个别阶段。 */
-function happyPlan(over) {
-  return Object.assign({
-    preflight: function () { return preflightOk(); },
-    requirement: function () { return requirementOk(3); },
-    coding: function () { return codingOk(); },
-    verify: function () { return verifyOk(); },
-    review: function () { return reviewOk(); }
-  }, over || {});
-}
-
-// ---------------------------------------------------------------- 断言框架
-
-let checksPassed = 0;
-const failures = [];
-const scenarios = [];
-
-function check(name, condition, detail) {
-  if (condition) { checksPassed += 1; } else { failures.push(name + ' :: ' + (detail || '断言失败')); }
-}
-
-async function scenario(name, plan, args, expect) {
-  let outcome = null;
-  try {
-    outcome = await runWith(plan, args);
-  } catch (error) {
-    failures.push(name + ' :: 运行抛出异常 ' + (error && error.message ? error.message : String(error)));
-    scenarios.push({ name: name, status: 'THROW' });
-    return;
-  }
-  const result = outcome.result;
-  const notes = [];
-  function expectCheck(label, condition, detail) {
-    if (condition) { checksPassed += 1; } else { failures.push(name + ' / ' + label + ' :: ' + (detail || '断言失败')); }
-    notes.push((condition ? '✓' : '✗') + ' ' + label);
-  }
-  expectCheck('返回结构含 status', result && typeof result.status === 'string', 'status=' + (result && result.status));
-  if (expect.status) { expectCheck('status=' + expect.status, result.status === expect.status, '实际 ' + result.status); }
-  if (expect.ok !== undefined) { expectCheck('ok=' + expect.ok, result.ok === expect.ok, '实际 ' + result.ok); }
-  if (expect.attempts !== undefined) { expectCheck('attempts=' + expect.attempts, result.attempts === expect.attempts, '实际 ' + result.attempts); }
-  if (expect.calls !== undefined) {
-    expectCheck('子代理调用次数=' + expect.calls, outcome.calls.length === expect.calls, '实际 ' + outcome.calls.length + ' 次：' + outcome.calls.join(' > '));
-  }
-  if (expect.errorIncludes) {
-    const text = String(result.error || '') + ' | ' + JSON.stringify(result.errors || []);
-    expectCheck('错误信息包含「' + expect.errorIncludes + '」', text.indexOf(expect.errorIncludes) !== -1, '实际：' + text);
-  }
-  if (expect.finalFlag) {
-    expectCheck('finalDecision.' + expect.finalFlag, result.finalDecision && result.finalDecision[expect.finalFlag] === expect.finalFlagValue,
-      '实际 ' + JSON.stringify(result.finalDecision));
-  }
-  if (typeof expect.extra === 'function') { expect.extra(result, outcome, expectCheck); }
-  scenarios.push({ name: name, status: failures.some(function (f) { return f.indexOf(name + ' ') === 0 || f.indexOf(name + ' /') === 0; }) ? 'FAIL' : 'PASS', notes: notes });
-}
+const runner = makeRunner();
+const scenario = runner.scenario;
 
 // ---------------------------------------------------------------- 场景
 
@@ -850,19 +589,75 @@ await scenario('证据目录 realpath 与本次配置不符 → PATH_TARGET_MISM
   baseArgs(),
   { status: 'PATH_TARGET_MISMATCH', ok: false, calls: 1 });
 
+// ---------------------------------------------------------------- 阶段时钟与认领前后状态（复审要求一、二）
+
+// 36. 阶段检查时钟必须每次重新读取：模拟时钟在跨阶段过程中推进 120 秒，诚实的阶段时间戳不得被误判为未来时间。
+await scenario('阶段时钟分离：模拟时钟推进 120 秒的跨阶段成功路径 → OK',
+  happyPlan({
+    preflight: function () { advanceClock(120000); return preflightOk({ generated_at: clockIso(), claimed_at: clockIso() }); },
+    requirement: function () { advanceClock(120000); return Object.assign(requirementOk(3), { generated_at: clockIso() }); },
+    coding: function () { advanceClock(120000); return codingOk({ generated_at: clockIso() }); },
+    verify: function () { advanceClock(120000); return verifyOk({ generated_at: clockIso() }); },
+    review: function () { advanceClock(120000); return reviewOk({ generated_at: clockIso() }); }
+  }),
+  baseArgs(),
+  {
+    status: 'OK', ok: true, attempts: 1, calls: 5,
+    extra: function (result, outcome, expectCheck) {
+      expectCheck('认领时间与阶段时间戳都随模拟时钟前进（+120 秒 × 5）',
+        result.finalDecision && result.finalDecision.testsIndependentlyVerified === true,
+        'finalDecision=' + JSON.stringify(result.finalDecision));
+    }
+  });
+
+// 37. 时钟前进不得放宽运行窗口：窗口仍以 runStartedAt 为锚（6 小时），所以 +7 小时的"诚实"时间戳照样失败。
+await scenario('时钟推进 7 小时后阶段时间戳仍超出运行窗口 → INVALID_TIMESTAMP（窗口锚在 runStartedAt）',
+  happyPlan({
+    preflight: function () { advanceClock(7 * 60 * 60 * 1000); return preflightOk({ generated_at: clockIso(), claimed_at: clockIso() }); }
+  }),
+  baseArgs(),
+  { status: 'INVALID_TIMESTAMP', ok: false, calls: 1 });
+
+// 38. 真正的未来时间戳（比编排层当前时钟还晚 120 秒，超出 60 秒偏移容差）必须被拒绝。
+await scenario('阶段时间戳晚于编排层当前时间 120 秒 → INVALID_TIMESTAMP（不得 ok）',
+  happyPlan({
+    requirement: function () {
+      return Object.assign(requirementOk(3), { generated_at: new Date(clockNowMs + 120000).toISOString() });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INVALID_TIMESTAMP', ok: false, calls: 2, errorIncludes: '晚于编排层当前时间' });
+
+// 39. 认领前状态由排他创建工具回报：工具说认领前已有内容（exists），预检自报 empty 也不得通过。
+await scenario('认领工具回报的认领前状态为 exists → EVIDENCE_NOT_CLAIMED',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ evidence_dir_state: 'empty', evidence_dir_state_before: 'exists', claim_created: false, claim_exit_code: 11 });
+    }
+  }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'evidence_dir_state_before' });
+
+// 40. 预检自报的认领前状态与工具回报不一致 → 报告与工具结果对不上，拒绝。
+await scenario('预检自报认领前状态与工具回报不一致 → EVIDENCE_NOT_CLAIMED',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ evidence_dir_state: 'empty', evidence_dir_state_before: 'missing' });
+    }
+  }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: '不一致' });
+
+// 41. 认领前是"存在且为空"的目录：工具可以排他认领（认领后目录里会有 marker），必须放行。
+await scenario('认领前状态为 empty 的空目录可被排他认领 → OK',
+  happyPlan({
+    preflight: function () {
+      return preflightOk({ evidence_dir_state: 'empty', evidence_dir_state_before: 'empty' });
+    }
+  }),
+  baseArgs(),
+  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+
 // ---------------------------------------------------------------- 结果
 
-const passedScenarios = scenarios.filter(function (s) { return s.status === 'PASS'; }).length;
-console.log('编排层逻辑回归测试（模拟子代理返回值）');
-console.log('生产脚本：' + path.relative(process.cwd(), WORKFLOW_PATH));
-console.log('');
-scenarios.forEach(function (s) {
-  console.log((s.status === 'PASS' ? 'PASS' : 'FAIL') + '  ' + s.name);
-});
-console.log('');
-console.log('场景：' + passedScenarios + '/' + scenarios.length + ' 通过；断言：' + checksPassed + ' 项通过，' + failures.length + ' 项失败');
-if (failures.length > 0) {
-  console.log('');
-  failures.forEach(function (f) { console.log('  ✗ ' + f); });
-  process.exitCode = 1;
-}
+runner.finish('编排层逻辑回归测试（模拟子代理返回值）');
