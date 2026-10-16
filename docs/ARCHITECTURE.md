@@ -18,7 +18,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 
 #### 本机安装版（本机实测，2026-10-16）
 
-- 安装目录 `D:\AI\Deepseek Harness`，Electron 桌面应用，版本号 `44.0.0`（`version` 文件），nightly 更新通道，发布者 Hangzhou DeepSeek Artificial Intelligence Co., Ltd.（`resources/app-update.yml`）。
+- 安装目录 `<harness-install-dir>`，Electron 桌面应用，版本号 `44.0.0`（`version` 文件），nightly 更新通道，发布者 Hangzhou DeepSeek Artificial Intelligence Co., Ltd.（`resources/app-update.yml`）。
 - 捆绑运行时：Node.js 24.18.1、pnpm 11.7.0（`resources/runtime/versions.json`）。
 - 家目录 `~/.dsh` 内含：`sessions/`（会话）、`storages/`（存储）、`llm-deepseek/`（DeepSeek 模型适配器目录）、`profiles/`（当前仅初始化 `desktop` 配置文件）、`.credentials.yaml`（凭据文件，内容不读取、不复用）。
 

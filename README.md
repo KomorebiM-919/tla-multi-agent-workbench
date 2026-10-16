@@ -54,6 +54,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   - 路径与防覆盖：交付目录 / 证据目录必须回报 `realpath` 且位于仓库内、拒绝链接逃逸、`runId` 必须以 `-<UTC 时间戳>` 结尾并与 `runStartedAt` 同秒、证据目录先写 `.run-owner.json` 认领（未认领即终止）
   - 提示词修正：Requirement 的冲突定义（"现有实现与需求不一致"不是冲突，必须写进 `scope_in` / 验收条件）、Coding 的紧凑返回值与 `files_created` 硬要求、Verifier "写证据 vs 禁止写文件"的自相矛盾
   - 回归测试扩到 **50 个场景 / 227 项断言**；新增需求口径提案 `docs/REQUIREMENT-CALIBER.md` 与第二轮裁定文档 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`
+  - **需求口径已裁定（2026-10-17）**：所有者的 P-1 – P-6 六项确认固化为可版本化基线 `docs/REQUIREMENT-BASELINE.md`（`v0.1-demo-baseline-1`）；裁定只覆盖这六项，run 6 需求的其余条文仍属未逐条裁定（清单见基线第 5.1 节）
   - 第三次、第四次、第五次真实运行都被门禁拦下（`REQUIREMENT_CONFLICT`、`STAGE_REPORTS_REQUIREMENT_CONFLICT`），原始记录保留、未冒充成功
   - **第六次真实运行（`v0.1-run6-20261016T154400Z`）首次通过**：两轮尝试（首轮 `CHANGES_REQUESTED` → 修订 → 复审 `APPROVED`），8 次子代理执行、交付测试 **81 个全绿**、独立复核 **30 项交叉检查 0 失败**；完整证据见 `docs/evidence/v0.1-run6-20261016T154400Z/`
 
@@ -73,6 +74,8 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `.gitignore` | 忽略规则（密钥、凭据、缓存、虚拟环境等） |
 | `docs/ARCHITECTURE.md` | 技术架构与路线对比（DSH 原生 vs LangGraph） |
 | `docs/ROADMAP.md` | V0.1–V0.4 阶段计划与验收条件 |
+| `docs/REQUIREMENT-BASELINE.md` | V0.1 演示任务需求基线（已人工裁定六项口径，可版本化） |
+| `docs/REQUIREMENT-CALIBER.md` | 需求口径裁定记录（冲突原文、两处更正、逐项裁定记录） |
 | `agents/` | 角色职责说明与提示词（Requirement / Coding / Review / Verifier） |
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
 | `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |

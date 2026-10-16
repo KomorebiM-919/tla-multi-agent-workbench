@@ -36,6 +36,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   - 提示词：Requirement 的冲突定义改为"只有**本次需求内部**、同类调用、同一输入的互斥期望才算冲突"（"现有实现与需求不一致"必须写进 `scope_in` / 验收条件）；Coding 增加"返回值紧凑、先写产物文件、`files_created` 不得省略"；Verifier 修正"写证据"与"禁止写文件"的冲突（唯一允许的写操作是它自己的产物文件与 `.run-owner.json`）；
   - 回归测试扩到 **50 个场景 / 227 项断言**（新增冲突优先级、ID 逐项核对、文件指纹、realpath/链接/认领、`runId` 时间戳、独立复跑命令一致性、Verifier 时间窗等场景）；
   - 新增需求口径提案 `docs/REQUIREMENT-CALIBER.md`（AC-12/BC-12、BC-02/BC-03 的分层口径与 P-1…P-6 待确认项）与第二轮裁定文档 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`（"运行完成、验收未通过／需求冲突待解决"）；
+  - **需求口径裁定落地（2026-10-17）**：P-1 – P-6 已由仓库所有者逐项确认，固化为可版本化需求基线 `docs/REQUIREMENT-BASELINE.md`（`v0.1-demo-baseline-1`，条目 RB-1 – RB-6），并与当前实现和交付测试逐项核对一致；裁定**只覆盖这六项**，run 6 需求的其余条文与"以哪一轮需求文本为准"仍属未逐条裁定（见基线第 5 节），**V0.1 最终验收未通过**；
   - 第三次、第四次与第五次真实运行**都被门禁拦下**（`REQUIREMENT_CONFLICT`；`STAGE_REPORTS_REQUIREMENT_CONFLICT`），原始记录见 `ACCEPTANCE-STATUS.md` §6——门禁按设计生效，未把失败冒充成功；三次的根因都是 Requirement Agent 自造的数字示例与自己的规则算不出同一个数，据此要求"每个数值示例必须给出推导并优先沿用原始需求的示例"；
   - **第六次真实运行 `v0.1-run6-20261016T154400Z` 首次通过**（`ok: true` / `status: OK`）：两轮尝试（首轮 Review 判 `CHANGES_REQUESTED`，原因是交付测试与 README 里残留上一次运行的过期注释与过期边界条件编号；修订后复审 `APPROVED`，23/23 满足），8 次子代理执行、交付测试 81 个全绿、回归测试 50 场景 / 227 断言 0 失败、返回值 ↔ 磁盘证据交叉检查 30 项 0 失败；证据与诚实记录见 `docs/evidence/v0.1-run6-20261016T154400Z/README.md`。
 
@@ -44,6 +45,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - **人工审批的安全拒绝测试**（V0.1 正式验收要求，对应验收条件 3）：完成一次被拒绝的受保护操作，证明拒绝后无实际副作用（工作区未变、无远端写入、未安装依赖、权限未变），并归档测试记录。
 - **人工审批的强制拦截覆盖面**：首个 MVP 已把审批的三层区分写入 `docs/ARCHITECTURE.md` §2.1，但「一句提示词即强制拦截」的假设不成立；强制拦截只能来自沙箱 + 审批策略 + 操作自身的审批点，需逐条验证（见 `docs/ARCHITECTURE.md` §7 未验证项 #11）。
 - **需求一致性自检机制改进**（多次复现，仍未根治）：Requirement Agent 的 `consistency_check` 会漏检真实矛盾——第二次漏掉 AC-12 与 BC-12（"stdout 恰好 `True 0 int`" 与 "成功路径恰好 4 行" 不可同时满足），由 Review Agent 独立发现；第四次漏掉自己写出的 BC-03(b) 与 BC-04 空白行示例（`"  \n\t\n"` 是 2 行与 3 行互斥），第五次漏掉 AC-05 的 `char_count` 示例（示例值 6 与它自己的归一化规则算出的 5 互斥），都由 Verifier 与 Review 各自独立捕获。门禁现已能兜住该类冲突（硬失败 `STAGE_REPORTS_REQUIREMENT_CONFLICT`），但**自检本身仍是"声明式"的**：第六次运行虽然通过（自检报 `conflicts: 0`，下游两阶段与编排层独立复核也都未发现矛盾），并不能证明自检真的会做数值交叉验算。已加入的缓解措施是提示词层面的硬要求（每个数值示例必须给出推导、优先沿用原始需求的示例、示例必须与全部规则逐条比对），仍需在后续运行中持续观察（详见 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md` §6 与 `docs/REQUIREMENT-CALIBER.md`）。
+- **需求基线之外的口径仍未裁定**（2026-10-17 新增）：`docs/REQUIREMENT-BASELINE.md` 的 RB-1 – RB-6 只覆盖 P-1 – P-6 六项；run 6 需求中未被引用的条文（清单见该文件 §5.1）以及"V0.1 验收以哪一轮需求文本为准"这个元问题仍需人工裁定，裁定前不得据此宣称验收通过。
 - **清理交付目录中的残留临时目录**（需仓库所有者执行）：`examples/text-stats/.test-scratch/` 下有 11 个第一次运行遗留的 `tmp*` 目录，其 ACL 拒绝读取与删除，AI 沙箱内无法清理；不影响测试通过（被 `.gitignore` 忽略），但建议在本机非受限终端删除。
 - **后续 V0.1 扩展目标（不取消，但不是首次运行成功的前提）**：增加方案讨论（discussion）与测试（testing）两个角色，构成五角色完整流水线：需求 → 讨论 → 编码 → 审核 → 测试。
 

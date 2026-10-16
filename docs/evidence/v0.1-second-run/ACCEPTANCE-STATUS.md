@@ -32,7 +32,7 @@
    - ① `AC-12` 第二条命令要求 `main([], stdin_text='')` 的标准输出恰为 `True 0 int`，而 `BC-12` 要求成功路径标准输出恰好 4 行 —— 同一次调用不可能同时满足；
    - ③ `BC-03` 用 `line_count = len(T.splitlines())` 作唯一依据，而 `BC-02` 明确要求 `U+2028`/`U+2029` 等不构成行边界 —— 两套语义互斥（② 是 ① 在测试里的固化表现：`test_text_stats.py:373-379`）。
 2. **当时的门禁拦不住这种情况**：第二轮的成功判定只校验"独立验证通过 + 全部验收 ID satisfied + APPROVED + Review 自测通过"，**没有**"任何阶段报告未解决需求冲突即不得通过"这条规则。该规则在本轮（复审意见四）才加入，并已有回归场景覆盖（`Requirement 自检为空 + Review 报告冲突却仍 APPROVED` 必须失败）。
-3. 因此 `ok: true` / `APPROVED` 只说明"**当时的判定逻辑没有拦住**"，不能作为验收通过结论：需求侧冲突尚未消除、口径尚未由人确认（见 `docs/REQUIREMENT-CALIBER.md` 的待确认项 P-1～P-5）。
+3. 因此 `ok: true` / `APPROVED` 只说明"**当时的判定逻辑没有拦住**"，不能作为验收通过结论：需求侧冲突尚未消除、口径尚未由人确认（见 `docs/REQUIREMENT-CALIBER.md` 的待确认项 P-1～P-5）。**该缺口已于 2026-10-17 由仓库所有者逐项裁定补上（见第 10 节），但裁定不等于验收通过。**
 
 原始产物原文不改写；本结论以**追加**方式记录，避免"运行成功"被误读为"验收通过"。
 
@@ -72,7 +72,8 @@
 ## 5. 材料位置与哈希
 
 - 可审查材料清单、git blob SHA、sha256、字节数：`docs/evidence/v0.1-second-run/REVIEW-MANIFEST.md`
-- 需求口径裁定提案（AC-12/BC-12、BC-02/BC-03 与待确认项）：`docs/REQUIREMENT-CALIBER.md`
+- 需求口径裁定提案与裁定记录（AC-12/BC-12、BC-02/BC-03 与 P-1 – P-6）：`docs/REQUIREMENT-CALIBER.md`
+- V0.1 演示任务需求基线（已裁定六项口径，版本 `v0.1-demo-baseline-1`）：`docs/REQUIREMENT-BASELINE.md`
 
 ## 6. 第二轮复审之后的运行记录（run 3 – run 6）
 
@@ -170,9 +171,9 @@ run 6 是**第一个真实通过**的完整运行（两轮：首轮 Review 判 `
   `examples/text-stats/.gitignore` 的 `.test-scratch/tmp*/` 规则忽略（该规则就是为这类残留准备的），
   `git status` 保持干净，只在扫描该目录时打印若干 `warning: could not open directory`。这是 Python `mode` 行为、
   不是 DSH 沙箱 provisioning 缺陷，故未做 ACL 修复。
-- P-1 – P-6（`docs/REQUIREMENT-CALIBER.md` 第 3 节）仍未裁定，本轮**不自行选边**。
+- P-1 – P-6（`docs/REQUIREMENT-CALIBER.md` 第 3 节）仍未裁定，本轮**不自行选边**（后于 2026-10-17 由人工逐项裁定，见第 10 节）；
 - "人工审批的安全拒绝测试"（`docs/ROADMAP.md`）仍是 V0.1 的正式验收缺口，本轮未做。
-- 本轮**没有**重跑真实子代理：run 6 仍是唯一一次成功的真实重跑，其证据冻结为 e3c27c1 快照。
+- 本轮**没有**重跑真实子代理：run 6 是截至本轮**唯一一次被判成功**的完整真实运行，其证据冻结为 e3c27c1 快照（"唯一"只修饰"被判成功"——run 3 – run 5 同样是真实子代理运行并留下了真实产物，见第 6 节与第 10 节第 3 条）。
   **门禁通过 ≠ 最终验收通过**：本轮只能证明"上述 7 类异常不再能判为成功"，不能证明真实子代理在新门禁下跑通。
 
 ## 9. 复审后的第三轮收口（本轮，未重跑真实子代理）
@@ -199,5 +200,77 @@ run 6 是**第一个真实通过**的完整运行（两轮：首轮 Review 判 `
 - P-1 – P-6（`docs/REQUIREMENT-CALIBER.md` 第 3 节）仍未裁定，本轮不自行选边；
 - "人工审批的安全拒绝测试"仍是 V0.1 正式验收缺口，本轮未做；
 - `.test-scratch/.gitkeep` 的跟踪状态与 12 个不可读 `tmp*` 残留目录的说明见第 8 节；
-- 本轮**没有**重跑真实子代理：run 6 仍是唯一一次成功的真实重跑，其证据仍未变。
+- 本轮**没有**重跑真实子代理：run 6 仍是截至本轮唯一一次被判成功的完整真实运行，其证据仍未变（"唯一有真实子代理证据的运行"这一说法是错的，正确表述见第 10 节第 3 条）。
   **门禁通过 ≠ 最终验收通过**：本轮只证明"时钟判定与认领前状态这两处不再能被绕过"。
+
+## 10. 需求口径裁定与 V0.1 演示任务需求基线（本轮，未重跑真实子代理）
+
+背景：2026-10-17，仓库所有者对 `docs/REQUIREMENT-CALIBER.md` 第 3 节的 P-1 – P-6 **逐项裁定**，并要求：把决定固化为可版本化的需求基线；更正文档里三处问题（P-3 的错误选项、P-5 的历史描述、"run 6 是唯一有真实子代理证据的运行"这一错误说法）；澄清 `main` 自身输出与外层 `print` 输出的区别。本轮**没有修改任何历史证据 JSON 或输出文件**，也**没有**重跑真实子代理。
+
+### 10.1 裁定结果（六项，全部确认）
+
+| 项 | 裁定 | 基线条目 |
+| --- | --- | --- |
+| P-1 | 显式传入 `stdin_text`（包括空串）时，`main` 静默返回整数退出码 | RB-1 |
+| P-2 | 命令行读取空 stdin 到 EOF 时，输出四行零值统计并返回 0 | RB-2 |
+| P-3 | `cafe` + U+0301 为 **1 个词、5 个字符**；不做 NFC/NFD 归一化（断言为 2 是历史缺陷，禁止） | RB-3 |
+| P-4 | 行边界仅 LF、CR、CRLF；其余所列分隔字符不构成行边界 | RB-4 |
+| P-5 | AC 与 BC 没有隐式优先级；发现同一调用、同一输入的互斥要求时，报告冲突并停止，等待人工裁定 | RB-5 |
+| P-6 | 空白行计入总行数，末尾换行不额外增加一行；`'  \n\t\n'` 为 2 行、0 非空行 | RB-6 |
+
+落点：**`docs/REQUIREMENT-BASELINE.md`（基线版本 `v0.1-demo-baseline-1`）**，其中每条给出可观察示例、来源条文、实现位置与测试位置。
+
+### 10.2 基线只覆盖这六项
+
+采用 run 6 需求的相应条文，**不等于**认定 run 6 需求整体获批。run 6 需求中未被六项引用的条文（AC-11/AC-12/AC-14–AC-19/AC-22、BC-02/BC-03/BC-04/BC-06/BC-07/BC-08/BC-09/BC-10/BC-11/BC-13/BC-14/BC-18/BC-19/BC-20/BC-21/BC-22/BC-23/BC-24）仍是**未逐条裁定**的条文，清单见基线第 5.1 节。本文件第 6、7 节引用的 run 6 计数，仍然只是"那一轮运行留下的记录"。
+
+### 10.3 更正："run 6 是唯一有真实子代理证据的运行"是错的
+
+`docs/evidence/` 下**多轮都有真实子代理产物**，逐目录清点如下（本轮实测）：
+
+| 证据目录 | 文件数 | 其中真实 Agent 产物 |
+| --- | --- | --- |
+| `docs/evidence/v0.1-first-run/` | 9 | 5 次子代理执行的全部产物 |
+| `docs/evidence/v0.1-second-run/` | 15 | 5 个阶段 JSON + `dsh-native-events.json`（5 会话 / 148 步 / 180 次工具调用） |
+| `docs/evidence/v0.1-run3-20261016T150153Z/` | 3 | `preflight.json`、`requirement.json`（需求自检报冲突后停止，未进入编码） |
+| `docs/evidence/v0.1-run4-20261016T150809Z/` | 5 | 含 `review.json`、`verify.json`（同时含真实预检与需求产物） |
+| `docs/evidence/v0.1-run5-20261016T152321Z/` | 8 | 含 `coding-report.json`、`review.json`、`verify.json`、`workflow-result.json` |
+| `docs/evidence/v0.1-run6-20261016T154400Z/` | 19 | 8 会话 / 158 步 / 198 次工具调用，两轮修订的全部产物 |
+
+正确表述：**run 6 是当前门禁下第一次（也是截至本轮最后一次）被判成功的完整真实运行**，而**不是**"唯一有真实子代理证据的运行"。第 8、9 节里"唯一一次成功的真实重跑"已按此含义改写。
+
+### 10.4 澄清：`main` 自身的输出 vs 外层 `print` 的输出
+
+run 6 需求 AC-10（`docs/evidence/v0.1-run6-20261016T154400Z/requirement.json:42`）写"`main([], stdin_text='')` 的标准输出为空，而不是 `True 0 int`"——那句话把**外层命令** `python -c "...; print(callable(t.main), code, type(code).__name__)"` 的 stdout 说成了 `main` 的 stdout。事实是：`True` / `0` / `int` 三个值由**外层 `print`** 写出，`main` 自身不写任何流、只返回 `0`。本机实测（2026-10-17）：外层命令 stdout = `True 0 int`、退出码 0；同一次调用中 `main` 无输出。完整澄清见 `docs/REQUIREMENT-BASELINE.md` 第 4 节。**历史需求文件字节不变**，澄清以追加说明表达。
+
+### 10.5 与当前实现 / 测试的核对（本轮实测，未调用真实子代理）
+
+**结论：六项已裁定口径与当前实现、当前交付测试完全一致，未发现需要修改的实现或测试差异。**
+
+| 项 | 实测探针 | 结果 |
+| --- | --- | --- |
+| P-1 | `main([], stdin_text='')`；外层命令 `python -c "...print(callable(t.main), code, type(code).__name__)"` | 返回 `0` 且无任何输出；外层 stdout = `True 0 int` |
+| P-2 | `python examples/text-stats/text_stats.py < 空文件` | `0/0/0/0` 四行、退出码 0、不阻塞 |
+| P-3 | `count_text('cafe\u0301')` | `char_count 5`、`word_count 1` |
+| P-4 | `count_text('a\u2028b')` | `line_count 1`、`char_count 3` |
+| P-5 | `node tests/workflow-logic.test.mjs` | 81/81 场景、372 断言、0 失败、退出码 0 |
+| P-6 | `count_text('  \n\t\n')` | `line_count 2`、`non_empty_line_count 0` |
+
+交付测试：`python -m unittest discover -s examples/text-stats -p "test_*.py"` → `Ran 81 tests` / `OK`（退出码 0）。
+
+### 10.6 登记（本轮**不**改）的既有不一致
+
+- 本文件第 9 节记预检认领集成测试"5 场景 / 48 断言"——那是**那一轮的当时状态**；该轮之后的子进程启动方式修正轮已把它增至 **6 场景 / 59 断言**（见 `tests/README.md`）；
+- `docs/ROADMAP.md` 写 `examples/text-stats/.test-scratch/` 下有 11 个遗留 `tmp*` 目录，本文件第 8 节写 12 个。
+
+两处均属既有文档计数不一致，本轮只登记、不扩大修改范围。
+
+### 10.7 本轮改动文件
+
+`docs/REQUIREMENT-BASELINE.md`（新增）、`docs/REQUIREMENT-CALIBER.md`、`docs/ROADMAP.md`、`README.md`、本文件。`docs/evidence/` 下**只有本文件**被更新：所有历史 JSON、脚本与输出文件（含 run 3 – run 6 目录）**零改动**。
+
+### 10.8 遗留（未变）
+
+- "人工审批的安全拒绝测试"（V0.1 验收条件 3）仍未完成；
+- 当前门禁下**没有**重跑真实子代理：run 6 之后 `workflows/three-agent-mvp.js` 已被修改（两个时钟、认领前状态门禁等），"门禁通过"不能外推为"新代码下真实跑通"；
+- 因此 **V0.1 最终验收仍未通过**；本次只是把需求口径由"待裁定"变为"已裁定并有可版本化基线"。
