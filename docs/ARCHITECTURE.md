@@ -235,3 +235,4 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 | 10 | Codex 是否有比 `packages/subagent/subagent-codex/README.md` 更完整的专题接入文档（`docs/subsystems/README.md` 索引全文未核验）；`codex` 是否作为 wire protocol 存在于 hand-declared `api` 取值中 | 未核实 | Codex 接入方式 |
 | 11 | 审批强制拦截的实际覆盖范围未验证：提示词与 Agent 自觉只是软约束，宿主沙箱/审批策略究竟覆盖哪些危险操作，需以拒绝审批负面测试逐项确认 | 未验证（V0.1 拒绝审批测试） | 「危险操作被拦截」的可信度 |
 | 12 | ChatGPT Plus 订阅经官方 `openai-codex` OAuth 或 `subagent-codex` 在 DSH 内委派 Codex 任务的实际可用性（须区分订阅权益与独立 API 计费；不承诺模型可用性与额度） | 未验证（V0.2 独立验收项） | Codex 委派可行性 |
+| 13 | `workflow` 工具的返回值会被宿主截断（run 5 实测：约 1.5 万字符未到达调用方），因此长返回值**不能**直接当作逐字证据；且 workflow 内部的子代理会话不出现在调用会话的 `list_agents` 树中，无法从返回值取得会话 id | 已实测（工具侧限制，工作区按实测设计证据方式） | 编排层取证方式：返回值须落盘并显式标注截断/推导部分，原生执行证据改用 DSH 会话日志按「父会话 + 时间窗」筛选 |

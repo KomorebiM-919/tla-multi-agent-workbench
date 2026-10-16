@@ -47,6 +47,16 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   - 编排逻辑回归测试 `tests/workflow-logic.test.mjs`：用 `node:vm` 装载真实脚本 + 模拟子代理返回值，覆盖 **31 个场景**（正常、各类失败、非法参数、修订循环、证据保护）
   - 第二次真实运行证据 `docs/evidence/v0.1-second-run/`：5 次子代理执行、交付测试 **55 个全绿**、编排层 **266 项独立复核 0 失败**，并含从 DSH 原生会话日志提取的**脱敏执行事件**（会话标识、时间、turn/step、工具调用），可证明三个角色确实是独立子代理
 
+- [x] 阶段五：**按第二轮复审意见加固成功门禁与证据保护**（分支 `feat/v0.1-three-agent-mvp`，2026-10-16）：
+
+  - **冲突即硬失败**：任一阶段（Coding / Verifier / Review）报告未解决的需求冲突 ⇒ `STAGE_REPORTS_REQUIREMENT_CONFLICT`，不再进入修订轮，且该状态优先于其他失败原因
+  - 验收条件按 **ID 集合逐项核对**（缺失 / 重复 / 未知 ID 各有独立状态码）；并要求 Verifier 的 `artifacts` 与 Review 复核后重算的 `artifacts_after` 的文件集合与 `sha256` 完全一致（否则 `ARTIFACT_FINGERPRINT_MISMATCH`）
+  - 路径与防覆盖：交付目录 / 证据目录必须回报 `realpath` 且位于仓库内、拒绝链接逃逸、`runId` 必须以 `-<UTC 时间戳>` 结尾并与 `runStartedAt` 同秒、证据目录先写 `.run-owner.json` 认领（未认领即终止）
+  - 提示词修正：Requirement 的冲突定义（"现有实现与需求不一致"不是冲突，必须写进 `scope_in` / 验收条件）、Coding 的紧凑返回值与 `files_created` 硬要求、Verifier "写证据 vs 禁止写文件"的自相矛盾
+  - 回归测试扩到 **50 个场景 / 227 项断言**；新增需求口径提案 `docs/REQUIREMENT-CALIBER.md` 与第二轮裁定文档 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`
+  - 第三次、第四次、第五次真实运行都被门禁拦下（`REQUIREMENT_CONFLICT`、`STAGE_REPORTS_REQUIREMENT_CONFLICT`），原始记录保留、未冒充成功
+  - **第六次真实运行（`v0.1-run6-20261016T154400Z`）首次通过**：两轮尝试（首轮 `CHANGES_REQUESTED` → 修订 → 复审 `APPROVED`），8 次子代理执行、交付测试 **81 个全绿**、独立复核 **30 项交叉检查 0 失败**；完整证据见 `docs/evidence/v0.1-run6-20261016T154400Z/`
+
 ### 规划中（未开始）
 
 - [ ] V0.1 剩余：**人工审批的安全拒绝测试**（受保护操作被拒绝后必须无实际副作用，是 V0.1 正式验收要求）
@@ -89,15 +99,16 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 ### 运行三 Agent 工作流
 
 1. 打开本机已安装的 **DeepSeek Harness** 桌面应用，新建一个会话，把该会话的工作目录指向**本项目根目录**。
-2. 把 [`workflows/three-agent-mvp.js`](workflows/three-agent-mvp.js) 的脚本交给 DSH 的 **Workflow 工具**执行。脚本按顺序调用 `agent()`，每次都是一个**真实 Subagent**：预检 Verifier → 需求 → 编码 → 验证 Verifier → 审核；审核判为 `CHANGES_REQUESTED` 时，把审核意见交回新的编码 Agent 修订（默认最多 2 轮）。`args` 至少要给**一个新的 `runId`** 与对应的 `evidenceDir`（例如 `v0.1-third-run` / `docs/evidence/v0.1-third-run`），`targetDir` 例如 `examples/text-stats`。
-3. 运行结束后，证据文件写入 `docs/evidence/<runId>/`：预检结果、需求 JSON、编码报告、独立验证输出、审核结论。
+2. 把 [`workflows/three-agent-mvp.js`](workflows/three-agent-mvp.js) 的脚本交给 DSH 的 **Workflow 工具**执行（Workflow 工具只接受**内联脚本**，脚本内部没有文件系统/网络 API，因此必须把整份脚本作为 `script` 参数发出）。脚本按顺序调用 `agent()`，每次都是一个**真实 Subagent**：预检 Verifier → 需求 → 编码 → 验证 Verifier → 审核；审核判为 `CHANGES_REQUESTED` 时，把审核意见交回新的编码 Agent 修订（默认最多 2 轮）。`args` 至少要给**一个新的 `runId`**（必须以 `-<UTC 时间戳>` 结尾且与 `runStartedAt` 同一秒，例如 `v0.1-run7-20261016T170000Z`）与对应的 `evidenceDir`（默认 `docs/evidence/<runId>`，末段必须等于 `runId`），`targetDir` 例如 `examples/text-stats`。
+3. 运行结束后，证据文件写入 `docs/evidence/<runId>/`：`.run-owner.json`（认领标记）、预检结果、需求 JSON、编码报告、独立验证输出、审核结论；每轮修订各带 `-revision-N` 后缀。
+4. 复核证据：`cross-check-workflow-result.py`（返回值 ↔ 磁盘证据交叉检查）、`extract-native-events.mjs`（从 DSH 会话日志提取脱敏的原生执行事件）、`make-review-manifest.py`（材料清单与逐文件哈希）。
 
 参数与细节见 [`workflows/README.md`](workflows/README.md)。
 
 ### 运行测试与独立复核
 
 ```powershell
-# 编排逻辑回归测试（模拟子代理返回值，31 个场景）
+# 编排逻辑回归测试（模拟子代理返回值，50 个场景 / 227 项断言）
 node tests/workflow-logic.test.mjs
 
 # 演示项目的单元测试
@@ -105,6 +116,16 @@ python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
 # 编排层独立复核（直接验算需求中的边界条件）
 python -B docs/evidence/v0.1-second-run/orchestrator-verification.py
+
+# 返回值 ↔ 磁盘证据交叉检查（第六次运行）
+python -B docs/evidence/v0.1-second-run/cross-check-workflow-result.py --result docs/evidence/v0.1-run6-20261016T154400Z/workflow-result.json --evidence-dir docs/evidence/v0.1-run6-20261016T154400Z
+
+# 审查材料清单与逐文件哈希
+python -B docs/evidence/v0.1-second-run/make-review-manifest.py --repo . --out docs/evidence/v0.1-second-run/REVIEW-MANIFEST.md
 ```
 
-两次真实运行的完整记录（含各角色的产物、审核结论、DSH 原生执行事件与诚实记录）见 [`docs/evidence/v0.1-first-run/README.md`](docs/evidence/v0.1-first-run/README.md) 与 [`docs/evidence/v0.1-second-run/README.md`](docs/evidence/v0.1-second-run/README.md)。
+已完成的三次完整真实运行记录（含各角色的产物、审核结论、DSH 原生执行事件与诚实记录）见
+[`docs/evidence/v0.1-first-run/README.md`](docs/evidence/v0.1-first-run/README.md)、
+[`docs/evidence/v0.1-second-run/README.md`](docs/evidence/v0.1-second-run/README.md) 与
+[`docs/evidence/v0.1-run6-20261016T154400Z/README.md`](docs/evidence/v0.1-run6-20261016T154400Z/README.md)；
+被门禁拦下的 run 3 – run 5 记录在 [`docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`](docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md)。
