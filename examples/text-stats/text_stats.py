@@ -45,6 +45,8 @@ Worked example for the one input whose figure was once ambiguous
 
 import argparse
 import codecs
+import contextlib
+import io
 import re
 import sys
 
@@ -162,8 +164,15 @@ def _write(stream, text):
         pass
 
 
-def _report_error(message):
-    """Write exactly one ``error: `` line to standard error (BC-18)."""
+def _report_error(message, quiet=False):
+    """Write exactly one ``error: `` line to standard error (BC-18).
+
+    A programmatic call (``stdin_text is not None``) stays silent on **both**
+    streams (BC-15): the caller already gets the exit code, so the diagnostic is
+    suppressed instead of leaking to a stream this call promised not to touch.
+    """
+    if quiet:
+        return
     _write(sys.stderr, ERROR_PREFIX + message + NEWLINE)
 
 
@@ -211,6 +220,21 @@ def _build_parser():
     return parser
 
 
+def _parse_args(argv, quiet):
+    """Parse *argv*, honouring the silent-scope rule for programmatic calls.
+
+    A programmatic ``--help`` still ends with exit code 0, but scope rule a
+    promises that such a call writes nothing: argparse's help text is written to
+    a discarded buffer instead of the caller's standard output.  A command line
+    call keeps the normal help text.
+    """
+    parser = _build_parser()
+    if not quiet:
+        return parser.parse_args(argv)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return parser.parse_args(argv)
+
+
 def _read_stdin_text():
     """Read all of standard input, or ``None`` when it cannot be decoded.
 
@@ -238,35 +262,45 @@ def main(argv=None, stdin_text=None):
     and a successful run writes exactly the four ``<key>: <value>`` lines in
     the order of :data:`OUTPUT_KEYS`.
 
-    The two rules select the input, not the error contract: a PATH or an
-    ``--encoding`` that cannot be read or validated is still reported as an
-    error in a programmatic call (BC-18), while the injected text is simply
-    ignored in that case because a run cannot succeed.
+    The two rules select the input and the output scope, not the exit code: a
+    PATH or an ``--encoding`` that cannot be read or validated is still a
+    handled error with exit code 1 in both call kinds (BC-18).  Only the
+    diagnostic line differs - a command line run writes ``error: ...`` to
+    standard error, a programmatic run keeps both streams empty because scope
+    rule a promises it writes nothing at all (BC-15).
 
-    :param argv: argument list without the program name (``None`` -> ``sys.argv``).
+    An explicitly invalid ``--encoding`` is rejected before the input is
+    chosen, so ``main(["--encoding", "bogus"], stdin_text="")`` returns 1 while
+    still writing nothing.
+
+    :param argv: argument list without the program name (``None`` -> ``sys.argv[1:]``).
     :param stdin_text: programmatic text override; ``None`` means command line mode.
-    :returns: ``0`` on success, ``1`` on every handled error (BC-18).
+    :returns: ``0`` on success and on ``--help``, ``1`` on every handled error (BC-18).
     """
     programmatic = stdin_text is not None
     try:
-        args = _build_parser().parse_args(argv)
+        args = _parse_args(argv, programmatic)
     except _ParserExit as exc:
         if exc.status == EXIT_OK:
-            # --help: argparse already wrote the usage text to standard output.
+            # --help: a command line run already wrote the usage text; a
+            # programmatic run discarded it, so both simply return 0 here.
             return EXIT_OK
-        _report_error("invalid arguments ({0})".format(exc))
+        _report_error("invalid arguments ({0})".format(exc), programmatic)
+        return EXIT_ERROR
+
+    try:
+        # BC-14: an unknown --encoding name is an error on its own, before the
+        # input is chosen - no PATH and empty injected text do not excuse it.
+        encoding = _encoding_for(args.encoding)
+    except LookupError:
+        _report_error("unknown encoding: {0}".format(args.encoding), programmatic)
         return EXIT_ERROR
 
     if args.path is not None:
         try:
-            # BC-14: an unknown --encoding name is an error on its own, whether
-            # or not the file itself could be read.
-            text = _read_file(args.path, _encoding_for(args.encoding))
-        except LookupError:
-            _report_error("unknown encoding: {0}".format(args.encoding))
-            return EXIT_ERROR
+            text = _read_file(args.path, encoding)
         except (OSError, UnicodeDecodeError) as exc:
-            _report_error("{0}: {1}".format(args.path, exc))
+            _report_error("{0}: {1}".format(args.path, exc), programmatic)
             return EXIT_ERROR
         # Any named file must still be readable even in a programmatic call,
         # which is why this read happens before the scope split below.

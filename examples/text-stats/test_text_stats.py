@@ -98,14 +98,31 @@ def run_cli(args, stdin_text=""):
     )
 
 
+class _StreamMustNotBeRead(Exception):
+    """Raised when a programmatic call touches the process standard input."""
+
+
+class _ForbiddenStdin:
+    """Stand-in for ``sys.stdin`` whose every read is a failure (BC-15)."""
+
+    def read(self, *args, **kwargs):
+        raise _StreamMustNotBeRead("programmatic call read sys.stdin")
+
+
+_FORBIDDEN_STDIN = _ForbiddenStdin()
+
+
 def call_main(argv=None, stdin_text=None, process_stdin=None):
     """Call ``main`` in-process; return ``(code, stdout, stderr)``."""
     out, err = io.StringIO(), io.StringIO()
-    use_fake_stdin = stdin_text is None and process_stdin is not None
     saved_stdin = sys.stdin
     try:
-        if use_fake_stdin:
-            sys.stdin = io.StringIO(process_stdin)
+        if process_stdin is not None:
+            # A string means "this content is the process stdin"; any object
+            # that is not a string (e.g. _FORBIDDEN_STDIN) is installed as is,
+            # so a programmatic call that reaches for it fails loudly.
+            sys.stdin = (io.StringIO(process_stdin) if isinstance(process_stdin, str)
+                         else process_stdin)
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = main(argv, stdin_text=stdin_text)
     finally:
@@ -395,30 +412,26 @@ class ProgrammaticCallTests(unittest.TestCase):
         self.assertEqual((code, out, err), (0, "", ""))
 
     def test_ac19_missing_file_is_an_error_even_programmatically(self):
+        # BC-15: the exit code is still 1, but the caller keeps both streams.
         code, out, err = call_main(["no/such/dir/missing.txt"], stdin_text="")
-        self.assertEqual(code, 1)
-        self.assertEqual(out, "")
-        self.assertTrue(err.startswith("error: "), err)
-        self.assertEqual(err.count("\n"), 1)
+        self.assertEqual((code, out, err), (1, "", ""))
 
-    def test_ac19_error_report_is_one_line_even_with_text_available(self):
+    def test_ac19_invalid_arguments_keep_both_streams_empty(self):
         code, out, err = call_main(["a.txt", "b.txt"], stdin_text="content")
-        self.assertEqual(code, 1)
-        self.assertEqual(out, "")
-        self.assertEqual(err.count("\n"), 1)
-        self.assertTrue(err.startswith("error: "), err)
+        self.assertEqual((code, out, err), (1, "", ""))
+
+    def test_ac18_programmatic_help_returns_zero_and_writes_nothing(self):
+        code, out, err = call_main(["--help"], stdin_text="")
+        self.assertEqual((code, out, err), (0, "", ""))
+        self.assertNotIn("usage", out.lower())
+        # ... and it must not reach for standard input either (BC-15).
+        code, out, err = call_main(["--help"], stdin_text="", process_stdin=_FORBIDDEN_STDIN)
+        self.assertEqual((code, out, err), (0, "", ""))
 
     def test_ac13_programmatic_empty_text_never_blocks_on_process_stdin(self):
         # AC-13 requires immediate EOF never to block.  A command line run gets
         # that from an empty stream; a programmatic run must not touch the
         # stream at all, so a sys.stdin that raises on any use proves it.
-        class _StreamMustNotBeRead(Exception):
-            pass
-
-        class _ForbiddenStdin:
-            def read(self, *args, **kwargs):
-                raise _StreamMustNotBeRead("programmatic call read sys.stdin")
-
         saved_stdin = sys.stdin
         out, err = io.StringIO(), io.StringIO()
         try:
@@ -435,10 +448,22 @@ class ProgrammaticCallTests(unittest.TestCase):
         code, out, err = call_main(
             [SAMPLE_INPUT, "--encoding", "definitely-not-an-encoding"], stdin_text=""
         )
-        self.assertEqual(code, 1)
-        self.assertEqual(out, "")
-        self.assertTrue(err.startswith("error: "), err)
-        self.assertEqual(err.count("\n"), 1)
+        self.assertEqual((code, out, err), (1, "", ""))
+
+    def test_ac19_unknown_encoding_is_rejected_without_a_path(self):
+        # BC-14: a bad --encoding is an error on its own.  Without a PATH the
+        # injected text would otherwise be "valid", so the name must still win.
+        code, out, err = call_main(["--encoding", "definitely-not-an-encoding"], stdin_text="")
+        self.assertEqual((code, out, err), (1, "", ""))
+
+    def test_bc18_programmatic_directory_argument_is_a_silent_error(self):
+        code, out, err = call_main([SCRATCH_ROOT], stdin_text="ignored text")
+        self.assertEqual((code, out, err), (1, "", ""))
+
+    def test_bc14_programmatic_undecodable_file_is_a_silent_error(self):
+        with scratch_file("programmatic-undecodable.bin", b"\xff\xfe\x00\x01", binary=True) as path:
+            code, out, err = call_main([path], stdin_text="ignored text")
+        self.assertEqual((code, out, err), (1, "", ""))
 
     def test_ac20_only_the_guard_calls_main_and_nothing_forwards_to_it(self):
         with open(SCRIPT, "r", encoding="utf-8", newline="") as handle:
@@ -565,6 +590,15 @@ class CommandLineErrorTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertTrue(result.stderr.startswith("error: "), result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_ac16_unknown_encoding_name_is_an_error_without_a_path(self):
+        # The same rule in command line mode: no PATH does not excuse a bad
+        # --encoding, and standard input must not be consulted for it.
+        result = run_cli(["--encoding", "definitely-not-an-encoding"])
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertTrue(result.stderr.startswith("error: "), result.stderr)
+        self.assertIn("definitely-not-an-encoding", result.stderr)
 
     def test_ac17_too_many_positional_arguments_exit_with_one_not_two(self):
         result = run_cli(["a.txt", "b.txt"])
