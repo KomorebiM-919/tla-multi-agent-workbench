@@ -1,0 +1,97 @@
+{
+  "runId": "v0.2-run1-20261017T121445Z",
+  "runStartedAt": "2026-10-17T20:14:45+08:00",
+  "runStartedAtUtc": "2026-10-17T12:14:45.771840Z",
+  "recordDir": "docs/run-records/v0.2-run1-20261017T121445Z",
+  "evidenceDir": "docs/evidence/v0.2-run1-20261017T121445Z",
+  "requirement": {
+    "source": "docs/DEMO-REQUIREMENT-INPUT-v3.md 第 2 节（R-01 – R-37，状态标签已剥离）",
+    "version": "v0.2-demo-input-3",
+    "file": "docs/run-records/v0.2-run1-20261017T121445Z/requirement-injected.txt",
+    "bytes": 15249,
+    "sha256": "6307a7f0ca0a84ccf0b8036ad202d7acaa56e8664d5761b22c10a915a86f71d7",
+    "criteriaCount": 37,
+    "problems": [
+      "status word present: 已批准"
+    ]
+  },
+  "workflow": {
+    "file": "workflows/three-agent-mvp.js",
+    "bytes": 104089,
+    "sha256": "48f3aaea0b799ef4ec73d55d0344d5d4030e82d89d2c9afdf56fa084d84271b6",
+    "lines": 1794
+  },
+  "agents": {
+    "agents/requirement-agent.md": {
+      "bytes": 7351,
+      "sha256": "baad1b0a1c5cafc1ac9cf4c0c565dbb82826728656f3c08c154666d0b125692d"
+    },
+    "agents/coding-agent.md": {
+      "bytes": 4875,
+      "sha256": "eaed7c901da7e7d1ffbad474bb0d7fdae98289270daddf1f73acc7a094d7194f"
+    },
+    "agents/verifier-agent.md": {
+      "bytes": 5772,
+      "sha256": "15c4d8d32361d7fd329cc5012d7c143871b20c6edaeb68e8188ba7adb7ee44f1"
+    },
+    "agents/review-agent.md": {
+      "bytes": 5793,
+      "sha256": "6f070b182cdb9986c73de6c65abf5e176a6cb875c0dba30f18a2a21e981b8364"
+    },
+    "agents/README.md": {
+      "bytes": 3153,
+      "sha256": "23dde7f5e132ea6405634f47614b45aeea3494d1e25196ddcaf5e5b7604797a6"
+    }
+  },
+  "repository": {
+    "head": "ee3e89e611a646774ee6d458dc2bdff343df757f",
+    "branch": "feat/v0.1-three-agent-mvp",
+    "statusPorcelain": [
+      "?? docs/evidence/v0.1-approval-rejection-20261017T112518Z/.acl-after.tmp",
+      "?? docs/evidence/v0.1-approval-rejection-20261017T112518Z/.acl-before.tmp",
+      "?? docs/evidence/v0.1-approval-rejection-20261017T112518Z/approval-evidence.json",
+      "?? docs/evidence/v0.1-approval-rejection-20261017T112518Z/state-after.json",
+      "?? docs/evidence/v0.1-approval-rejection-20261017T112518Z/state-before.json",
+      "?? docs/review/",
+      "?? docs/run-records/"
+    ],
+    "diffCheck": ""
+  },
+  "model": {
+    "source": "<用户主目录>/.dsh\\profiles\\desktop\\cordis.patch.yml",
+    "entry": "agent-default-model",
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "reasoningEffort": "high",
+    "workflowSpecifiesModel": false
+  },
+  "testContract": {
+    "canonicalTestCommand": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "maxCodingAttempts": 2,
+    "attemptLimit": 5,
+    "plannedAgentCallsMin": 5,
+    "plannedAgentCallsMax": 8
+  },
+  "environment": {
+    "python": "3.13.12",
+    "cwd": "<repo-root>",
+    "dshHome": "<用户主目录>/.dsh",
+    "dshProfile": "desktop",
+    "dshSessionId": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "pythonDontWriteBytecode": "1",
+    "pythonVars": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    }
+  },
+  "redaction": {
+    "appliedAt": "2026-10-17T20:40:00+08:00",
+    "rule": "把本机用户目录 C:\\Users\\<用户名>\\.dsh 替换为 <用户主目录>/.dsh（含 JSON 转义形式），其余字节不变",
+    "reason": "本文件进入公开仓库，不提交本机用户名路径",
+    "originalSha256": "934787a8968721620d54c67912550a8fbb1279cf6aeca6cad1c6de0e46cdcee5",
+    "originalBytes": 3116,
+    "fieldsAffected": [
+      "model.source",
+      "environment.dshHome"
+    ]
+  }
+}

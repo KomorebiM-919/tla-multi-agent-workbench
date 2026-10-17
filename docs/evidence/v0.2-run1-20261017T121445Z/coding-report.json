@@ -1,0 +1,66 @@
+{
+  "run_id": "v0.2-run1-20261017T121445Z",
+  "agent": "coding-agent",
+  "stage": "coding",
+  "generated_at": "2026-10-17T20:26:27.887939+08:00",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "purpose": "命令行与程序化双作用域文本统计模块：count_text 纯函数、main(argv=None, stdin_text=None)、归一化与四项统计口径、受控错误契约（退出码 1、error: 单行、无 traceback）"
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "标准库 unittest 套件，76 个用例覆盖 AC-01 至 AC-27 与 BC-01 至 BC-27，含真实子进程命令行断言"
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "交付说明：用法、四行输出示例（20/2/2/4、12/1/1/2、0/0/0/0）、退出码表、测试覆盖声明（BC-01 至 BC-27、AC-01 至 AC-27）"
+      },
+      {
+        "path": "examples/text-stats/sample_input.txt",
+        "purpose": "固定样例输入 hello world\\nfoo bar\\n（20 字节、两个 LF、无 BOM），内容经测试校验未改动"
+      }
+    ],
+    "implementation_summary": "在 examples/text-stats 内按 R-01 至 R-37 复核并同步实现、测试与文档三处：text_stats.py 仅标准库，count_text(text) 纯函数返回恰四个整数键；normalise 先剥一个前导 U+FEFF、再 CRLF→LF、再剩余 CR→LF，之后只按 LF 切分（line_count 空文本 0、结尾 LF 不增行，non_empty 与 line 同一 split 后 strip 判空）；word_count 用 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*；文件默认 UTF-8，--encoding 仅作用于文件且 codecs.lookup 先于输入选择校验；stdin 由 sys.stdin 自身解码；argv=None 等价 sys.argv[1:]；main 返回 int，内部不调 sys.exit，仅模块入口 sys.exit(main())；命令行成功恰 4 行、--help 走 stdout 退出 0，程序化注入（含空串）三种情形双流全静默且不读 stdin；五类受控错误一律退出码 1、stderr 恰一行 error: 前缀。test_text_stats.py 重写为 76 个用例并逐条标注本轮 AC/BC 编号（含 AC-02 的 python -c 用例、AC-01 的 DEVNULL 用例、AC-22 的 UTF-16 文件与 stdin 不受 --encoding 影响用例、AC-27 的覆盖编号元测试）。README.md 同步更新编号、示例数值（\"  \\r\\n \\r\\n\" 的 char_count 为 5）与连接符的 \\u2019 写法。sample_input.txt 经字节断言确认未改动。",
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": "............................................................................\n----------------------------------------------------------------------\nRan 76 tests in 2.124s\n\nOK\nEXIT=0",
+    "acceptance_criteria_addressed": [
+      "AC-01 程序化 main([], stdin_text=\"\") 返回 int 0 且双流为空，DEVNULL stdin 下同样返回 0",
+      "AC-02 python -c 单行输出恰为 True 0 int，main 自身不写流",
+      "AC-03 命令行无 PATH、stdin 立即 EOF：退出 0，四行全 0，stderr 空",
+      "AC-04 count_text 返回恰四键 dict，20/2/2/4 全为 int",
+      "AC-05 \"  \\r\\n \\r\\n\" 为 5/2/0/0，char_count 不得为 6",
+      "AC-06 argv=None 用 sys.argv[1:] 且程序名不算位置参数；main([\"sample_input.txt\"]) 返回 0",
+      "AC-07 命令行 sample_input.txt：退出 0，20/2/2/4，stderr 空",
+      "AC-08 样例字节经 stdin 重定向得到相同 20/2/2/4",
+      "AC-09 命令行 --help 退出 0 且 stdout 含 PATH 与 --encoding；程序化 --help 静默返回 0",
+      "AC-10 不存在文件与目录 PATH：退出 1、stdout 空、stderr 恰一行 error: 无 Traceback",
+      "AC-11 非法编码、两个位置参数、非法 UTF-8 文件：退出 1（非 2），stdout 空、stderr 单行",
+      "AC-12 程序化 missing-file 与非法编码：返回 1 且双流为空",
+      "AC-13 退出码仅 0/1，main 返回 int 不抛 SystemExit，仅模块入口 sys.exit(main())",
+      "AC-14 只剥一个 BOM（\\ufeffabc=3、\\ufeff\\ufeffabc=4）；U+2028 不是换行",
+      "AC-15 line_count 九组表（\"\"→0、\"\\n\"→1、\"a\\n\"→1、\"a\\nb\"→2、\"a\\n\\n\"→2 等）",
+      "AC-16 non_empty 与 line 同一次切分（\"  \\n\\t\\n\"=2/0、\"a\\n\\n\"=2/1）",
+      "AC-17 char_count 按归一化码点：20、a\\r\\nb=3、caf\\u00e9=4、cafe+U+0301=5",
+      "AC-18 基本词规则：well-known=1、don't=1、it’s=1、a-b-c=1、hello--world=2",
+      "AC-19 数字与下划线：123 456=0、abc123=1、a1b=2、a_b=2、foo_bar baz=3",
+      "AC-20 非 ASCII：caf\\u00e9=1、caf\\u00e9-mocha=2、cafe+U+0301=1 且绝不为 2",
+      "AC-21 连接符须紧邻 ASCII 字母：\" -abc\"=1、\"abc- \"=1、\"'abc\"=1",
+      "AC-22 --encoding 解 UTF-16 文件得 20/2/2/4；不改变 stdin 解码（hello world\\n=12/1/1/2）",
+      "AC-23 全部 import 来自标准库，交付目录无依赖清单文件",
+      "AC-24 git status 在 examples/text-stats 下仅四个交付文件变化，未新增 __pycache__",
+      "AC-25 sample_input.txt 恰 20 字节无 BOM；README 20/2/2/4、12/1/1/2、0/0/0/0 与 char_count 5 自洽",
+      "AC-26 README 与 docstring 不出现裸 U+2019，一律 \\u2019 或 U+2019 标注",
+      "AC-27 规范命令退出 0，无 failure/error/skip；README 声明覆盖 BC-01 至 BC-27 与 AC-01 至 AC-27，用例标注编号"
+    ],
+    "requirement_conflicts": [],
+    "deviations_from_requirement": [
+      "sample_input.txt 未产生新的字节改动：其内容在基线提交中已是 hello world\\nfoo bar\\n（20 字节），本轮按原样保留并以测试断言校验，故 git 中只有 text_stats.py、test_text_stats.py、README.md 三个文件为 modified"
+    ],
+    "report_file": "docs/evidence/v0.2-run1-20261017T121445Z/coding-report.json",
+    "generated_at": "2026-10-17T20:26:27.887939+08:00"
+  }
+}

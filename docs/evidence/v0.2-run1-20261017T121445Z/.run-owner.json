@@ -1,0 +1,8 @@
+{
+  "claimMode": "exclusive-create (O_EXCL)",
+  "claimTool": "tools/claim_evidence_dir.py",
+  "claimedAt": "2026-10-17T20:19:14.564772+08:00",
+  "claimedBy": "verifier-preflight",
+  "runId": "v0.2-run1-20261017T121445Z",
+  "runStartedAt": "2026-10-17T20:14:45+08:00"
+}

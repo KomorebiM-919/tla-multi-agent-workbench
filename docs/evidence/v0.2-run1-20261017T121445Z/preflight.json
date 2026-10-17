@@ -1,0 +1,55 @@
+{
+  "run_id": "v0.2-run1-20261017T121445Z",
+  "agent": "Verifier Agent",
+  "stage": "preflight",
+  "generated_at": "2026-10-17T20:19:28.546819+08:00",
+  "result": {
+    "repo_root": "<repo-root>",
+    "repo_root_realpath": "<repo-root>",
+    "evidence_dir_state": "missing",
+    "evidence_dir_state_before": "missing",
+    "evidence_dir_realpath": "<repo-root>\\docs\\evidence\\v0.2-run1-20261017T121445Z",
+    "evidence_dir_claimed": true,
+    "evidence_dir_entries": [],
+    "owner_marker_path": "docs/evidence/v0.2-run1-20261017T121445Z/.run-owner.json",
+    "claim_tool": "tools/claim_evidence_dir.py",
+    "claim_created": true,
+    "claim_exit_code": 0,
+    "claimed_at": "2026-10-17T20:19:14.564772+08:00",
+    "link_components": [],
+    "prompt_files": [
+      {
+        "path": "agents/requirement-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/coding-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/review-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/verifier-agent.md",
+        "exists": true
+      }
+    ],
+    "target_dir": "examples/text-stats",
+    "target_dir_state": "present",
+    "target_dir_realpath": "<repo-root>\\examples\\text-stats",
+    "resolved_paths": [
+      "<repo-root>\\agents\\requirement-agent.md",
+      "<repo-root>\\agents\\coding-agent.md",
+      "<repo-root>\\agents\\review-agent.md",
+      "<repo-root>\\agents\\verifier-agent.md",
+      "<repo-root>\\workflows\\three-agent-mvp.js",
+      "<repo-root>\\tools\\claim_evidence_dir.py",
+      "<repo-root>\\AGENTS.md",
+      "<repo-root>\\examples\\text-stats",
+      "<repo-root>\\docs\\evidence\\v0.2-run1-20261017T121445Z"
+    ],
+    "problems": [],
+    "generated_at": "2026-10-17T20:19:28.546819+08:00"
+  }
+}
