@@ -488,6 +488,43 @@ await scenario('Review 用例数与 Verifier 对同一命令的用例数不一�
   baseArgs({ task: { maxCodingAttempts: 1 } }),
   { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5, errorIncludes: '不一致' });
 
+// 31a. `OK (skipped=44)` 意味着一个用例都没真正执行，不是"测试通过"（本轮离线审查发现的可绕过路径）。
+await scenario('Verifier 原始输出为 OK (skipped=44)（全部用例被跳过）→ INCONSISTENT_EVIDENCE（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ raw_output: '............\nRan 44 tests in 0.021s\n\nOK (skipped=44)\n' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5, errorIncludes: '全部用例被跳过' });
+
+await scenario('Verifier 原始输出部分跳过（skipped=2 / Ran 44）仍是真实执行 → OK（不得误拒）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ raw_output: '............\nRan 44 tests in 0.021s\n\nOK (skipped=2)\n' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'OK', ok: true, calls: 5 });
+
+await scenario('Review 独立复跑 OK (skipped=44)（全部跳过）→ INCONSISTENT_REVIEW（不得 ok）',
+  happyPlan({
+    review: function () {
+      return reviewOk({ independent_test_output: 'Ran 44 tests in 0.021s\n\nOK (skipped=44)\n' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5, errorIncludes: '全部用例被跳过' });
+
+await scenario('Coding 输出摘录 OK (skipped=44)（全部跳过）→ CODING_REPORT_INCONSISTENT（不得 ok）',
+  happyPlan({
+    coding: function () {
+      return codingOk({ test_output_excerpt: 'Ran 44 tests in 0.021s\n\nOK (skipped=44)\n' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '全部用例被跳过' });
+
 // 32. Coding 自述必须内部自洽：test_succeeded / 退出码 / 命令 / 输出摘录四者互相印证。
 await scenario('Coding 自述 test_succeeded=true 但退出码 1 → CODING_REPORT_INCONSISTENT（不得 ok）',
   happyPlan({

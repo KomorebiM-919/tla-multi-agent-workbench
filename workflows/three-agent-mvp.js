@@ -23,8 +23,9 @@
  *     A. 需求自检未报告冲突（consistency_check.conflicts 为空），且验收条件 ID 齐备、不重复；
  *     B. 任何阶段（Coding / Verifier / Review）都没有报告「未解决的需求冲突」（requirement_conflicts 非空即失败）；
  *     C. Coding Agent 的自述**内部自洽**（规范化命令、退出码为非负整数、test_succeeded 与退出码及输出摘录一致）；
- *     D. Verifier 回传的**原始输出**经本脚本解析为通过（退出码 0、`Ran N tests`（N ≥ 1）、`OK` 标记、无 FAILED）；
- *     E. Review 结论为 APPROVED，且其**自己的**复跑也真的执行了测试（N ≥ 1）并与 Verifier 的用例数一致；
+ *     D. Verifier 回传的**原始输出**经本脚本解析为通过（退出码 0、`Ran N tests`（N ≥ 1）、`OK` 标记、无 FAILED，
+ *        且 skipped 数小于 N —— `OK (skipped=N)` 表示一个用例都没真正执行，按未执行判失败）；
+ *     E. Review 结论为 APPROVED，且其**自己的**复跑也真的执行了测试（N ≥ 1、不是全体 skipped）并与 Verifier 的用例数一致；
  *     F. Review 的 criteria_check 与需求的验收 ID 集合**逐项对应**：无缺失、无重复、无未知 ID，且逐条 satisfied === true；
  *     G. Verifier / Review 的 sha256 指纹清单**恰好**覆盖配置指定的交付文件（模块 + 测试）：缺项、无关文件、
  *        重复路径一律失败，且验证前后同一路径哈希一致。
@@ -516,12 +517,32 @@ function parseUnittestOutput(raw) {
   const ranMatch = /Ran (\d+) tests? in /.exec(text);
   const failedMatch = /(^|\n)FAILED[^\n]*/.exec(text);
   const okMatch = /(^|\n)OK( \([^\n]*\))?(\n|$)/.exec(text);
+  // `OK (skipped=44)` 同时是"OK 标记"和"一个用例都没真正执行"：unittest 只有在
+  // 全部用例被跳过时才输出这种括注，所以必须单独解析 skipped 数（复审要求一）。
+  const skippedMatch = /\([^)\n]*\bskipped=(\d+)[^)\n]*\)/.exec(text);
   return {
     ran: ranMatch ? parseInt(ranMatch[1], 10) : null,
+    skipped: skippedMatch ? parseInt(skippedMatch[1], 10) : null,
     failedMarker: failedMatch ? failedMatch[0].trim() : null,
     okMarker: okMatch ? true : false,
     textPresent: text.trim().length > 0
   };
+}
+
+/**
+ * 是否"全部用例被跳过"（即没有一条测试真正执行过）。
+ * `OK (skipped=44)` 的 `Ran 44 tests` 是真实数字，仅凭"用例数 > 0 + 有 OK 标记"判断会被它骗过：
+ * 必须用 skipped 与 ran 的关系单独判（复审要求一）。
+ */
+function isAllTestsSkipped(parsed) {
+  if (!isObject(parsed)) { return false; }
+  return parsed.ran !== null && parsed.skipped !== null && parsed.skipped >= parsed.ran;
+}
+
+/** 全部跳过时的统一拒绝措辞（三个判定点共用，避免措辞漂移）。 */
+function allSkippedReason(label, parsed) {
+  return label + ' 显示全部用例被跳过（skipped=' + parsed.skipped + ' / Ran ' + parsed.ran +
+    ' tests）：没有任何测试真正执行，不能作为测试通过的证据';
 }
 
 /** 判定 Verifier 独立复跑证据是否成立（命令必须是我们批准的那条）。 */
@@ -539,6 +560,7 @@ function judgeTestEvidence(evidence, canonicalCommand) {
   if (parsed.failedMarker) { reasons.push('原始输出含失败标记：' + parsed.failedMarker); }
   if (parsed.ran === null) { reasons.push('原始输出中没有 `Ran N tests` 行，无法确认测试真实执行'); }
   else if (parsed.ran < 1) { reasons.push('原始输出显示执行的用例数为 0'); }
+  if (isAllTestsSkipped(parsed)) { reasons.push(allSkippedReason('Verifier', parsed)); }
   if (!parsed.okMarker) { reasons.push('原始输出中没有 `OK` 标记'); }
 
   const declaredRan = evidence.ran_tests;
@@ -634,6 +656,11 @@ function judgeReviewConsistency(review, expectedIds, canonicalCommand, verifierR
     ownTestsPassed = false;
     reasons.push('Review 的独立复跑执行了 0 个用例（`Ran 0 tests`）：不算独立验证');
   }
+  // `OK (skipped=44)` 同样是"没有执行任何用例"：跳过不等于通过（复审要求一）。
+  if (isAllTestsSkipped(ownParsed)) {
+    ownTestsPassed = false;
+    reasons.push(allSkippedReason('Review 的独立复跑', ownParsed));
+  }
   // 同一条规范化命令、同一份代码，Verifier 与 Review 的执行用例数必须一致：
   // 不一致说明至少有一方没有真正执行（复审要求三）。
   if (isInteger(verifierRanTests) && ownParsed.ran !== null && ownParsed.ran !== verifierRanTests) {
@@ -688,6 +715,9 @@ function judgeCodingReportConsistency(codingReport, canonicalCommand) {
     const parsed = parseUnittestOutput(excerpt);
     if (parsed.ran !== null && parsed.ran < 1) {
       reasons.push('Coding 的输出摘录显示执行的用例数为 0');
+    }
+    if (isAllTestsSkipped(parsed)) {
+      reasons.push(allSkippedReason('Coding 的输出摘录', parsed));
     }
     if (codingReport.test_succeeded === true && parsed.failedMarker) {
       reasons.push('Coding 自述测试通过但输出摘录含失败标记：' + parsed.failedMarker);
