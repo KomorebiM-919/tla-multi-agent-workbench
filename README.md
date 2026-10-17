@@ -79,6 +79,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `docs/ROADMAP.md` | V0.1–V0.4 阶段计划与验收条件 |
 | `docs/REQUIREMENT-BASELINE.md` | V0.1 演示任务需求基线（已人工裁定六项口径，可版本化） |
 | `docs/REQUIREMENT-CALIBER.md` | 需求口径裁定记录（冲突原文、两处更正、逐项裁定记录） |
+| `docs/DEMO-REQUIREMENT-INPUT.md` | V0.1 演示任务需求输入候选稿（`v0.2-demo-input-1`，待批准，供新版真实流水线使用） |
 | `agents/` | 角色职责说明与提示词（Requirement / Coding / Review / Verifier） |
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
 | `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |

@@ -152,5 +152,6 @@ BC-02（归一化顺序的逐字表述）、BC-03（只剥一个前导 U+FEFF）
 
 - 需求口径裁定提案与冲突原文（含 P-1 – P-6 的裁定记录与两处更正）：`docs/REQUIREMENT-CALIBER.md`
 - 验收状态（含本轮追加的第 10 节）：`docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`
+- 新版真实流水线的需求输入候选稿（`v0.2-demo-input-1`，待人工批准；本文六项已落入其 R-01 / R-02 / R-16+R-19+R-24 / R-21+R-22 / R-37）：`docs/DEMO-REQUIREMENT-INPUT.md`
 - 流水线门禁与状态码表：`workflows/README.md`
 - 演示交付物本身：`examples/text-stats/README.md`、`examples/text-stats/text_stats.py`、`examples/text-stats/test_text_stats.py`
