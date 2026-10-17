@@ -91,6 +91,10 @@ export function validateSnapshot(raw) {
       prices.cacheReadMicroMinorPerMillion = requireNonNegativeInteger(
         entry.cacheReadMicroMinorPerMillion, 'PRICING_INVALID', where + '.cacheReadMicroMinorPerMillion');
     }
+    if (entry.cacheWriteMicroMinorPerMillion !== undefined) {
+      prices.cacheWriteMicroMinorPerMillion = requireNonNegativeInteger(
+        entry.cacheWriteMicroMinorPerMillion, 'PRICING_INVALID', where + '.cacheWriteMicroMinorPerMillion');
+    }
     return {
       provider: entry.provider,
       model: entry.model,

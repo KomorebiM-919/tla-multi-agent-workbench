@@ -38,6 +38,8 @@ import {
 import {
   allocateByBasisPoints,
   costForTokens,
+  divCeil,
+  divRoundHalfUp,
   formatMicro,
   microFromMinor,
 } from '../orchestration/money.mjs';
@@ -371,8 +373,9 @@ scenario('backend probing is explicit and never pretends to be executable');
   check(compatible.compatibility.hostTrack === 'legacy', 'the legacy track is recorded for 0.2.0-rc.2', compatible.compatibility.hostTrack);
   check(compatible.execution.implementation === 'not-implemented', 'compatibility does not imply an execution adapter');
   const mapped = backendStatusForPlan(compatible);
-  check(mapped.status === 'unavailable', 'compatible-but-unimplemented backend still blocks the plan');
+  check(mapped.status === 'compatible', 'compatibility is preserved instead of being flattened to unavailable', mapped.status);
   check(mapped.reason === 'BACKEND_EXECUTION_NOT_IMPLEMENTED', 'the blocking reason names the missing adapter', mapped.reason);
+  check(mapped.execution.implementation === 'not-implemented', 'the execution dimension stays not-implemented');
 
   check(probeAgentTeams({ ...allGood, pluginVersion: '0.1.23' }).reason === 'BACKEND_VERSION_UNVERIFIED',
     'an unverified plugin version is rejected');
@@ -649,6 +652,146 @@ scenario('portkey importer converts units and refuses ambiguous data');
 
 function loadSnapshotFileRaw() {
   return JSON.parse(readFileSync(path.join(ROOT, 'orchestration', 'data', 'pricing-snapshot.portkey-72e1084.json'), 'utf8'));
+}
+
+// ------------------- 9. 复审回归：五维就绪、向上取整、缓存写价格
+
+scenario('review regressions: readiness dimensions, ceiling costs and cache-write pricing');
+{
+  const workflowPlan = makePlan();
+  check(workflowPlan.readiness.configValid === true, 'config dimension is reported separately');
+  check(workflowPlan.readiness.estimatesAvailable === true, 'estimate dimension is reported separately');
+  check(workflowPlan.readiness.backendCompatible === true, 'compatibility dimension is reported separately');
+  check(workflowPlan.readiness.executionImplemented === true, 'the verified workflow backend counts as implemented');
+  check(workflowPlan.readiness.budgetProtection === 'call-count-hard-cap', 'the workflow backend has a real pre-call cap', String(workflowPlan.readiness.budgetProtection));
+  check(workflowPlan.executable === true && workflowPlan.status === 'ready', 'a fully implemented backend is executable');
+  check(workflowPlan.missingForExecution.length === 0, 'nothing is missing for execution on the workflow backend');
+
+  const allGood = {
+    hostVersion: '0.2.0-rc.2',
+    pluginInstalled: true,
+    pluginVersion: AGENT_TEAMS_REVIEWED_VERSION,
+    exports: ['name', 'inject', 'Config', 'usageSectionText', 'apply'],
+    services: ['tools', 'llm', 'subagents', 'systemPrompt', 'agents'],
+  };
+  const compatible = probeAgentTeams(allGood);
+  const agentTeamsPlan = makePlan({ backend: backendStatusForPlan(compatible) });
+  check(agentTeamsPlan.readiness.backendCompatible === true, 'agent-teams records compatibility as its own dimension');
+  check(agentTeamsPlan.readiness.executionImplemented === false, 'compatibility never implies an implemented adapter');
+  check(agentTeamsPlan.readiness.budgetProtection === 'allocation-plan-only', 'agent-teams can only offer a plan allocation', String(agentTeamsPlan.readiness.budgetProtection));
+  check(agentTeamsPlan.executable === false, 'agent-teams is not executable');
+  check(agentTeamsPlan.missingForExecution.includes('BACKEND_EXECUTION_NOT_IMPLEMENTED'), 'the missing adapter is a named readiness gap');
+  check(agentTeamsPlan.missingForExecution.includes('CALL_CAP_NOT_ENFORCEABLE'), 'the missing pre-call counter is a named readiness gap');
+  check(agentTeamsPlan.status === 'blocked', 'agent-teams stays blocked');
+
+  const directProbePlan = makePlan({ backend: compatible });
+  check(directProbePlan.executable === false, 'a compatible probe alone must never be executable (the old code said ready)');
+  check(directProbePlan.status === 'blocked', 'feeding the raw probe result still blocks the plan');
+  check(hasCode(blockerCodes(directProbePlan), 'BACKEND_EXECUTION_NOT_IMPLEMENTED'),
+    'the raw probe path still reports the missing adapter');
+
+  check(divRoundHalfUp(1, 1_000_000) === 0, 'half-up truncates a single micro unit to zero (the old defect)');
+  check(costForTokens(1, 1) === 1, 'a single token is charged at least one micro unit (ceiling)');
+  check(costForTokens(3, 1) === 1, 'three tokens are not rounded down to zero');
+  check(divCeil(1, 1_000_000) === 1, 'ceiling division never returns zero for a positive numerator');
+  check(costForTokens(20_000, 43_500_000) === 870_000, 'integral products are unchanged by the ceiling');
+  check(costForTokens(3, 28_000_000) === 84, 'in-range products stay exact');
+
+  const badInputs = [
+    ['costForTokens(-1, 1)', () => costForTokens(-1, 1), 'MONEY_NOT_INTEGER'],
+    ['costForTokens(1, -1)', () => costForTokens(1, -1), 'MONEY_NOT_INTEGER'],
+    ['costForTokens(1.5, 1)', () => costForTokens(1.5, 1), 'MONEY_NOT_INTEGER'],
+    ['costForTokens(NaN, 1)', () => costForTokens(NaN, 1), 'MONEY_NOT_INTEGER'],
+    ['costForTokens(Infinity, 1)', () => costForTokens(Infinity, 1), 'MONEY_NOT_INTEGER'],
+    ['costForTokens(MAX_SAFE_INTEGER, 2)', () => costForTokens(Number.MAX_SAFE_INTEGER, 2), 'MONEY_OVERFLOW'],
+    ['divCeil(MAX_SAFE_INTEGER, 2)', () => divCeil(Number.MAX_SAFE_INTEGER, 2), 'MONEY_OVERFLOW'],
+    ['divRoundHalfUp(2**52+1, 1)', () => divRoundHalfUp(2 ** 52 + 1, 1), 'MONEY_OVERFLOW'],
+  ];
+  for (const [label, run, expected] of badInputs) {
+    let code = null;
+    try { run(); } catch (error) { code = error.code; }
+    check(code === expected, label + ' is rejected with ' + expected, String(code));
+  }
+
+  const pricedPrice = {
+    status: 'known',
+    prices: { inputMicroMinorPerMillion: 14_000_000, outputMicroMinorPerMillion: 28_000_000, cacheReadMicroMinorPerMillion: 280_000 },
+    provenance: 'test-fixture',
+    unknownFields: [],
+  };
+  const writeUnknown = estimateRoleCost({
+    price: { ...pricedPrice, unknownFields: ['cacheWritePricing'] },
+    perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 0, cacheWriteTokens: 10000 },
+    calls: 1,
+  });
+  check(writeUnknown.microMinor.cacheWrite === 140_000, 'unknown cache-write price is estimated at the input price (upper bound)', String(writeUnknown.microMinor.cacheWrite));
+  check(writeUnknown.microMinor.total === 532_000, 'cache-write cost is part of the total', String(writeUnknown.microMinor.total));
+  check(writeUnknown.conservative === true && writeUnknown.unknownFields.includes('cacheWrite'), 'the upper bound is declared, not hidden');
+
+  const writeKnown = estimateRoleCost({
+    price: { ...pricedPrice, prices: { ...pricedPrice.prices, cacheWriteMicroMinorPerMillion: 0 } },
+    perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 0, cacheWriteTokens: 10000 },
+    calls: 1,
+  });
+  check(writeKnown.microMinor.cacheWrite === 0, 'a known zero cache-write price stays zero');
+  check(writeKnown.unknownFields.includes('cacheWrite') === false, 'a known cache-write price is not reported as unknown');
+  check(writeKnown.status === 'known', 'expenses without unknown prices are complete', writeKnown.status);
+
+  const cacheWriteText = JSON.stringify({
+    default: { currency: 'USD' },
+    'cache-model': {
+      pricing_config: {
+        pay_as_you_go: {
+          request_token: { price: 0.000014 },
+          response_token: { price: 0.000028 },
+          cache_write_input_token: { price: 0.0000001 },
+        },
+      },
+    },
+  });
+  const importedWithWrite = extractProviderEntries({
+    text: cacheWriteText,
+    filePath: 'pricing/cache.json',
+    provider: 'cache',
+    models: ['cache-model'],
+    repository: 'portkey-models',
+    commit: '72e1084840af7e14350ff6a12d33255a878bbec5',
+    currency: 'USD',
+  });
+  check(importedWithWrite[0].cacheWriteMicroMinorPerMillion === 100_000, 'cache_write_input_token is imported, not dropped', String(importedWithWrite[0].cacheWriteMicroMinorPerMillion));
+  check(importedWithWrite[0].unknownFields.includes('cacheWritePricing') === false, 'an imported cache-write price is not unknown');
+
+  const importedWithoutWrite = extractProviderEntries({
+    text: JSON.stringify({
+      default: { currency: 'USD' },
+      'no-cache-model': { pricing_config: { pay_as_you_go: { request_token: { price: 0.000014 }, response_token: { price: 0.000028 } } } },
+    }),
+    filePath: 'pricing/no-cache.json',
+    provider: 'nocache',
+    models: ['no-cache-model'],
+    repository: 'portkey-models',
+    commit: '72e1084840af7e14350ff6a12d33255a878bbec5',
+    currency: 'USD',
+  });
+  check(importedWithoutWrite[0].unknownFields.includes('cacheWritePricing'), 'a missing cache-write price is declared unknown');
+
+  const tied = allocateByBasisPoints(5, [
+    { role: 'a', basisPoints: 2500 },
+    { role: 'b', basisPoints: 2500 },
+    { role: 'c', basisPoints: 2500 },
+    { role: 'd', basisPoints: 2500 },
+  ]);
+  check(tied.get('a') === 2 && tied.get('b') === 1 && tied.get('c') === 1 && tied.get('d') === 1,
+    'equal remainders break ties by declaration order', JSON.stringify([...tied]));
+  check([...tied.values()].reduce((sum, value) => sum + value, 0) === 5, 'the tied allocation still conserves the total');
+  const reordered = allocateByBasisPoints(5, [
+    { role: 'd', basisPoints: 2500 },
+    { role: 'c', basisPoints: 2500 },
+    { role: 'b', basisPoints: 2500 },
+    { role: 'a', basisPoints: 2500 },
+  ]);
+  check(reordered.get('d') === 2 && reordered.get('a') === 1, 'reordering the input moves the remainder deterministically');
+  check([...reordered.values()].reduce((sum, value) => sum + value, 0) === 5, 'reordering never breaks conservation');
 }
 
 // ---------------------------------------------------------------- report

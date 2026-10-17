@@ -218,6 +218,12 @@ export function extractProviderEntries({
     } else {
       entry.unknownFields.push('cacheReadPricing');
     }
+    if (payg.cache_write_input_token && typeof payg.cache_write_input_token.price === 'number') {
+      entry.cacheWriteMicroMinorPerMillion = centsPerTokenToMicroMinorPerMillion(
+        payg.cache_write_input_token.price, label + '.cache_write_input_token');
+    } else {
+      entry.unknownFields.push('cacheWritePricing');
+    }
     entries.push(entry);
   }
   return entries;

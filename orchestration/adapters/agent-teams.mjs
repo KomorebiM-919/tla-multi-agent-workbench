@@ -156,13 +156,17 @@ export function probeAgentTeams(facts = {}) {
 /** 把探测结果转成 buildPlan 需要的后端状态（只要不能真正执行，计划里就是 unavailable）。 */
 export function backendStatusForPlan(probe) {
   if (probe.status === 'compatible') {
+    const implemented = probe.execution !== undefined && probe.execution.implementation === 'implemented';
     return {
       kind: probe.kind,
-      status: 'unavailable',
-      reason: probe.execution.reason,
+      // 兼容 ≠ 可执行：宿主/插件/导出都对得上，但 TLA 侧执行适配未实现时，
+      // 状态仍是 compatible，由计划单独把"执行实现"维度标为缺失并阻断。
+      status: 'compatible',
+      reason: implemented ? null : 'BACKEND_EXECUTION_NOT_IMPLEMENTED',
       detail: probe.execution.detail || '执行适配未实现',
       compatibility: probe.compatibility,
       callAccounting: probe.callAccounting,
+      execution: probe.execution,
       limitations: probe.limitations,
       notProofOf: probe.notProofOf,
     };
@@ -174,6 +178,9 @@ export function backendStatusForPlan(probe) {
     detail: probe.detail,
     compatibility: probe.compatibility,
     callAccounting: probe.callAccounting,
+    execution: probe.execution === undefined
+      ? { implementation: 'not-implemented', reason: probe.reason || 'BACKEND_UNAVAILABLE' }
+      : probe.execution,
     limitations: probe.limitations,
     notProofOf: probe.notProofOf,
   };
@@ -191,6 +198,11 @@ export function workflowScriptBackendStatus({ workflow = 'three-agent-mvp', maxA
       hardCapApplicable: true,
       synchronousLimit: maxAgentCalls,
       note: '每次 agent() 启动前同步检查 maxAgentCalls；只限制次数，单次调用的 token 仍无法硬限制',
+    },
+    execution: {
+      implementation: 'implemented',
+      reason: null,
+      detail: workflow + ' 已在 V0.1 真实运行中通过验收；本阶段只描述，不启动',
     },
     limitations: ['只限制模型调用次数，不限制单次调用消耗的 token，也不覆盖插件内部自行发起的请求'],
     notProofOf: ['没有启动任何代理：这是计划，不是运行记录'],

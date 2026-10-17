@@ -54,13 +54,40 @@ export function divRoundHalfUp(numerator, denominator) {
   requirePositiveInteger(denominator, 'MONEY_NOT_INTEGER', 'denominator');
   const sign = numerator < 0 ? -1 : 1;
   const magnitude = Math.abs(numerator);
-  const quotient = Math.floor((magnitude * 2 + denominator) / (2 * denominator));
+  // 2 * magnitude 也必须落在安全整数范围内：否则浮点已经丢失精度，
+  // 再“四舍五入”只会给出一个看似精确的错值。
+  const scaled = magnitude * 2 + denominator;
+  if (!Number.isSafeInteger(scaled) || !Number.isSafeInteger(denominator * 2)) {
+    throw new MoneyError('MONEY_OVERFLOW', '除法中间量超出安全整数范围');
+  }
+  const quotient = Math.floor(scaled / (2 * denominator));
   const result = sign * quotient;
   if (!Number.isSafeInteger(result)) throw new MoneyError('MONEY_OVERFLOW', '除法结果溢出');
   return result;
 }
 
-/** token 数 × 每 100 万 token 的微最小单位单价 → 微最小单位金额（向上取整到 1 微单位）。 */
+/** 整数除法，向上取整（ceil）。denominator 必须为正；用于费用估算，保证估算不低于理论值。 */
+export function divCeil(numerator, denominator) {
+  requireNonNegativeInteger(numerator, 'MONEY_NOT_INTEGER', 'numerator');
+  requirePositiveInteger(denominator, 'MONEY_NOT_INTEGER', 'denominator');
+  // 必须先判断再加：`numerator + denominator - 1` 在 2^53 附近会分两步静默舍入回
+  // 安全整数（例如 MAX_SAFE_INTEGER + 2 先舍成 2^53，再减 1 回到 MAX_SAFE_INTEGER），
+  // 事后再查 `Number.isSafeInteger` 已经看不出溢出，只会得到一个偏小的错值。
+  const maxNumerator = Number.MAX_SAFE_INTEGER - (denominator - 1);
+  if (numerator > maxNumerator) throw new MoneyError('MONEY_OVERFLOW', '向上取整中间量溢出');
+  const plus = numerator + denominator - 1;
+  if (!Number.isSafeInteger(plus)) throw new MoneyError('MONEY_OVERFLOW', '向上取整中间量溢出');
+  const result = Math.floor(plus / denominator);
+  if (!Number.isSafeInteger(result)) throw new MoneyError('MONEY_OVERFLOW', '除法结果溢出');
+  return result;
+}
+
+/**
+ * token 数 × 每 100 万 token 的微最小单位单价 → 微最小单位金额。
+ *
+ * 使用**向上取整**：估算是上界，任何非零用量都不会被算成 0，也不会因舍入低于按价目
+ * 计算的理论值。向下取整（含四舍五入到更小值）会让"预算内"结论变成低估。
+ */
 export function costForTokens(tokens, priceMicroMinorPerMillion) {
   requireNonNegativeInteger(tokens, 'MONEY_NOT_INTEGER', 'tokens');
   requireNonNegativeInteger(priceMicroMinorPerMillion, 'MONEY_NOT_INTEGER', 'price');
@@ -68,8 +95,7 @@ export function costForTokens(tokens, priceMicroMinorPerMillion) {
   if (!Number.isSafeInteger(product)) {
     throw new MoneyError('MONEY_OVERFLOW', 'tokens × price 超出安全整数范围');
   }
-  const micro = divRoundHalfUp(product, TOKENS_PER_PRICE_BASIS);
-  return micro;
+  return divCeil(product, TOKENS_PER_PRICE_BASIS);
 }
 
 /**

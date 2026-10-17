@@ -26,11 +26,13 @@ export function estimateRoleCost({ price, perCall, calls }) {
   const outputTokens = requireNonNegativeInteger(perCall.outputTokens, 'MONEY_NOT_INTEGER', 'outputTokens');
   const cacheReadTokens = requireNonNegativeInteger(perCall.cacheReadTokens === undefined ? 0 : perCall.cacheReadTokens,
     'MONEY_NOT_INTEGER', 'cacheReadTokens');
+  const cacheWriteTokens = requireNonNegativeInteger(perCall.cacheWriteTokens === undefined ? 0 : perCall.cacheWriteTokens,
+    'MONEY_NOT_INTEGER', 'cacheWriteTokens');
   if (price.status !== 'known') {
     return {
       status: 'unknown',
       calls: callCount,
-      perCall: { inputTokens, outputTokens, cacheReadTokens },
+      perCall: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
       microMinor: null,
       notes: ['没有该模型的价格，无法估算（不做"按 0 计"或"按同类模型代替"）'],
       unknownFields: ['input', 'output'],
@@ -41,6 +43,7 @@ export function estimateRoleCost({ price, perCall, calls }) {
   const inputMicro = costForTokens(inputTokens * callCount, price.prices.inputMicroMinorPerMillion);
   const outputMicro = costForTokens(outputTokens * callCount, price.prices.outputMicroMinorPerMillion);
   let cacheReadMicro = 0;
+  let cacheWriteMicro = 0;
   let conservative = false;
   if (cacheReadTokens > 0) {
     if (Number.isInteger(price.prices.cacheReadMicroMinorPerMillion)) {
@@ -52,12 +55,22 @@ export function estimateRoleCost({ price, perCall, calls }) {
       notes.push('缓存读价格未知：按普通输入价计为上界（conservative），不是实际账单');
     }
   }
-  const total = inputMicro + outputMicro + cacheReadMicro;
+  if (cacheWriteTokens > 0) {
+    if (Number.isInteger(price.prices.cacheWriteMicroMinorPerMillion)) {
+      cacheWriteMicro = costForTokens(cacheWriteTokens * callCount, price.prices.cacheWriteMicroMinorPerMillion);
+    } else {
+      cacheWriteMicro = costForTokens(cacheWriteTokens * callCount, price.prices.inputMicroMinorPerMillion);
+      conservative = true;
+      unknownFields.push('cacheWrite');
+      notes.push('缓存写价格未知：按普通输入价计为上界（conservative），不是实际账单');
+    }
+  }
+  const total = inputMicro + outputMicro + cacheReadMicro + cacheWriteMicro;
   return {
     status: unknownFields.length === 0 ? 'known' : 'partial',
     calls: callCount,
-    perCall: { inputTokens, outputTokens, cacheReadTokens },
-    microMinor: { input: inputMicro, output: outputMicro, cacheRead: cacheReadMicro, total },
+    perCall: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
+    microMinor: { input: inputMicro, output: outputMicro, cacheRead: cacheReadMicro, cacheWrite: cacheWriteMicro, total },
     conservative,
     notes,
     unknownFields: [...new Set(unknownFields)],

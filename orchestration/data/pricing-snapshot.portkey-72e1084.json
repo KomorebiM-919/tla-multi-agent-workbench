@@ -30,7 +30,8 @@
       "unknownFields": [
         "offPeakPricing"
       ],
-      "cacheReadMicroMinorPerMillion": 280000
+      "cacheReadMicroMinorPerMillion": 280000,
+      "cacheWriteMicroMinorPerMillion": 0
     },
     {
       "provider": "deepseek",
@@ -42,7 +43,8 @@
       "unknownFields": [
         "offPeakPricing"
       ],
-      "cacheReadMicroMinorPerMillion": 280000
+      "cacheReadMicroMinorPerMillion": 280000,
+      "cacheWriteMicroMinorPerMillion": 0
     },
     {
       "provider": "deepseek",
@@ -54,7 +56,8 @@
       "unknownFields": [
         "offPeakPricing"
       ],
-      "cacheReadMicroMinorPerMillion": 280000
+      "cacheReadMicroMinorPerMillion": 280000,
+      "cacheWriteMicroMinorPerMillion": 0
     },
     {
       "provider": "deepseek",
@@ -66,7 +69,8 @@
       "unknownFields": [
         "offPeakPricing"
       ],
-      "cacheReadMicroMinorPerMillion": 362500
+      "cacheReadMicroMinorPerMillion": 362500,
+      "cacheWriteMicroMinorPerMillion": 0
     },
     {
       "provider": "moonshot",
@@ -77,7 +81,8 @@
       "provenance": "portkey-models@72e1084 pricing/moonshot.json pay_as_you_go",
       "unknownFields": [
         "offPeakPricing",
-        "cacheReadPricing"
+        "cacheReadPricing",
+        "cacheWritePricing"
       ]
     },
     {
@@ -88,7 +93,8 @@
       "outputMicroMinorPerMillion": 440000000,
       "provenance": "portkey-models@72e1084 pricing/zhipu.json pay_as_you_go",
       "unknownFields": [
-        "offPeakPricing"
+        "offPeakPricing",
+        "cacheWritePricing"
       ],
       "cacheReadMicroMinorPerMillion": 26000000
     }

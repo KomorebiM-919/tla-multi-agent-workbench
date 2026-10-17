@@ -108,9 +108,47 @@ export function buildPlan({ configResult, snapshot, nowMs, backend }) {
   const unestimated = members.filter((member) => member.estimatedMicroMinor === null).map((member) => member.role);
   const budgetMicro = config.budget.totalMinor === null ? null : microFromMinor(config.budget.totalMinor);
   const backendStatus = backend || { kind: config.backend === null ? 'unknown' : config.backend.kind, status: 'unavailable', reason: 'BACKEND_NOT_PROBED' };
-  if (backendStatus.status !== 'ready') {
+  const backendUsable = backendStatus.status === 'ready' || backendStatus.status === 'compatible';
+  if (!backendUsable) {
     blockers.push({ code: backendStatus.reason || 'BACKEND_UNAVAILABLE', detail: backendStatus.detail || '后端不可用' });
   }
+  // 五个维度分开列：配置有效、估算可用、后端兼容、执行实现、预算保护。
+  // 任何必要项缺失，计划就不得叫 ready —— 尤其是"插件装了、兼容探测通过"不等于"能执行"。
+  const estimatesAvailable = unestimated.length === 0;
+  const backendCompatible = backendUsable;
+  const executionImplemented = Boolean(backendStatus.execution)
+    && backendStatus.execution.implementation === 'implemented';
+  const hardCallCap = Boolean(backendStatus.callAccounting)
+    && backendStatus.callAccounting.hardCapApplicable === true;
+  const readiness = {
+    configValid: true,
+    estimatesAvailable,
+    backendCompatible,
+    executionImplemented,
+    budgetProtection: hardCallCap ? 'call-count-hard-cap' : 'allocation-plan-only',
+  };
+  const missing = [];
+  if (!estimatesAvailable) missing.push('ESTIMATES_INCOMPLETE');
+  if (!backendCompatible) missing.push('BACKEND_UNAVAILABLE');
+  if (backendCompatible && !executionImplemented) {
+    missing.push('BACKEND_EXECUTION_NOT_IMPLEMENTED');
+    if (!blockers.some((blocker) => blocker.code === 'BACKEND_EXECUTION_NOT_IMPLEMENTED')) {
+      blockers.push({
+        code: 'BACKEND_EXECUTION_NOT_IMPLEMENTED',
+        detail: (backendStatus.execution && backendStatus.execution.detail) || '后端执行适配未实现',
+      });
+    }
+  }
+  // 调用计数是独立缺口：即使执行适配还没实现，也能确定该后端不提供"调用前同步计数"，
+  // 所以这一项照样列进 missing，不能被"执行未实现"掩盖过去。
+  if (backendCompatible && !hardCallCap) {
+    missing.push('CALL_CAP_NOT_ENFORCEABLE');
+    blockers.push({
+      code: 'CALL_CAP_NOT_ENFORCEABLE',
+      detail: '后端无法在每次模型调用前同步计数：预算保护只能是计划分配，不能当强制限制',
+    });
+  }
+  const executable = missing.length === 0 && blockers.length === 0;
   if (backendStatus.callAccounting && backendStatus.callAccounting.hardCapApplicable !== true) {
     warnings.push({
       code: 'CALL_CAP_PARTIAL',
@@ -153,7 +191,10 @@ export function buildPlan({ configResult, snapshot, nowMs, backend }) {
       synchronousLimit: backendStatus.callAccounting ? backendStatus.callAccounting.synchronousLimit : null,
     },
     budgetEnforcement: 'allocation-plan-only',
-    status: blockers.length === 0 ? 'ready' : 'blocked',
+    readiness,
+    missingForExecution: missing,
+    executable,
+    status: executable ? 'ready' : 'blocked',
     blockers,
     warnings,
     limitations: [...PLAN_LIMITATIONS, ...(backendStatus.limitations || [])],
