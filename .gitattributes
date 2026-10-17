@@ -19,4 +19,9 @@ examples/text-stats/text_stats.py text eol=lf
 examples/text-stats/test_text_stats.py text eol=lf
 examples/text-stats/README.md text eol=lf
 
+# 编排脚本是"执行前校验"的比较对象：`git show <SHA>:workflows/three-agent-mvp.js` 的字节
+# 必须与工作区一致，否则本机 core.autocrlf=true 会在下次检出时把它变成 CRLF，
+# 使 tests/preflight-workflow-script.mjs 的逐字节比对失去意义（2026-10-17 v0.3-run3 之后加固）。
+workflows/three-agent-mvp.js text eol=lf
+
 docs/evidence/v0.1-approval-rejection-20261017T112518Z/** text eol=lf

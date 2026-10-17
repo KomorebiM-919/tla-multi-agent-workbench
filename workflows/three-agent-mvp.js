@@ -736,12 +736,20 @@ function validateRunConfig(rawArgs, startupNowMs) {
     if (!isObject(cfg.selfCheck)) {
       errors.push('selfCheck 非法（必须是 { "<label>": { "prompt": "...", "schema": "..." } } 对象）');
     } else {
+      // 每条至少要有 schema 或 prompt 之一：schema 是静态的，可以在启动前从固定提交固定下来；
+      // 提示词由真实需求与阶段结果拼成，只能在对应阶段比对，不许用模拟夹具生成的指纹冒充。
       const badKeys = Object.keys(cfg.selfCheck).filter(function (key) {
         const entry = cfg.selfCheck[key];
-        return !isObject(entry) || asString(entry.prompt) === '' || asString(entry.schema) === '';
+        if (!isObject(entry)) { return true; }
+        const hasPrompt = entry.prompt !== undefined;
+        const hasSchema = entry.schema !== undefined;
+        if (!hasPrompt && !hasSchema) { return true; }
+        if (hasPrompt && asString(entry.prompt) === '') { return true; }
+        if (hasSchema && asString(entry.schema) === '') { return true; }
+        return false;
       });
       if (badKeys.length > 0) {
-        errors.push('selfCheck 的条目必须同时给出 prompt 与 schema 指纹，以下条目不合法：' + badKeys.join(', '));
+        errors.push('selfCheck 的条目至少要有 schema 或 prompt 指纹（给出时不得为空字符串），以下条目不合法：' + badKeys.join(', '));
       } else {
         selfCheck = cfg.selfCheck;
       }
@@ -1839,6 +1847,8 @@ function reportProblems(context, reasons) {
  * （一次调用可能读很多文件、跑很长的循环）。两者不能混为一谈。
  */
 const agentCalls = [];
+// 指纹自检里"没有固定期望值、因此没有比对"的字段：如实累积，写进返回值，避免把部分比对说成全部比对。
+const scriptSelfCheckUnchecked = [];
 
 function budgetExhaustedMarker(index, label) {
   return { agentCallBudgetExhausted: true, attemptedIndex: index, label: label, budget: C.maxAgentCalls };
@@ -1912,6 +1922,9 @@ function selfCheckValue(prompt, schema) {
 /**
  * 在启动子代理**之前**比对指纹。返回 null 表示可以继续；返回失败结果表示必须中止。
  * 未提供该 label 的期望值时：`selfCheckRequired` 为真则中止（fail-closed），否则放行（旧调用方兼容）。
+ * 只固定 schema 是允许的：schema 是静态的，可以在启动前从固定提交固定下来；
+ * 提示词由真实需求与阶段结果拼成，只有同一轮真实输入才比对得上——未固定的字段记入
+ * `scriptSelfCheck.unchecked`，不得据此声称整份脚本与仓库一致。
  */
 function checkSelfCheck(label, prompt, schema) {
   const expected = isObject(C.selfCheck) ? C.selfCheck[label] : null;
@@ -1924,13 +1937,26 @@ function checkSelfCheck(label, prompt, schema) {
   }
   const actual = selfCheckValue(prompt, schema);
   const problems = [];
-  if (asString(expected.prompt) !== actual.prompt) {
-    problems.push('提示词指纹不一致（期望 ' + JSON.stringify(expected.prompt) + '，实际 ' + actual.prompt + '）');
+  const unchecked = [];
+  const expectedPrompt = expected.prompt === undefined ? null : asString(expected.prompt);
+  const expectedSchema = expected.schema === undefined ? null : asString(expected.schema);
+  if (expectedSchema === null) {
+    unchecked.push('schema');
+  } else if (expectedSchema !== actual.schema) {
+    problems.push('schema 指纹不一致（期望 ' + JSON.stringify(expectedSchema) + '，实际 ' + actual.schema + '）');
   }
-  if (asString(expected.schema) !== actual.schema) {
-    problems.push('schema 指纹不一致（期望 ' + JSON.stringify(expected.schema) + '，实际 ' + actual.schema + '）');
+  if (expectedPrompt === null) {
+    unchecked.push('prompt');
+  } else if (expectedPrompt !== actual.prompt) {
+    problems.push('提示词指纹不一致（期望 ' + JSON.stringify(expectedPrompt) + '，实际 ' + actual.prompt + '）');
   }
-  if (problems.length === 0) { return null; }
+  if (problems.length === 0) {
+    if (unchecked.length > 0) {
+      scriptSelfCheckUnchecked.push({ label: label, fields: unchecked.slice() });
+      log('脚本指纹自检：' + label + ' 未固定 ' + unchecked.join('/') + '（只作补充，不据此声称脚本与仓库一致）');
+    }
+    return null;
+  }
   log('脚本指纹自检失败（' + label + '）：' + problems.join('；'));
   return failure('SCRIPT_DRIFT', '内联脚本与仓库文件不一致，已在启动子代理前中止：' + problems.join('；'),
     { runId: C.runId, evidenceDir: C.evidenceDir, label: label, expected: expected, actual: actual });
@@ -2321,11 +2347,13 @@ return {
   // 命令与执行环境分开记录：环境不改变规范化命令本身，也不放开任意 shell。
   testEnvironment: testEnvironment(),
   testExecutionCommand: executionTestCommand(C.testCommand),
-  // 内联脚本指纹自检的结果范围：enabled=true 时，每次调用前都逐项比对了提示词与 schema。
+  // 内联脚本指纹自检的结果范围：enabled=true 时按 args.selfCheck 逐项比对；
+  // unchecked 列出"没有固定期望值所以没比对"的字段（部分比对不得说成全部比对）。
   scriptSelfCheck: {
     enabled: isObject(C.selfCheck),
     required: C.selfCheckRequired === true,
-    labels: isObject(C.selfCheck) ? Object.keys(C.selfCheck).sort() : []
+    labels: isObject(C.selfCheck) ? Object.keys(C.selfCheck).sort() : [],
+    unchecked: scriptSelfCheckUnchecked.slice()
   },
   maxCodingAttempts: C.maxCodingAttempts,
   // 调用预算与实际启动记录：预算在每次启动前检查，台账是"实际启动了几次"的权威记录。

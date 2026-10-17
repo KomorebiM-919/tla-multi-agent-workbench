@@ -28,8 +28,8 @@ export function driftHash(text) {
   return h1.toString(16) + '-' + h2.toString(16) + '-' + value.length.toString(16);
 }
 
-/** 第 1 轮审核不通过（一条验收项未满足），第 2 轮通过：用来覆盖两轮共 10 次调用的全部提示词。 */
-function twoAttemptPlan() {
+/** 第 1 轮审核不通过（一条验收项未满足），第 2 轮通过：用来覆盖两轮共 8 次调用的全部提示词。 */
+export function twoAttemptPlan() {
   return happyPlan({
     review: function (attempt) {
       if (attempt === 1) {
@@ -63,6 +63,20 @@ export async function fingerprints() {
     labels.push(call.label);
   }
   return { map: map, labels: labels, callCount: captured.length };
+}
+
+/**
+ * 只保留 schema 指纹的映射：**这是唯一可以带进真实运行的夹具产物**。
+ * schema 是静态的（不随需求、runId、阶段结果变化），可以启动前从固定提交固定下来；
+ * 提示词由真实输入拼成，模拟夹具算出的提示词指纹在真实运行里必然对不上，
+ * 拿它当 `args.selfCheck` 只会造成"启动即中止"，不能证明脚本一致。
+ */
+export function schemaOnlyMap(map) {
+  const out = {};
+  for (const label of Object.keys(map)) {
+    out[label] = { schema: map[label].schema };
+  }
+  return out;
 }
 
 /** 构造带指纹自检的运行参数（baseArgs 只透传固定几个键，selfCheck 需显式附加）。 */
@@ -123,6 +137,20 @@ export async function selfTest() {
   if (!legacy.result || !legacy.result.scriptSelfCheck || legacy.result.scriptSelfCheck.enabled !== false) {
     failures.push('返回值应如实说明本次运行没有启用脚本指纹自检');
   }
+
+  // 5) 只固定 schema（真实运行唯一可用的夹具产物）：必须通过，并如实报告提示词未比对。
+  const schemaOnly = await runWith(happyPlan(), argsWithSelfCheck(schemaOnlyMap(map), true));
+  if (!schemaOnly.result || schemaOnly.result.status !== 'OK') {
+    failures.push('只固定 schema 时应通过，实际 ' + (schemaOnly.result && schemaOnly.result.status) +
+      '（' + (schemaOnly.result && schemaOnly.result.error) + '）');
+  }
+  const unchecked = schemaOnly.result && schemaOnly.result.scriptSelfCheck
+    ? schemaOnly.result.scriptSelfCheck.unchecked : null;
+  if (!Array.isArray(unchecked) || unchecked.length !== 5) {
+    failures.push('只固定 schema 时应报告 5 条未比对记录，实际 ' + JSON.stringify(unchecked));
+  } else if (unchecked.some(function (item) { return item.fields.join(',') !== 'prompt'; })) {
+    failures.push('未比对记录应只标记 prompt 字段：' + JSON.stringify(unchecked));
+  }
   return failures;
 }
 
@@ -130,13 +158,15 @@ const invokedDirectly = process.argv[1] && process.argv[1].replace(/\\/g, '/').e
 if (invokedDirectly) {
   const { map, labels, callCount } = await fingerprints();
   console.log('# 调用数 ' + callCount + '，label ' + labels.length + ' 个');
-  console.log(JSON.stringify(map, null, 2));
+  // --schemas-only：只输出 schema 指纹，这是唯一可以带进真实运行的产物
+  // （提示词指纹来自模拟夹具，真实运行里必然不一致）。
+  console.log(JSON.stringify(process.argv.includes('--schemas-only') ? schemaOnlyMap(map) : map, null, 2));
   if (process.argv.includes('--check')) {
     const failures = await selfTest();
     if (failures.length > 0) {
       console.error('FAIL ' + failures.join(' | '));
       process.exit(1);
     }
-    console.log('PASS 指纹自检 4 项');
+    console.log('PASS 指纹自检 5 项');
   }
 }

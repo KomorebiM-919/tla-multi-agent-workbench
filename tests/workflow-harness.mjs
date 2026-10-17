@@ -41,11 +41,16 @@ function makeFixedDate() {
   };
 }
 
-/** 把生产脚本包成 async 函数（脚本正文在 workflow 工具里是顶层代码，含顶层 return）。 */
-function loadWorkflowBody() {
+/**
+ * 把脚本正文包成 async 函数（脚本正文在 workflow 工具里是顶层代码，含顶层 return）。
+ * sourceText 省略时使用仓库里的生产脚本；`tests/preflight-workflow-script.mjs` 传入
+ * **待提交的脚本文本**，用的仍是同一条加载路径（不复制任何判定逻辑）。
+ */
+export function loadWorkflowBody(sourceText) {
+  const body = typeof sourceText === 'string' ? sourceText : SOURCE;
   const wrapper =
     'async function __workflowBody(args, agent, log, phase, parallel, pipeline) {\n' +
-    SOURCE +
+    body +
     '\n}\n__workflowBody;';
   return vm.runInNewContext(wrapper, { console: console, Date: makeFixedDate() });
 }
@@ -258,10 +263,20 @@ function pickKey(label) {
  * 因为认领工具写的是真实时钟，固定时钟会让工具产物落在时间窗之外）。
  */
 export async function runWith(plan, args, options) {
+  return runSource(SOURCE, plan, args, options);
+}
+
+/**
+ * 用**任意脚本文本**跑一次模拟运行（离线、0 次真实模型调用）。
+ * `tests/preflight-workflow-script.mjs` 用它把"待提交的实际脚本文本"跑一遍并采集全部 schema，
+ * 从而在启动真实运行之前发现宿主不支持的结构（v0.3-run3 的教训）。
+ */
+export async function runSource(sourceText, plan, args, options) {
   const opts = options || {};
   if (opts.resetClock !== false) {
     setClock(FIXED_NOW_MS); // 每个场景都从固定的启动时钟开始，推进时钟的场景不会污染后面的场景
   }
+  const body = loadWorkflowBody(sourceText);
   const calls = [];
   const logs = [];
   // 可选的调用捕获：记录每次调用收到的提示词与 schema（供 tests/script-fingerprint.mjs 计算指纹）。
@@ -282,7 +297,7 @@ export async function runWith(plan, args, options) {
   };
   const log = function (message) { logs.push(String(message)); };
   const phase = function () {};
-  const result = await workflowBody(args, agent, log, phase, undefined, undefined);
+  const result = await body(args, agent, log, phase, undefined, undefined);
   return { result: result, calls: calls, logs: logs };
 }
 

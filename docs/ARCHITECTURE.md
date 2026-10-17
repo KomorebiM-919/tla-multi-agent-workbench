@@ -236,6 +236,14 @@ Review 返回之后的写入也不在门禁内，由运行结束后的确定性�
 任一条不满足即返回明确状态码、不以 `ok: true` 收场
 （完整状态码表见 `workflows/README.md`，回归测试与认领集成测试见 `tests/`）。
 
+**脚本传递的宿主约束（2026-10-17 核实）**：`workflow` 工具的入参只有 `script`(string) / `meta`(object) / `args`，
+**没有"从文件读脚本"的参数**；真正的 schema 支持子集校验发生在 `agent()` 调用链内部（`dsh-workflow-ptc` 的 `assertObjectJsonSchema`），
+因此宿主**没有零调用的校验接口**。`v0.3-run3` 的手工转录漂移（漏掉 `REVIEW_SCHEMA.properties.issues.items.type`）就是在第 5 次调用前
+才被宿主拒绝的，前 4 次调用已花掉。对应的两道防线：执行前用 `tests/preflight-workflow-script.mjs` 把"待提交载荷"与固定提交的源码字节
+逐字节比对、并对全部 5 个 schema 跑宿主子集规则的本地实现（**0 次模型调用，但本地 PASS 不等于宿主已接受**）；
+运行内用 `args.selfCheck` 只固定**静态 schema 指纹**（提示词指纹是夹具产物，只能按真实输入逐阶段核对，未固定的字段写进
+`scriptSelfCheck.unchecked`）。"实际提交的文本 = 校验过的载荷"这一步无法由工具保证，仍只能靠运行后的原生事件核对。
+
 ## 7. 风险与未验证项（跟踪清单）
 
 | # | 事项 | 状态 | 影响 |

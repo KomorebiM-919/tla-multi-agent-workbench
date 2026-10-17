@@ -257,20 +257,47 @@ node tests/extract-usage-report.mjs `
 
 ### 1i. 内联脚本指纹自检（0 次模型调用）
 
-脚本以**纯文本**内联进 `workflow` 调用（脚本没有文件系统 API，读不到仓库文件），2000+ 行逐字转录可能漏行：
-`v0.3-run3` 就漏了 `REVIEW_SCHEMA` 里 `issues.items.type`，宿主在第 5 次调用前以"schema 不在支持子集内"拒绝，
-4 次调用白花（缓存边界仍是 `CLEAN`，但本次运行没有产出审核结论）。
+脚本以**纯文本**内联进 `workflow` 调用（宿主 `workflow` 工具的入参只有 `script`/`meta`/`args`，**没有文件路径参数**；
+脚本本身也没有文件系统 API），2000+ 行逐字转录可能漏行：`v0.3-run3` 就漏了 `REVIEW_SCHEMA` 里 `issues.items.type`，
+宿主在第 5 次调用前以"schema 不在支持子集内"拒绝，4 次调用白花（缓存边界仍是 `CLEAN`，但本次运行没有产出审核结论）。
 
-- `node tests/script-fingerprint.mjs`：跑一次两轮模拟（8 次调用：预检 / 需求 / 编码 / 验证 / 审核 + 编码 / 验证 / 审核修订），
-  采集每次调用收到的**提示词**与 **schema**，输出 `{ "<label>": { "prompt": "<driftHash>", "schema": "<driftHash>" } }`，
-  直接作为 `args.selfCheck` 传入即可在每次调用**启动前**比对，不一致返回 `SCRIPT_DRIFT`。
-- `node tests/script-fingerprint.mjs --check`：4 项自检——正确指纹必须通过；篡改 `Review Agent` 的 schema 指纹必须
+- `node tests/script-fingerprint.mjs --schemas-only`：跑一次两轮模拟（8 次调用：预检 / 需求 / 编码 / 验证 / 审核 + 编码 / 验证 / 审核修订），
+  只输出 `{ "<label>": { "schema": "<driftHash>" } }`——**这是唯一可以带进真实运行的夹具产物**，直接作为 `args.selfCheck`。
+  不带 `--schemas-only` 时输出 `{ "<label>": { "prompt": …, "schema": … } }`，其中的**提示词指纹依赖夹具的需求与阶段结果**
+  （不同 `runId`、不同需求、不同阶段结果都会变），拿去做真实运行会误报 `SCRIPT_DRIFT`。
+- `node tests/script-fingerprint.mjs --check`：5 项自检——正确指纹必须通过；篡改 `Review Agent` 的 schema 指纹必须
   只发出 4 次调用（Review 未启动）；`selfCheckRequired: true` 但没给指纹必须 0 次调用即中止；不提供 `selfCheck` 的旧方式仍可用
-  且返回值如实写 `scriptSelfCheck.enabled: false`。
+  且返回值如实写 `scriptSelfCheck.enabled: false`；**只固定 schema** 时运行必须成功、且 `scriptSelfCheck.unchecked` 恰好 5 条
+  （每条 `fields === ['prompt']`）——"没有比对"必须能被看见。
 - 指纹算法（`driftHash` = FNV-1a 32 位 + djb2 32 位 + 字符数）在脚本与测试里**各实现一次**：两份实现对同一文本必须给出同一结果，
   这本身就是一条被断言的性质；它只用于发现转录漂移，不是密码学校验，不参与安全判定。
-- 局限：`selfCheck` 只覆盖"提示词 + schema"，判定逻辑（`judgeAttempt` 等）的转录漂移仍要靠
-  `tests/extract-native-events.mjs` 的 `invocation.scriptMatchesRepo` 事后核对，以及运行后的独立复核。
+- 局限（不得越界表述）：`selfCheck` 只覆盖"schema + 各阶段提示词"，且真实运行里通常只有 schema 有固定期望值；
+  提示词只能按真实输入逐阶段核对，没固定的会进 `scriptSelfCheck.unchecked`。判定逻辑（`judgeAttempt` 等）的转录漂移仍要靠
+  执行前的 §1j 与运行后的 `tests/extract-native-events.mjs`（`invocation.scriptMatchesRepo`）核对。它不额外启动任何模型调用。
+
+### 1j. 执行前校验：内联脚本的载荷与 schema（0 次模型调用）
+
+`node tests/preflight-workflow-script.mjs --payload <文件> --commit <SHA> [--repo-file workflows/three-agent-mvp.js] [--out <json>] [--json]`
+
+- **比较对象**：`git show <SHA>:workflows/three-agent-mvp.js` 的**源码字节**（先把 `--commit` 用 `git rev-parse` 固定成完整 SHA），
+  与"准备提交的脚本文本"逐字节比较——不是拿执行副本跟它自己比。
+- **字节策略只有三条**：逐字节相同即通过；**唯一**允许的规范化是把末尾连续换行压成一个 `\n`（`normalizeTrailingNewline`）；
+  其余任何差异（判定代码改动、漏行、只改注释、CRLF）一律不通过，不做"语义等价"豁免。报告同时给 `sha256Raw`、
+  `sha256Normalized`、`trailingNewlines`、`byteDelta`、`firstDifference`（offset/line/byte）。
+- **schema 全量检查**：用 `runSource` + 两轮模拟计划在本地执行**载荷文本本身**，按 `JSON.stringify` 去重采到 5 个 schema
+  （预检 / 需求 / 编码 / 验证 / 审核），逐个跑 `schemaViolations()`——这是宿主支持子集规则的本地实现（`type`/`oneOf`/
+  `properties`/`required`/`additionalProperties`/`items`/`enum`/`const` + 注释键，错误文本与宿主一致）。
+  run3 的 `schema.properties.issues.items.required requires type or oneOf` 这类错误能在 **0 次真实调用**时被发现。
+- **能力边界写进报告**：`hostCapabilities = { machineScriptTransfer: 'unsupported-by-tool-schema', zeroCallSchemaValidation: 'unavailable',
+  agentCalls: { real: 0, simulated: 8 } }`。依据是 asar 内的实现（`dsh-tool-workflow` 的 `parameters` 只有 `script`/`meta`/`args`；
+  真正的子集校验发生在 `dsh-workflow-ptc` 的 `assertObjectJsonSchema`，位于 `agent()` 调用链内部）。**本地 PASS ≠ 宿主已接受**，
+  **也不能证明"实际提交的文本 = 校验过的载荷"**——后者只能靠运行后的 `invocation.scriptMatchesRepo`。
+- 退出码：`0` 通过 / `10` 字节不一致 / `11` schema 不合法 / `12` 两者都不合格 / `13` 载荷读取失败 / `4` 用法错误 / `5` git 或 IO 失败。
+- 反向测试 `node tests/preflight-script.test.mjs`：9 场景 42 断言——逐字节相同 → PASS 且 `agentCalls.real === 0`；只多一个末尾换行
+  → PASS 但原始哈希不同、`byteDelta === 1`；`REVIEW_SCHEMA.issues.items` 删掉 `type` → 退出 12、点名 `Review Agent`、
+  违规含 `requires type or oneOf`；`if (!decision.ok) {` 改成 `=== false` → 退出 10（判定代码改动不得豁免）；
+  删一行 `log(...)` → 退出 10；只改注释 → 退出 10；CRLF → 退出 10；纯函数 `schemaViolations` 对删掉 `type` 的 Review schema
+  报出 `required`/`additionalProperties`/`properties` 三条 `requires type or oneOf`；缺 `--commit` → 退出 4。
 
 ### 3. 编排层独立复核
 

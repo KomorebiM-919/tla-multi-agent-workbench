@@ -77,9 +77,21 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 `attempted` 比 `started` 多 1——这样"第 N+1 次没有发生"是可验证的事实，而不是靠事后把调用次数加起来推断。
 
 `SCRIPT_DRIFT` 的含义是"**内联脚本与仓库文件不一致，已在启动该子代理之前中止**"：脚本必须以纯文本内联进 `workflow` 调用
-（脚本没有文件系统 API，读不到仓库文件），2000+ 行逐字转录可能漏行——`v0.3-run3` 就漏了 `REVIEW_SCHEMA` 里 `issues.items.type`，
-宿主在第 5 次调用前以"schema 不在支持子集内"拒绝，4 次调用白花。把 `node tests/script-fingerprint.mjs` 的输出作为 `args.selfCheck`
-传入后，每次调用前都比对提示词与 schema 的指纹，漂移在**花钱之前**中止（返回值 `scriptSelfCheck` 说明是否启用）。
+（宿主 `workflow` 工具的入参只有 `script`/`meta`/`args`，**没有文件路径参数**，脚本本身也没有文件系统 API），
+2000+ 行逐字转录可能漏行——`v0.3-run3` 就漏了 `REVIEW_SCHEMA` 里 `issues.items.type`，宿主在第 5 次调用前以"schema 不在支持子集内"拒绝，
+4 次调用白花。
+
+两道防线，作用范围不同，不得混为一谈：
+
+1. **执行前校验（唯一能在 0 次模型调用时发现 schema 缺 type 的手段）**：
+   `node tests/preflight-workflow-script.mjs --payload <文件> --commit <SHA>` 把"准备提交的脚本文本"与**固定提交里的源码字节**逐字节比较，
+   并对全部 5 个 schema 跑一遍宿主支持子集的本地实现（`tests/preflight-workflow-script.mjs` 的 `schemaViolations`）。
+   schema 与提示词只在真实 `agent()` 调用里被宿主校验，**宿主没有"先校验再启动"的接口**——本地检查不等于宿主已接受，
+   报告里的 `hostCapabilities` 原样写出这一点，不得改述为"已通过宿主校验"。
+2. **运行内指纹自检（补充，不是全脚本真实性证明）**：`args.selfCheck` 只能带**静态 schema 指纹**
+   （`node tests/script-fingerprint.mjs --schemas-only`）；夹具生成的提示词指纹依赖夹具的需求与阶段结果，
+   **不能带进真实运行**。提示词指纹只能按真实输入在对应阶段核对，没有固定期望值的字段会列进 `scriptSelfCheck.unchecked`，
+   绝不据此声称"脚本与仓库一致"。
 
 ### 输入（`args`）
 
@@ -121,8 +133,8 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 | `task.testCommand` | 默认由 `targetDir` 推导为 `python -m unittest discover -s <targetDir> -p "test_*.py"`；显式传入时**只接受该规范命令（可加 `-v`）或带固定环境前缀的同一命令**（`$env:PYTHONDONTWRITEBYTECODE = '1'; ` + 规范命令），任意其他 shell 命令一律拒绝 |
 | `task.maxCodingAttempts` | 1–5 的整数；0、小数、字符串、超大值一律 `INVALID_ARGS` |
 | `task.maxAgentCalls` | 可选，子代理调用**硬上限**：1–32 的整数，默认 8；0、小数、字符串、超大值 ⇒ `INVALID_ARGS`。检查发生在**每次调用启动前**，到上限就返回 `AGENT_CALL_BUDGET_EXCEEDED` 并中止（不会"先跑完再算账"）。注意：它限制的是**调用次数**，单个子代理内部的 token 消耗无法由编排层硬限制 |
-| `selfCheck` | 可选，`node tests/script-fingerprint.mjs` 打印的 `{ "<label>": { "prompt", "schema" } }`；每次调用前比对，不一致即 `SCRIPT_DRIFT`（在启动该子代理之前中止，不花钱）。条目必须是含 `prompt` 与 `schema` 两个非空字符串的对象，否则 `INVALID_ARGS` |
-| `selfCheckRequired` | 可选，布尔；为 `true` 时缺少某个 label 的期望指纹也判 `SCRIPT_DRIFT`（fail-closed），为 `false`（默认）时未提供 `selfCheck` 按旧方式运行（返回 `scriptSelfCheck.enabled: false`） |
+| `selfCheck` | 可选，`node tests/script-fingerprint.mjs --schemas-only` 打印的 `{ "<label>": { "schema": "<driftHash>" } }`（**只带静态 schema 指纹**；提示词指纹是夹具产物，不能用于真实运行）；每次调用前比对，不一致即 `SCRIPT_DRIFT`（在启动该子代理之前中止，不花钱）。条目至少要有 `schema` 或 `prompt` 之一，给出的值不得为空字符串，否则 `INVALID_ARGS` |
+| `selfCheckRequired` | 可选，布尔；为 `true` 时缺少某个 label 的期望指纹也判 `SCRIPT_DRIFT`（fail-closed），为 `false`（默认）时未提供 `selfCheck` 按旧方式运行（返回 `scriptSelfCheck.enabled: false`）。未固定期望值的字段会写进 `scriptSelfCheck.unchecked`，部分比对不得说成全部比对 |
 | `task.cacheBaseline` | **必填**数组：启动前实测的 `<targetDir>/__pycache__` 清单（`path`/`bytes`/`mtime_ms`/`sha256`）；目录不存在传 `[]`；缺失或条目不合法 ⇒ `INVALID_ARGS` |
 | `runStartedAt` | 可选；必须是**合法的、带时区的 ISO-8601 日历时间**（`2026-02-30`、`25:00`、`+25:00` 一律非法 ⇒ `INVALID_ARGS`），且必须与 `runId` 的时间戳同秒；**省略时由 `runId` 的 UTC 时间戳还原**（时间窗门禁不会因为省略该参数而失效）。它还必须是**这次真实运行的起点**：与编排层实际时间相差超过 1 小时即 `INVALID_ARGS`（把 `runId` 与 `runStartedAt` 一起改成旧时间也会被拦下）。子代理产物（preflight / requirement / coding-report / verify / review）的时间戳必须落在运行窗口（默认 6 小时，含 60 秒时钟偏差容差）内且**不得晚于编排层当前时间**，否则 `INVALID_TIMESTAMP`（防止用占位时间或未来时间冒充真实记录） |
 
@@ -153,9 +165,10 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 `agentCallBudget` 是本次运行的**统一调用账本**：`{ limit, started, attempted, calls: [{ index, label, phase, started }], limits }`。
 它把预检、需求、每一轮编码/验证/审核、以及任何重试都算在同一本账上——`started: false` 的那一项就是"被预算拦住、没有启动"的调用。
 `limits` 字段固定写明"调用次数可硬限制；单个子代理内部的 token 消耗无法由编排层硬限制"。
-`scriptSelfCheck` 是本次运行的**内联脚本指纹自检范围**：`{ enabled, required, labels }`。
-`enabled: true` 时每次调用的提示词与 schema 都与 `args.selfCheck` 逐项比对过；`enabled: false` 时要看清"脚本指纹未固定"这一事实，
-不要把"运行成功"读成"内联脚本与仓库文件一致"（后者还要靠 `tests/extract-native-events.mjs` 的 `invocation.scriptMatchesRepo` 事后核对）。
+`scriptSelfCheck` 是本次运行的**内联脚本指纹自检范围**：`{ enabled, required, labels, unchecked }`。
+`enabled: true` 时每次调用的提示词与 schema 都与 `args.selfCheck` **对照过**；`unchecked` 列出没有固定期望值、因此**没有比对**的字段
+（真实运行里通常就是各阶段的 `prompt`）。`enabled: false` 或 `unchecked` 非空时，都不能把"运行成功"读成"内联脚本与仓库文件一致"——
+后者只能靠执行前的 `tests/preflight-workflow-script.mjs` 与运行后的 `tests/extract-native-events.mjs`（`invocation.scriptMatchesRepo`）核对。
 `postRunCacheSnapshot` 声明运行结束后必须补采的一次性动作（`python tests/collect-cache-state.py --run-id <runId> --snapshot-label cache-postrun`，写 `cache-postrun.json`），
 因为工作流脚本没有文件系统 API，读不到文件指纹。**补采必须被消费**：外层用
 `python tests/verify-cache-boundary.py --run-id <runId> --evidence-dir <证据目录> --baseline <cache-before.json> --postrun <cache-postrun.json> --out <判定.json>`
@@ -206,6 +219,28 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 
 > 注意：每次运行都会真实调用 DSH 子代理（消耗当前所配置模型的额度），不是离线模拟；运行前请确认模型与计费方式。
 
+## 提交流程：内联脚本必须先过执行前校验（0 次模型调用）
+
+宿主 `workflow` 工具的入参只有 `script`/`meta`/`args`，**没有"从文件读脚本"的参数**，所以脚本只能以文本内联提交
+（这条已在 2026-10-17 的 asar 探查中核实，见 `tests/README.md` §1j）。`v0.3-run3` 因此发生了手工转录漂移。固定流程：
+
+```powershell
+# 1) 先提交，拿到固定 SHA；导出"待提交载荷"= 该提交里的源码字节（LF）
+git rev-parse HEAD
+git show <SHA>:workflows/three-agent-mvp.js > tests/.scratch/payload.js
+
+# 2) 0 次模型调用：逐字节比对 + 5 个 schema 全量检查
+node tests/preflight-workflow-script.mjs --payload tests/.scratch/payload.js --commit <SHA> --out tests/.scratch/preflight.json
+```
+
+- 退出码：`0` 通过 / `10` 字节不一致 / `11` schema 不合法 / `12` 两者都不合格 / `13` 载荷读取失败 / `4` 用法错误 / `5` git 或 IO 失败。
+- 字节策略只有三条：逐字节相同即通过；**唯一**允许的规范化是把末尾的所有换行压成一个 `\n`（其余差异一律不通过）；报告同时给出
+  原始哈希 `sha256Raw` 与规范化哈希 `sha256Normalized`，不做"语义等价"豁免（判定代码改动、漏行、注释改动、CRLF 都判不通过）。
+- 报告里的 `hostCapabilities` 如实写明：`machineScriptTransfer: unsupported-by-tool-schema`、`zeroCallSchemaValidation: unavailable`、
+  `agentCalls: { real: 0, simulated: 8 }`。本地 schema 检查与宿主校验**分开报告**，不得把本地 PASS 说成"宿主已接受"。
+- 本工具**不能**证明"实际提交的文本 = 校验过的载荷"：这一步仍只能靠运行后的 `tests/extract-native-events.mjs`
+  （`invocation.scriptMatchesRepo`）事后核对。宿主没有零调用校验接口，这条限制不是靠工具能补上的。
+
 ## 相关
 
 - 角色提示词：`agents/`（含 `agents/verifier-agent.md`，说明 Verifier 只提供独立验证的原始证据，判定逻辑由本脚本持有）
@@ -214,5 +249,7 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 - 证据目录排他认领工具（预检调用，`O_EXCL` 创建 `.run-owner.json`）：`tools/claim_evidence_dir.py`；其进程级测试：`tests/test_claim_evidence_dir.py`
 - 缓存快照工具（确定性、只读、0 次模型调用）：`tests/collect-cache-state.py`；其测试：`tests/test_collect_cache_state.py`
 - 用量提取器（离线、只读会话日志、不联网、不调用模型）：`tests/extract-usage-report.mjs`；其合成日志测试：`tests/usage-report.test.mjs`
+- 执行前校验（0 次模型调用：载荷逐字节比对 + 全部 5 个 schema 的本地子集检查）：`tests/preflight-workflow-script.mjs`；其反向测试：`tests/preflight-script.test.mjs`
+- 内联脚本指纹（`driftHash`，供 `args.selfCheck` 与各阶段核对）：`tests/script-fingerprint.mjs`（`--schemas-only` 只输出可带进真实运行的 schema 指纹）
 - 证据核查工具（都在 `docs/evidence/v0.1-second-run/`）：`cross-check-workflow-result.py`（返回值 ↔ 磁盘证据，逐次尝试核对指纹与 ID 集合；历史运行加 `--archived`）、`extract-native-events.mjs`（从 DSH 会话日志提取脱敏原生执行事件）、`make-review-manifest.py`（材料清单 + 逐文件 sha256 / git blob SHA-1）
 - 真实运行的完整记录：`docs/evidence/v0.1-first-run/`、`docs/evidence/v0.1-second-run/`，以及首个通过运行的 `docs/evidence/v0.1-run6-20261016T154400Z/`（另有被门禁拦下的 run 3/4/5，见 `docs/evidence/` 与 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`）
