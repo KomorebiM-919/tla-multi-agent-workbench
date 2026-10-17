@@ -148,10 +148,24 @@ BC-02（归一化顺序的逐字表述）、BC-03（只剥一个前导 U+FEFF）
 完整回归（本轮实测，全部离线、未调用真实子代理）：
 `python -m unittest discover -s examples/text-stats -p "test_*.py"` → `Ran 81 tests` / `OK`（退出码 0）；`node tests/workflow-logic.test.mjs` → 81/81 场景、372 断言、0 失败（退出码 0）。
 
+### 7.1 勘误（**非口径变更**）：实现行号与用例数已位移
+
+上表的行号记录的是 2026-10-17 核对当时的文件状态。此后 `examples/text-stats/text_stats.py` 为"程序化调用静默"补齐了 `--help` 与受控错误路径（`_report_error(..., quiet=...)`、`_parse_args(argv, quiet)`、编码校验前移），代码行整体下移，**口径本身未变**：
+
+| 基线条目 | 当前实现位置（2026-10-17 收口后） |
+| --- | --- |
+| RB-1 | `text_stats.py:167-175`（`_report_error` 的 `quiet`）、`:223-235`（`_parse_args` 吞掉 argparse 输出）、`:280`（`programmatic` 分流）、`:307`（`elif programmatic: return EXIT_OK`） |
+| RB-2 | `text_stats.py:311-318`（标准输入路径与 4 行输出） |
+| RB-3 | `text_stats.py:78`、`:84`、`:99-101` |
+| RB-4 | `text_stats.py:99-101`、`:103-112` |
+| RB-6 | `text_stats.py:103-112`、`:115` |
+
+用例数同样位移：交付测试现为 **86 例**（原 81 例，新增 8 例静默/编码回归、合并 2 个旧断言、保留其余），`python -m unittest discover -s examples/text-stats -p "test_*.py"` → `Ran 86 tests` / `OK`；编排逻辑回归现为 **85 场景 / 391 断言**（原 81 / 372）。
+
 ## 8. 相关文档
 
 - 需求口径裁定提案与冲突原文（含 P-1 – P-6 的裁定记录与两处更正）：`docs/REQUIREMENT-CALIBER.md`
 - 验收状态（含本轮追加的第 10 节）：`docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`
-- 新版真实流水线的需求输入候选稿（`v0.2-demo-input-1`，待人工批准；本文六项已落入其 R-01 / R-02 / R-16+R-19+R-24 / R-21+R-22 / R-37）：`docs/DEMO-REQUIREMENT-INPUT.md`
+- 新版真实流水线的需求输入候选稿（现行 `v0.2-demo-input-2`，待 Q1 批准；本文六项已落入其 R-01 / R-02 / R-16+R-19+R-24 / R-21+R-22 / R-37）：`docs/DEMO-REQUIREMENT-INPUT-v2.md`（前一版 `docs/DEMO-REQUIREMENT-INPUT.md` 保留供对照，已被取代）
 - 流水线门禁与状态码表：`workflows/README.md`
 - 演示交付物本身：`examples/text-stats/README.md`、`examples/text-stats/text_stats.py`、`examples/text-stats/test_text_stats.py`

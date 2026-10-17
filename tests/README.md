@@ -12,7 +12,7 @@ V0.1 的验收对象是"这条多 Agent 流水线本身"，因此本目录当前
 node tests/workflow-logic.test.mjs
 ```
 
-- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**81 个场景 / 372 项断言**。
+- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**85 个场景 / 391 项断言**。
 - 时间相关门禁使用**注入的可控时钟**（`FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z')`，与夹具 `runId` 的时间戳同秒；由 `workflow-harness.mjs` 的 `setClock()` / `advanceClock()` 驱动，`runWith()` 每个场景开始时重置）。因此"运行起点与编排层时钟相差过大""阶段时间戳晚于当前时间""时钟推进 120 秒跨多个阶段仍成功"这类判定都能离线、确定性地测出来，不需要真实等待；夹具区有一条护栏断言时钟与夹具时间戳一致，防止两者漂移后测试失去意义。
 - 覆盖的场景包括：正常成功；Coding 自述测试失败但 Review 返回 `APPROVED`（⇒ `TEST_NOT_VERIFIED`）；自述成功但独立验证失败（⇒ `INCONSISTENT_EVIDENCE`）；有验收条件未满足但 Review 返回 `APPROVED`（⇒ `CRITERIA_NOT_SATISFIED`）；`criteria_check` 覆盖不全、含未知 ID、含重复 ID（⇒ `CRITERIA_CHECK_INCOMPLETE` / `CRITERIA_CHECK_UNKNOWN_IDS` / `CRITERIA_CHECK_DUPLICATE_IDS`）；Review 自述退出码与原始输出矛盾（⇒ `INCONSISTENT_REVIEW`）；验证前后文件指纹不一致或 Review 未回传复核指纹（⇒ `ARTIFACT_FINGERPRINT_MISMATCH`）；审核不通过后自动修订；达到最大轮次仍不通过（⇒ `MAX_ATTEMPTS_*`）；非法 `targetDir`（路径穿越）；交付目录/证据目录真实路径落在仓库之外、未回报 `realpath`、链接逃逸、未完成证据目录认领（⇒ `TARGET_DIR_OUTSIDE_REPO` / `LINK_ESCAPE` / `EVIDENCE_NOT_CLAIMED`）；非法 `maxCodingAttempts`；非法 `runId`（含缺少 UTC 时间戳后缀、时间戳与 `runStartedAt` 不同秒）；`evidenceDir` 不在 `docs/evidence/` 下或与 `runId` 不一致；任意 shell 测试命令；重复/已存在的 `runId` 不得覆盖历史证据；需求自检报冲突；需求缺验收条件或缺少/重复 ID；编码未返回报告（⇒ `CODING_OUTPUT_INVALID`）；**任一阶段报告未解决需求冲突时不得成功**（Review / Verifier / Coding 各自报告冲突，以及"Coding 报告不可用 + Verifier 报告冲突"时冲突状态优先）；`args` 缺失或为空；Review 的独立复跑命令与规范命令不一致（⇒ `INCONSISTENT_REVIEW`）；Verifier 证据时间戳越出运行窗口（⇒ `INVALID_TIMESTAMP`）。
 - 复审后的第二轮加固新增场景（都是"应当拒绝"）：
@@ -91,7 +91,8 @@ node tests/approval-evidence-mutation.test.mjs    # 18 组 v1→v3 + 11 组 v2�
 
 > 这两个套件同样受环境约束：DSH 文件沙箱下不能捕获子进程管道输出，因此 CLI 用例直接调用
 > 导出的 `main()` 并临时接管 `process.stdout/stderr`；需要真实 git 的用例用 `tests/.scratch/` 下的临时仓库
-> （该目录已被 `.gitignore` 忽略），用后即删。
+> （该目录已被 `.gitignore` 忽略），用后即删。也正因为这条约束，**不要用 `node --test` 跑它们**——测试运行器
+> 本身要用管道启动子进程，会得到 `spawn EPERM`；直接 `node tests/<file>.test.mjs` 是在当前进程内运行，正常。
 
 ### 1e. 文本统计的有界性质测试（独立参考实现 + 反向验证）
 
@@ -126,7 +127,10 @@ python tests/property_text_stats.py   # 1217 组检查，约 0.2 秒，exit 0 = 
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 ```
 
-期望结果：全部用例通过（`OK`），覆盖需求中的每条验收条件与边界条件（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径与退出码等）。
+期望结果：**86 个用例全部通过**（`OK`），覆盖需求中的每条验收条件与边界条件（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径与退出码等）。
+
+- **程序化调用的输出作用域**（2026-10-17 收口新增）：`stdin_text` 显式传入时，成功、`--help`、五类受控错误都必须保持 `stdout`/`stderr` **双流为空**；唯一例外是"非法 `--encoding` 在选输入前就返回 `1`"。命令行侧则保持"成功 4 行 / `--help` 用法 / 错误一行 `error: `"。
+- **新测试确实能抓住旧实现**：把 `git show HEAD:examples/text-stats/text_stats.py` 的旧实现与当前测试放同一目录运行 `python -m unittest test_text_stats`，结果是 `Ran 86 tests` / **8 例失败**，且全部落在上述静默与编码用例上（无一条无关失败）；对当前实现则 86/86 通过。这组对照证明旧实现的三处假 PASS（程序化缺失文件写 stderr、程序化 `--help` 输出用法、程序化非法 `--encoding` 返回 0）已被回归锁住。
 
 ### 3. 编排层独立复核
 
