@@ -143,6 +143,9 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 `target_dir`、`target_dir_realpath`、`evidence_dir_realpath` 必须与本次配置逐项对应（⇒ `PATH_TARGET_MISMATCH`）；
 解算路径中出现指向仓库之外的链接组件 ⇒ `LINK_ESCAPE`；证据目录必须由 `tools/claim_evidence_dir.py` 本次排他认领成功
 （`evidence_dir_claimed: true`、`claim_created: true`、`claim_tool: "tools/claim_evidence_dir.py"`、`claim_exit_code: 0`、`owner_marker_path` 属于本次运行）⇒ 否则 `EVIDENCE_NOT_CLAIMED`。
+`owner_marker_path` 接受两种等价写法：仓库内相对路径（`docs/evidence/<runId>/.run-owner.json`，认领工具输出的原始形式），
+或**由同一个仓库根解算出的同一文件**的绝对路径（分隔符正/反斜杠均可，大小写不敏感）。指向别的文件、含点段（`.`、`..`）、
+盘符相对路径（`D:foo`）一律不接受 —— 放宽的只是"怎么写出同一个文件"，"必须是本次运行独占的那一个文件"不变。
 预检自报的 `evidence_dir_state`（它认领**之前**观察到的状态）必须与认领工具自报的 `evidence_dir_state_before` 完全一致，
 且后者只接受 `missing` / `empty`：两者不一致、或工具报告 `exists`（目录里已有内容）⇒ 同样是 `EVIDENCE_NOT_CLAIMED`
 ——这条把"目录到底是不是空的"从代理的自述变成工具实测，认领之后再出现的 `.run-owner.json` 属于正常的"认领后"状态，不作为 `EVIDENCE_EXISTS` 判据。

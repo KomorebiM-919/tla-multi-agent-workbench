@@ -12,7 +12,7 @@
 import path from 'node:path';
 
 import {
-  NOW, TARGET_DIR, REPO_ROOT, TEST_SHA, CANONICAL, FAILED_OUTPUT, criteria, preflightOk, requirementOk,
+  NOW, TARGET_DIR, REPO_ROOT, EVIDENCE_DIR, TEST_SHA, CANONICAL, FAILED_OUTPUT, criteria, preflightOk, requirementOk,
   codingOk, verifyOk, verifyFailed, reviewOk, baseArgs, happyPlan, advanceClock, clockIso, clockNowMs,
   makeRunner, EXEC_COMMAND, cacheEntry, bytecodeScope
 } from './workflow-harness.mjs';
@@ -456,6 +456,31 @@ await scenario('预检 claim_exit_code=10 → EVIDENCE_NOT_CLAIMED',
 
 await scenario('预检 owner marker 属于别的运行 → EVIDENCE_NOT_CLAIMED',
   happyPlan({ preflight: function () { return preflightOk({ owner_marker_path: 'docs/evidence/other-run/.run-owner.json' }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'owner_marker_path' });
+
+// 30b. 认领文件路径的等价写法（run4 真实故障：预检把工具输出的相对路径改写成绝对路径）。
+// 门禁只放宽"怎么写出同一个文件"，不放宽"必须是本次运行独占的那一个文件"。
+const OWNER_ABS_FORWARD = REPO_ROOT + '/' + EVIDENCE_DIR + '/.run-owner.json';
+const OWNER_ABS_BACKSLASH = OWNER_ABS_FORWARD.replace(/\//g, '\\');
+
+await scenario('预检 owner_marker_path 是同一文件的绝对路径（正斜杠）→ 继续执行',
+  happyPlan({ preflight: function () { return preflightOk({ owner_marker_path: OWNER_ABS_FORWARD }); } }),
+  baseArgs(),
+  { status: 'OK', ok: true, calls: 5 });
+
+await scenario('预检 owner_marker_path 是同一文件的绝对路径（Windows 反斜杠，run4 原始形态）→ 继续执行',
+  happyPlan({ preflight: function () { return preflightOk({ owner_marker_path: OWNER_ABS_BACKSLASH }); } }),
+  baseArgs(),
+  { status: 'OK', ok: true, calls: 5 });
+
+await scenario('预检 owner_marker_path 是绝对路径但指向别的运行 → EVIDENCE_NOT_CLAIMED',
+  happyPlan({ preflight: function () { return preflightOk({ owner_marker_path: REPO_ROOT + '/docs/evidence/other-run/.run-owner.json' }); } }),
+  baseArgs(),
+  { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'owner_marker_path' });
+
+await scenario('预检 owner_marker_path 用点段伪装成同一文件 → EVIDENCE_NOT_CLAIMED（不做路径解算）',
+  happyPlan({ preflight: function () { return preflightOk({ owner_marker_path: REPO_ROOT + '/' + EVIDENCE_DIR + '/./.run-owner.json' }); } }),
   baseArgs(),
   { status: 'EVIDENCE_NOT_CLAIMED', ok: false, calls: 1, errorIncludes: 'owner_marker_path' });
 

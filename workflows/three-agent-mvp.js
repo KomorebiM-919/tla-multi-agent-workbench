@@ -577,6 +577,23 @@ function normalizeRelPath(raw) {
   return trimmed;
 }
 
+/**
+ * 认领文件路径的等价判定：既接受仓库内相对路径（原契约），也接受**由同一个仓库根解算出的绝对路径**。
+ * 绝对路径必须与 `repoRootReal + '/' + 期望相对路径` 归一化并小写化后逐字符相同，因此它仍然只指向同一个文件；
+ * 盘符相对路径（`D:foo`）、含点段的路径（`/repo/./x`、`/repo/a/../x`）、指向别处的路径一律不接受。
+ * 放宽这一条只影响"怎么写出同一个文件"，不影响"必须是本次运行独占的那一个文件"。
+ */
+function ownerMarkerPathMatches(reported, repoRootReal, expectedRelPath) {
+  const raw = asString(reported);
+  if (raw === '') { return false; }
+  if (normalizeRelPath(raw) === expectedRelPath) { return true; }
+  const looksAbsolute = raw.charAt(0) === '/' || /^[A-Za-z]:/.test(raw) || raw.indexOf('\\') !== -1;
+  if (!looksAbsolute) { return false; }
+  const expected = normalizeAbsPath(repoRootReal + '/' + expectedRelPath).toLowerCase();
+  const actual = normalizeAbsPath(raw).toLowerCase();
+  return expected !== '' && actual === expected;
+}
+
 /** 文件名必须是纯 basename（不含任何路径分隔符），避免越出交付目录。 */
 function normalizeBasename(raw) {
   const value = asString(raw);
@@ -1532,6 +1549,8 @@ function preflightPrompt(artifactPath, ownerMarkerPath) {
     '   `claim_tool`（固定填 `' + EVIDENCE_CLAIM_TOOL + '`）、`claim_created`（工具报告"新建成功"才为 true）、',
     '   `claim_exit_code`（工具的**真实**退出码）、`claimed_at`（认领工具写入的时间）、',
     '   `evidence_dir_state_before`（工具自报的**认领前**状态，逐字回填，不得用你自己观察到的值替代）。任一字段与工具实测不符，编排脚本会立即终止本次运行。',
+    '   `owner_marker_path`：**逐字回填**认领工具输出的那个值，它是仓库内相对路径（形如 `' + ownerMarkerPath + '`）。',
+    '   **不要**把它改写成绝对路径，也不要施加 `os.path.abspath` / `Path.resolve` 之类的"规范化"——工具输出的就是契约要求的形式。',
     '   **认领失败时（工具的退出码非 0）：不要写任何文件** —— 尤其不要写你自己的产物文件 `' + artifactPath + '`：',
     '   那个目录属于别的运行，写进去会污染它的证据；直接返回结构化结果（把拒绝原因写进 `problems`），让编排层以 EVIDENCE_NOT_CLAIMED 终止。',
     '4. 检查从仓库根到交付目录、证据目录的**每一级路径分量**是否为软链接、Windows 目录联接（junction）或其他重解析点，',
@@ -2093,9 +2112,9 @@ const claimTime = claimedAt === ''
 if (!claimTime.ok) {
   claimProblems.push('claimed_at 不可信（' + claimTime.reason + '）：认领可能不属于本次运行');
 }
-if (normalizeRelPath(preflight.owner_marker_path) !== ownerMarkerPath) {
+if (!ownerMarkerPathMatches(preflight.owner_marker_path, repoRootReal, ownerMarkerPath)) {
   claimProblems.push('owner_marker_path 报告为 ' + JSON.stringify(preflight.owner_marker_path) +
-    '，本次运行应为 ' + JSON.stringify(ownerMarkerPath));
+    '，本次运行应为 ' + JSON.stringify(ownerMarkerPath) + '（或由同一个仓库根解算出的同一文件的绝对路径）');
 }
 if (claimProblems.length > 0) {
   return failure('EVIDENCE_NOT_CLAIMED',
