@@ -1,0 +1,5 @@
+# 样本输入文件的字节是验收条件的一部分：AC-11 要求它恰好是 "hello world\nfoo bar\n"
+# （20 个码点、2 行）。本机 core.autocrlf=true 时，检出与 `git archive` 导出都会把行尾
+# 变成 CRLF，于是 examples/text-stats 的 test_ac22 在干净副本里必然失败（无人值守加固 D
+# 的实测发现）。这里只固定这一个数据文件的行尾，不改动其它文件的既有处理方式。
+examples/text-stats/sample_input.txt text eol=lf
