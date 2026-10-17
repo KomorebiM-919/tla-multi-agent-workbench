@@ -492,6 +492,13 @@ def self_test():
     def set_empty_criteria(p, m):
         p['requirement']['acceptance_criteria'] = []
 
+    def set_criteria_wrong_type(p, m):
+        # 类型错了不能被当成"非空"：字符串/字典都应先被判为不可用
+        p['requirement']['acceptance_criteria'] = 'AC-01 注入文本时静默'
+
+    def set_criteria_check_wrong_type(p, m):
+        p['review']['criteria_check'] = {'AC-01 注入文本时静默': True}
+
     def duplicate_verify_artifact(p, m):
         p['verify']['artifacts'] = p['verify']['artifacts'] + [p['verify']['artifacts'][0]]
 
@@ -523,6 +530,10 @@ def self_test():
             'time.coding.valid', 'mapping.covers_requirement_clauses', 'mapping.criteria_ids_known',
             'mapping.covers_all_criteria'}),
         ('empty_criteria', [(_mutate, [set_empty_criteria])], {'requirement.criteria_nonempty'}, set()),
+        ('criteria_wrong_type', [(_mutate, [set_criteria_wrong_type])],
+         {'requirement.criteria_nonempty'}, set()),
+        ('criteria_check_wrong_type', [(_mutate, [set_criteria_check_wrong_type])],
+         {'review.criteria_check_nonempty'}, set()),
         ('duplicate_artifact', [(_mutate, [duplicate_verify_artifact])],
          {'verify.artifacts_no_duplicate_paths'}, set()),
         ('coding_conflict', [(_mutate, [coding_conflict])], {'coding.conflicts_empty'}, set()),

@@ -171,7 +171,7 @@ python -B docs/evidence/v0.1-run6-20261016T154400Z/orchestrator-verification-run
 v0.2-run1 起，复核不再是一次性脚本，而是可重复运行的正式工具：
 
 ```powershell
-# 单次运行的证据复核（70 项检查；--self-test 跑 10 个夹具确认"该拒的拒、不该拒的不误拒"）
+# 单次运行的证据复核（70 项检查；--self-test 跑 12 个夹具确认"该拒的拒、不该拒的不误拒"）
 python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z `
   --mapping docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json `
   --allow-scope tests/workflow-harness.mjs --allow-scope workflows/three-agent-mvp.js  # 逐条列出，不静默跳过

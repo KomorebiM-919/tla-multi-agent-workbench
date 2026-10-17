@@ -530,7 +530,7 @@ V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改
 | 复核项 | 结果 |
 | --- | --- |
 | `python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z --mapping … --allow-scope …`（7 个 `--allow-scope` 为本次收口新增的编排/测试工具，逐条原样打印） | **70/70** 通过（认领、ID 唯一性、artifact 与磁盘字节一致、Review 覆盖与独立复跑一致、时间顺序、工作区范围、三报告冲突字段、映射完整性）。工作区检查以运行前 HEAD（`[C16]`）为基准 |
-| 复核工具自检 `python tests/review-run-evidence.py --self-test` | **10/10** 夹具通过（空验收集合、重复指纹、三报告冲突字段、缺失时区、映射缺条款/未知 ID/孤立项都必须被拒；基线不得误拒） |
+| 复核工具自检 `python tests/review-run-evidence.py --self-test` | **12/12** 夹具通过（空验收集合、重复指纹、三报告冲突字段、缺失时区、映射缺条款/未知 ID/孤立项都必须被拒；基线不得误拒） |
 | 独立行为探针 `python tests/probe-text-stats-requirement.py`（正式工具，按需求原文推导，不导入交付测试） | **180/180** 通过（两类调用作用域、五类受控错误、argv、归一化、四项统计表、编码分工、依赖与写入边界、README 自洽） |
 | 变异检查 `python tests/mutation-text-stats.py` | 基线 76/76；三个"重放旧缺陷"的变异体全部被抓（3 / 1 / 5 例失败，命中目标用例 3 / 1 / 3） |
 | 原生事件提取 `node tests/extract-native-events.mjs …` | 10/10 派生检查通过（单次运行、5 次调用、父会话匹配、深度 1、无再派生、脚本指纹一致、产物归因） |

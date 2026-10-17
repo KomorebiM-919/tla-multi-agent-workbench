@@ -26,7 +26,7 @@ python tests/run-review-suite.py --run-id v0.2-run1-20261017T121445Z
 | --- | --- | --- |
 | 01 | 交付单元测试（`python -m unittest discover -s examples/text-stats`） | `Ran 76 tests` / `OK` |
 | 02 | 独立复核 `tests/review-run-evidence.py`（带映射与 8 条显式排除项） | **70/70** 项通过 |
-| 03 | 复核工具自检 `--self-test` | **10/10** 夹具 |
+| 03 | 复核工具自检 `--self-test` | **12/12** 夹具 |
 | 04 | 独立行为探针 `tests/probe-text-stats-requirement.py` | **180/180** |
 | 05 | 变异检查 `tests/mutation-text-stats.py` | 基线 76/76；3/3 变异体被抓（3 / 1 / 5 例失败） |
 | 06 | 工作流逻辑 `tests/workflow-logic.test.mjs` | **95/95** 场景、439 断言 |
