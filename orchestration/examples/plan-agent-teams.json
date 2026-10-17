@@ -1,0 +1,54 @@
+{
+  "schema": "tla.v02-run-config/v1",
+  "runId": "v0.2-plan-demo-20261018T000000Z",
+  "roles": {
+    "lead": {
+      "provider": "deepseek-official",
+      "model": "deepseek-v4-pro",
+      "reasoningEffort": "high"
+    },
+    "worker": {
+      "provider": "deepseek-official",
+      "model": "deepseek-v4-flash"
+    },
+    "reviewer": {
+      "provider": "moonshot",
+      "model": "moonshot-v1-8k"
+    }
+  },
+  "ownerRole": "lead",
+  "router": {
+    "enabled": false,
+    "policy": "none"
+  },
+  "budget": {
+    "currency": "USD",
+    "totalMinor": 2500,
+    "allocations": [
+      { "role": "lead", "basisPoints": 4000 },
+      { "role": "worker", "basisPoints": 4000 },
+      { "role": "reviewer", "basisPoints": 2000 }
+    ]
+  },
+  "pricing": {
+    "snapshotPath": "orchestration/data/pricing-snapshot.portkey-72e1084.json",
+    "maxAgeHours": 168,
+    "providerAliases": { "deepseek-official": "deepseek" }
+  },
+  "estimates": {
+    "perCall": { "inputTokens": 20000, "outputTokens": 4000, "cacheReadTokens": 8000 },
+    "calls": { "lead": 2, "worker": 6, "reviewer": 2 }
+  },
+  "backend": {
+    "kind": "agent-teams",
+    "options": {
+      "teamName": "v02-plan-demo",
+      "approval": "required",
+      "tasks": [
+        { "id": "T1", "subject": "Implement the agreed module", "assignee": "worker" },
+        { "id": "T2", "subject": "Review the implementation", "assignee": "reviewer", "dependencies": ["T1"] },
+        { "id": "T3", "subject": "Decide on the review findings", "assignee": "lead", "dependencies": ["T2"] }
+      ]
+    }
+  }
+}
