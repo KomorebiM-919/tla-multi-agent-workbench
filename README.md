@@ -63,9 +63,10 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 - [x] **人工审批的安全拒绝测试**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试（现场见
   [`docs/evidence/v0.1-approval-rejection-20261017T112518Z/`](docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md)；
   范围仅这一次：其它工具与"允许一次"路径未验证、远端未观测）
-- [ ] V0.1 剩余：**新版真实模型流水线**在新门禁下的完整运行（演示需求输入需先经一次确认）
+- [x] **新版真实模型流水线的完整运行（第五次，`v0.4-run5-20261017T161034Z`）**：5 个角色各 1 次调用（5/8，无派生）、交付测试 97 项全绿、编排层独立复核 28/28、缓存边界 `CLEAN`、用量 4 465 947 tokens（声明 8 000 000，`WITHIN_BUDGET`）；证据见 [`docs/run-records/v0.4-run5-20261017T161034Z/`](docs/run-records/v0.4-run5-20261017T161034Z/README.md)。**所有者已于 2026-10-18 基于审核报告确认“本轮演示功能验收通过”**（记录：[`OWNER-ACCEPTANCE.md`](docs/run-records/v0.4-run5-20261017T161034Z/review-package/OWNER-ACCEPTANCE.md)）；该确认是“基于报告的验收确认”，不是所有者逐行审查或独立复跑，也不代表整个多模型平台开发完成
+- [ ] **远端发布授权**：交付与归档均只在本地，未 push、未建 PR、未合并 `main`；按 `AGENTS.md` §9 需所有者单独授权
 - [ ] V0.1 扩展目标：加入 discussion、testing 两个角色，构成五角色完整流水线（不是首次运行成功的前提）
-- [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、ChatGPT Plus/Codex 兼容性验证、LangGraph 互补路线评估
+- [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、ChatGPT Plus/Codex 兼容性验证、LangGraph 互补路线评估（V0.2–V0.4 均未开始）
 - 详见 [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## 目录说明

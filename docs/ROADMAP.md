@@ -53,6 +53,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 - **run3 事故后的执行前校验（2026-10-17，离线，0 次模型调用）**：先核实"宿主能否从文件把脚本原文传给 `workflow` 的 `script` 参数"——asar 内的 `dsh-tool-workflow` 实现里 `parameters` 只有 `script`(string)/`meta`(object)/`args`，**没有文件路径参数**；真正的 schema 子集校验在 `dsh-workflow-ptc` 的 `assertObjectJsonSchema`，位于 `agent()` 调用链内部，**宿主没有零调用的校验接口**。因此结论是"没有可靠的机器传递路径"，不再靠手工转录去尝试真实运行（这条限制已写进 `workflows/README.md` 与 `docs/ARCHITECTURE.md` §6）。新增两道离线防线：① `tests/preflight-workflow-script.mjs`——把"准备提交的载荷"与 `git show <SHA>:workflows/three-agent-mvp.js` 的源码字节**逐字节**比较（唯一允许的规范化是把末尾换行压成单个 `\n`，同时保留原始与规范化哈希；判定代码改动、漏行、注释改动、CRLF 一律不通过），并用 `runSource` 在本地跑一次两轮模拟、对**全部 5 个 schema** 跑宿主子集规则的本地实现；退出码 `0/10/11/12/13/4/5`，报告里 `hostCapabilities` 如实写 `machineScriptTransfer: unsupported-by-tool-schema`、`zeroCallSchemaValidation: unavailable`、`agentCalls: { real: 0, simulated: 8 }`。② `args.selfCheck` 范围收窄——只带 `node tests/script-fingerprint.mjs --schemas-only` 的**静态 schema 指纹**（夹具生成的提示词指纹不能用于真实运行），未固定期望值的字段进 `scriptSelfCheck.unchecked`，部分比对不得说成全部比对。测试：`tests/preflight-script.test.mjs` **9 场景 / 42 断言**（含 run3 那个缺 `type` 的变异体必须在 0 次调用时被抓住）、`script-fingerprint --check` **5 项**。另把 `workflows/three-agent-mvp.js` 的行尾固定为 LF（`.gitattributes`），否则本机 `core.autocrlf=true` 下次检出会把逐字节比对变成 CRLF 假失败。**本条不包含任何真实运行**：第四次运行仍待所有者单独授权，调用数与 token 观测额度另行批准。
 
+- **第五次真实运行 `v0.4-run5-20261017T161034Z` 完成，并获所有者基于报告的验收确认（2026-10-18）**：5 个角色各 1 次调用（5/8，无派生）、交付测试 **97 项全绿**、编排层独立复核 **28/28**、缓存边界 **`CLEAN`**（8 个观测点同哈希，0 违规）、用量 **4 465 947 tokens / 声明 8 000 000**（`WITHIN_BUDGET`、`coverage: complete`）；三方脚本核对唯一差异是宿主去掉末尾换行（`byteDelta: -1`，属允许规则）。随后离线验收阶段：复核工具从 **25 → 28 条**（补齐 R-35 的 README 四个示例、R-29 的 UTF-16 文件与 `PYTHONIOENCODING` 两类真实子进程探针，各带“对照组必须不同”的反证），反例自检 **13 → 19 个**；确认 `docs/review/` 属**有意不入库**，复核包已按约定移到 `docs/run-records/v0.4-run5-20261017T161034Z/review-package/`（旧路径只在历史提交中出现，未改写历史）。**所有者 2026-10-18 基于审核报告确认“本轮演示功能验收通过”**（记录 `review-package/OWNER-ACCEPTANCE.md`）：需求以 `v0.2-demo-input-3` 为准、样本不变；接受离线复算与 R-33/R-37 的历史运行证据；接受已声明能力限制且**不新增连续缓存监控要求**；历史残留与来源不明 worktree 暂不处理。该确认**不含** push / PR / 合并 / 清理现场 / 再跑真实模型，也**不等于整个多模型平台开发完成**。
+
 ### 待完成
 
 - **人工审批的安全拒绝测试**（V0.1 正式验收要求，对应验收条件 3）：完成一次被拒绝的受保护操作，证明拒绝后无实际副作用（工作区未变、无远端写入、未安装依赖、权限未变），并归档测试记录。**现状（2026-10-17）**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试——`approval/decided.outcome=rejected`、`tool/result.isError=true`、目标文件未创建、仓库内容与状态前后一致、用户逐字确认拒绝（现场 `docs/evidence/v0.1-approval-rejection-20261017T112518Z/`，机器判定 `PASS` + 人工确认，`verify` 退出码 0；首次判定因缺人工观察为 `INCOMPLETE`/退出码 3，两次记录均保留）。范围**仅限这一次**：其它工具与"允许一次"路径未验证、远端未观测，因此**不**扩展为"所有工具安全能力通过"。V0.1 最终验收仍未通过（新版真实模型流水线尚未运行）。**2026-10-17 追记**：新版真实流水线已首次运行（`v0.2-run1-20261017T121445Z`，见上"最近状态"与 `ACCEPTANCE-STATUS.md` §16）；V0.1 最终验收仍未通过，但原因已从"流水线尚未运行"改为"远端未观测 + AC-24 的 `__pycache__` 条款未严格执行"。
@@ -70,6 +72,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 3. 人工审批的三层区分（`ask_user_question` 用户交互 / DSH 底层审批缝 / `AGENTS.md` 工程规范的人工确认要求）已文档化；并完成一次**安全的拒绝审批测试**：受保护操作被拒绝后**未发生实际副作用**（工作区文件未变、无远端写入、未安装依赖、权限未变），测试记录归档。
 4. `git log` 无敏感信息提交；`.gitignore` 规则经 `git check-ignore` 验证有效。
 5. `main` 全程无直接提交；功能分支提交历史清晰。
+
+> **2026-10-18 追记**：本轮演示功能（`v0.2-demo-input-3` 口径）已通过验收，并由所有者**基于审核报告**确认（`docs/run-records/v0.4-run5-20261017T161034Z/review-package/OWNER-ACCEPTANCE.md`）。该确认是“基于报告的验收确认”，不是逐行审查或独立复跑；本追记**不改写**上面五条的既有判定依据，远端发布与 V0.1 其它记录仍按各自条目处理，整个平台（V0.2–V0.4）尚未开始。
 
 > 五角色完整流水线（需求 → 讨论 → 编码 → 审核 → 测试）是 V0.1 的**扩展目标**，不作为首个 MVP 的验收前提。
 

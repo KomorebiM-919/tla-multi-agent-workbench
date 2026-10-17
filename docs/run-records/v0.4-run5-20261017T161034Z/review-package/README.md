@@ -95,7 +95,8 @@ python docs/run-records/v0.4-run5-20261017T161034Z/review-package/verify-run5.py
 | `self-test.json` | 19 个反例的结果（19/19） |
 | `REQUIREMENT-TRACEABILITY.md` | R-01 – R-37 逐条追踪（AC/BC、实现位置、证据、结论、未覆盖边界） |
 | `ACCEPTANCE-REPORT.md` | 可决策的验收报告（含剩余事项分类与维护事项） |
-| `HUMAN-REVIEW-CHECKLIST.md` | 给仓库所有者的人工复审清单与可直接回复的验收文字 |
+| `OWNER-ACCEPTANCE.md` | 所有者**基于本报告**作出的验收确认记录（2026-10-18），含确认范围与明确不含的事项 |
+| `HUMAN-REVIEW-CHECKLIST.md` | 给仓库所有者的人工复审清单与可直接回复的验收文字（现已确认，保留为请求记录） |
 | `MAINTENANCE.md` | 本轮明确未处置的维护事项（来源不明 worktree、历史残留、ACL 临时文件） |
 | `SHA256SUMS.txt` | 本目录文件与相关证据文件的校验和 |
 
