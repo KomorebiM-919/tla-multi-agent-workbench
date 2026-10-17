@@ -1,0 +1,64 @@
+{
+  "run_id": "v0.4-run4-20261017T155454Z",
+  "agent": "Verifier Agent",
+  "stage": "preflight",
+  "generated_at": "2026-10-17T23:57:07.305580+08:00",
+  "result": {
+    "repo_root": "<repo-root>",
+    "repo_root_realpath": "<repo-root>",
+    "evidence_dir_state": "missing",
+    "evidence_dir_state_before": "missing",
+    "evidence_dir_entries": [],
+    "evidence_dir_realpath": "<repo-root>\\docs\\evidence\\v0.4-run4-20261017T155454Z",
+    "evidence_dir_claimed": true,
+    "owner_marker_path": "<repo-root>\\docs\\evidence\\v0.4-run4-20261017T155454Z\\.run-owner.json",
+    "claim_tool": "tools/claim_evidence_dir.py",
+    "claim_created": true,
+    "claim_exit_code": 0,
+    "claimed_at": "2026-10-17T23:56:38.452290+08:00",
+    "link_components": [],
+    "prompt_files": [
+      {
+        "path": "agents/requirement-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/coding-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/review-agent.md",
+        "exists": true
+      },
+      {
+        "path": "agents/verifier-agent.md",
+        "exists": true
+      }
+    ],
+    "target_dir": "examples/text-stats",
+    "target_dir_state": "present",
+    "target_dir_realpath": "<repo-root>\\examples\\text-stats",
+    "resolved_paths": [
+      "<repo-root>",
+      "<repo-root>\\agents",
+      "<repo-root>\\agents\\requirement-agent.md",
+      "<repo-root>\\agents\\coding-agent.md",
+      "<repo-root>\\agents\\review-agent.md",
+      "<repo-root>\\agents\\verifier-agent.md",
+      "<repo-root>\\tools\\claim_evidence_dir.py",
+      "<repo-root>\\workflows\\three-agent-mvp.js",
+      "<repo-root>\\docs",
+      "<repo-root>\\docs\\evidence",
+      "<repo-root>\\docs\\evidence\\v0.4-run4-20261017T155454Z",
+      "<repo-root>\\docs\\evidence\\v0.4-run4-20261017T155454Z\\.run-owner.json",
+      "<repo-root>\\examples",
+      "<repo-root>\\examples\\text-stats",
+      "<repo-root>\\examples\\text-stats\\text_stats.py",
+      "<repo-root>\\examples\\text-stats\\test_text_stats.py",
+      "<repo-root>\\examples\\text-stats\\README.md",
+      "<repo-root>\\examples\\text-stats\\sample_input.txt"
+    ],
+    "problems": [],
+    "generated_at": "2026-10-17T23:57:07.305580+08:00"
+  }
+}

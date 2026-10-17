@@ -1,0 +1,107 @@
+{
+  "cache_dir": "examples/text-stats/__pycache__",
+  "checks": [
+    {
+      "check": "baseline_present",
+      "detail": "运行前基线可读，2 个条目",
+      "ok": true
+    },
+    {
+      "check": "postrun_present",
+      "detail": "运行后快照可读，2 个条目",
+      "ok": true
+    },
+    {
+      "check": "run_identity",
+      "detail": "基线 run_id='v0.4-run4-20261017T155454Z'，快照 run_id='v0.4-run4-20261017T155454Z'，本次 'v0.4-run4-20261017T155454Z'",
+      "ok": true
+    },
+    {
+      "check": "stage_observations_found",
+      "detail": "证据里找到 0 个阶段观测点",
+      "ok": false
+    },
+    {
+      "check": "postrun_after_last_observation",
+      "detail": "快照采集时间 2026-10-17T23:57:42+08:00，最后一个观测点 2026-10-17T23:54:54+08:00",
+      "ok": true
+    },
+    {
+      "check": "stage_observations_usable",
+      "detail": "每个阶段观测点都能解析出合法条目",
+      "ok": true
+    },
+    {
+      "check": "no_violations",
+      "detail": "观测点之间的差异：0 条",
+      "ok": true
+    }
+  ],
+  "coverage": {
+    "observedWindows": [
+      "运行前基线（外层采集）",
+      "运行后快照（外层采集）"
+    ],
+    "unobservedWindow": "两次采集点之间的写入；采集点之间\"写完又改回原样且 mtime 变化不超过 5 毫秒\"的瞬时写入不可观测",
+    "usesModelCalls": false
+  },
+  "generated_at": "2026-10-17T23:57:45+08:00",
+  "inputs": {
+    "baseline": "docs/evidence/v0.4-run4-20261017T155454Z/cache-before.json",
+    "evidence_dir": "docs/evidence/v0.4-run4-20261017T155454Z",
+    "postrun": "docs/evidence/v0.4-run4-20261017T155454Z/cache-postrun.json"
+  },
+  "problems": [
+    "stage_observations_found：证据里找到 0 个阶段观测点"
+  ],
+  "run_id": "v0.4-run4-20261017T155454Z",
+  "schemaVersion": 1,
+  "status": "INCOMPLETE",
+  "statusMeaning": "证据不完整：不能给出完整通过，也不能当作通过",
+  "timeline": [
+    {
+      "collected_at": "2026-10-17T23:54:54+08:00",
+      "entries": [
+        {
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "bytes": 14885,
+          "mtime_ms": 1792244851273,
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ],
+      "label": "运行前基线（外层采集）",
+      "sha256": "7168ee6c5b31599b7ee6bbd8af48df240c81f80b7318f5a2cad9d558313e8687",
+      "source": "cache-before.json"
+    },
+    {
+      "collected_at": "2026-10-17T23:57:42+08:00",
+      "entries": [
+        {
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "bytes": 14885,
+          "mtime_ms": 1792244851273,
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ],
+      "label": "运行后快照（外层采集）",
+      "sha256": "7168ee6c5b31599b7ee6bbd8af48df240c81f80b7318f5a2cad9d558313e8687",
+      "source": "cache-postrun.json"
+    }
+  ],
+  "tolerance_ms": 5,
+  "tool": "tests/verify-cache-boundary.py",
+  "toolVersion": "1.0.0",
+  "violations": []
+}
