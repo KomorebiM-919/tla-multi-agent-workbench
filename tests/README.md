@@ -181,14 +181,18 @@ node tests/bytecode-integration.test.mjs   # 6 个场景 / 45 项断言，真实
 ### 1g. 确定性缓存快照工具（0 次模型调用）
 
 ```powershell
-python tests/collect-cache-state.py --target-dir examples/text-stats --out docs/evidence/<runId>/cache-postrun.json --pretty
+python tests/collect-cache-state.py --target-dir examples/text-stats --run-id <runId> --snapshot-label cache-before --out docs/evidence/<runId>/cache-before.json --pretty
+python tests/collect-cache-state.py --target-dir examples/text-stats --run-id <runId> --snapshot-label cache-postrun --out docs/evidence/<runId>/cache-postrun.json --pretty
 ```
 
 - **为什么有它**：v0.2-run2 每轮都额外启动一个 "Cache Collector" 子代理，只为读几个文件指纹——那是**付费模型调用**，
   也正是 10 次调用超过批准 8 次的直接原因（复盘见 `docs/run-records/v0.2-run2-20261017T133204Z/budget-overrun.md`）。
   工作流脚本没有文件系统 API，但"读指纹"不需要模型，因此交给这个只读的确定性工具：不联网、不读凭据、不写被采集目录。
+- **两次采集的时点由外层控制**：`cache-before` 必须在任何子代理启动前采；`cache-postrun` 必须在最后一个子代理结束后、
+  其他测试或导入开始前采（否则后面的 Python 运行会污染快照）。
 - 字段口径与编排层 `normalizeCacheEntries` 兼容：`path`（仓库内相对、正斜杠）、`bytes`（整数）、`mtime_ms`（整数毫秒）、
-  `sha256`（小写十六进制）；输出 `{collected_at, entries, cache_dir, tool, note}`，UTF-8 无 BOM、LF。
+  `sha256`（小写十六进制）；输出 `{collected_at, run_id, snapshot_label, entries, cache_dir, tool, note}`，UTF-8 无 BOM、LF。
+  `run_id` / `snapshot_label` 供外层判定核对"这份快照属于本次运行"。
 - 退出码：0 采集完成（目录不存在也算完成，`entries` 为空且 `note` 说明原因）、4 参数错误、5 IO 错误、
   12 解算后越出仓库根（越界时不写 `--out`）。
 - 进程级测试 `tests/test_collect_cache_state.py`（**9 个用例**）：四字段与磁盘一致、`path` 无反斜杠、`mtime_ms` 为整数毫秒且
@@ -197,6 +201,27 @@ python tests/collect-cache-state.py --target-dir examples/text-stats --out docs/
 
 > 测试里给子进程加了 `PYTHONIOENCODING=utf-8`：工具输出的是 UTF-8 JSON（`note` 含中文），而子进程 stdout 走管道时
 > 默认用 locale 编码（Windows 上是 cp936），不强制就会在父进程按 UTF-8 解码时变成替换字符、断言随之失真。
+
+### 1g-2. 全运行缓存边界的最终判定（0 次模型调用）
+
+```powershell
+python tests/verify-cache-boundary.py --run-id <runId> --evidence-dir docs/evidence/<runId> `
+  --baseline docs/evidence/<runId>/cache-before.json --postrun docs/evidence/<runId>/cache-postrun.json `
+  --out docs/run-records/<runId>/cache-boundary.json --pretty
+```
+
+- **为什么有它**：工作流脚本没有文件系统 API，它的 `ok: true` 只能是**运行内暂定结果**（返回值写 `verdict: 'PROVISIONAL_OK'`
+  + `verdictScope: 'provisional-in-run'`）——最后一个观测点是 Review 自报的执行后清单，Review 返回之后的写入它看不见。
+  最终是否通过由这个外层工具判：它把**运行前基线 + 各阶段 `bytecode_scope` 观测点 + 运行后快照**串成一条时间线，逐段比较。
+- **只生成 `cache-postrun.json` 而不消费它，等于没做**：判定必须真的读入最终快照并参与比较。
+- 判定：`CLEAN`（0，全程无违反）/ `NOT_CLEAN`（10，有创建/删除/内容变化/超容差 mtime 变化）/ `INCOMPLETE`（11，
+  快照缺失或读不出来、路径越界、`run_id` 或 `cache_dir` 与本次运行不符、阶段观测点不可用、时间不可解析）；
+  参数错误 4、IO 错误 5。**快照不完整时不给"完整通过"**。
+- 输出含 `checks`、`problems`、`violations`、`timeline[]`（每个观测点带 `entries` 计数与逐文件 `sha256`）、
+  `coverage.unobservedWindow`（"写完又改回原样、且 mtime 变化不超过 5 毫秒"属不可观测范围）、`coverage.usesModelCalls: false`。
+- 进程级测试 `tests/test_cache_boundary.py`（**7 个用例**）：内部 `ok` 但最终缓存变化 ⇒ `NOT_CLEAN`；最终快照缺失 ⇒ `INCOMPLETE`；
+  全程一致 ⇒ `CLEAN`（时间线含 6 个观测点：基线 + 2 个阶段各前后 2 点 + postrun）；采集工具自身不生成字节码；
+  另有 `run_id` 不符 ⇒ `INCOMPLETE`、阶段观测点不可用 ⇒ `INCOMPLETE`、最终快照出现新增文件 ⇒ `NOT_CLEAN`。
 
 ### 1h. 离线用量报告（只读会话日志，不调用模型）
 
@@ -290,7 +315,8 @@ node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v0
 | `coding-report.json` | Coding Agent | 文件清单、实现说明、真实测试命令与退出码、与需求的偏差 |
 | `verify.json` | Verifier Agent（verify） | 独立复跑的原始输出、退出码、用例数、产物 sha256 |
 | `review.json` | Review Agent | 逐条验收条件判定、问题清单、最终结论 |
-| `cache-postrun.json` | `tests/collect-cache-state.py`（可选、运行结束后） | 确定性补采的缓存最终清单（不参与门禁） |
+| `cache-before.json` | `tests/collect-cache-state.py`（运行前、任何子代理启动前） | 运行前缓存基线快照（含 `run_id`） |
+| `cache-postrun.json` | `tests/collect-cache-state.py`（运行结束后、其他测试或导入前） | 确定性补采的缓存最终清单，必须被 `verify-cache-boundary.py` 消费 |
 | `dsh-native-events.json` | 编排层（只读会话日志提取） | 脱敏的 DSH 原生执行事件（会话标识、时间、turn/step、工具调用），用于证明"确实是独立子代理" |
 | `test-output.txt` | 编排层（人工可复现） | 提交前复跑测试的原始输出 |
 | `README.md` | 编排层 | 本次运行记录：时间、命令、环境、核验结论、诚实记录 |

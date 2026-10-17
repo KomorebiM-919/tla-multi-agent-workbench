@@ -25,9 +25,14 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 
 审核不通过时，脚本把该轮问题清单与编排层的判定原因**回注**给新的 Coding Agent 实例（`coding-report-revision-2.json` 等），再验证、再复审。
 
-### 成功判定（`ok: true` 的充分必要条件）
+### 成功判定（`ok: true` 的充分必要条件，**是运行内暂定结果**）
 
-只有当以下**全部**成立时才输出成功——不再只看 Review 的结论：
+`ok: true` 只代表**运行内暂定结果**（返回值里显式写成 `verdict: 'PROVISIONAL_OK'`、`verdictScope: 'provisional-in-run'`）：
+脚本没有文件系统 API，它能看到的最后一个缓存观测点是 Review 自报的执行后清单，Review 返回之后的写入它看不见。
+**最终是否通过由外层判定**：`tests/verify-cache-boundary.py` 比对"运行前基线 + 各阶段观测点 + 运行后 `cache-postrun.json`"，
+判 `CLEAN` / `NOT_CLEAN` / `INCOMPLETE`。运行内暂定失败（`verdict: 'PROVISIONAL_FAIL'`）同样不是最终判决，原始证据保留。
+
+以下条件全部成立时，运行内暂定结果为成功——不再只看 Review 的结论：
 
 - Requirement 自检无未解决冲突，且验收条件 ID 唯一、可识别（缺失/重复 ID ⇒ `REQUIREMENT_IDS_INVALID`）；
 - **任何阶段**（Coding / Verifier / Review）报告了未解决的需求冲突 ⇒ 立即判定为 `STAGE_REPORTS_REQUIREMENT_CONFLICT`，不再进入修订轮；
@@ -130,14 +135,19 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 
 ### 输出
 
-结构化运行结果：`{ ok, status, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, cacheBaseline, cacheDirPrefix, maxCodingAttempts, maxAgentCalls, agentCallBudget, postRunCacheSnapshot, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
+结构化运行结果：`{ ok, status, verdict, verdictScope, verdictMeaning, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, cacheBaseline, cacheDirPrefix, maxCodingAttempts, maxAgentCalls, agentCallBudget, postRunCacheSnapshot, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
+`verdict` 只有 `PROVISIONAL_OK` / `PROVISIONAL_FAIL` 两种取值，`verdictScope` 固定 `provisional-in-run`——**运行内暂定结果不是最终判决**，
+最终缓存边界由外层工具给出（见 `tests/verify-cache-boundary.py`）。
 每一轮的 `codingReport` / `verification` / `review` 与编排层判定都挂在该轮的 `attemptsDetail[n]` 下（没有 `codingReports` 之类的顶层键）。
 
 `agentCallBudget` 是本次运行的**统一调用账本**：`{ limit, started, attempted, calls: [{ index, label, phase, started }], limits }`。
 它把预检、需求、每一轮编码/验证/审核、以及任何重试都算在同一本账上——`started: false` 的那一项就是"被预算拦住、没有启动"的调用。
 `limits` 字段固定写明"调用次数可硬限制；单个子代理内部的 token 消耗无法由编排层硬限制"。
-`postRunCacheSnapshot` 声明运行结束后必须补采的一次性动作（`python tests/collect-cache-state.py`，写 `cache-postrun.json`），
-因为工作流脚本没有文件系统 API，读不到文件指纹。
+`postRunCacheSnapshot` 声明运行结束后必须补采的一次性动作（`python tests/collect-cache-state.py --run-id <runId> --snapshot-label cache-postrun`，写 `cache-postrun.json`），
+因为工作流脚本没有文件系统 API，读不到文件指纹。**补采必须被消费**：外层用
+`python tests/verify-cache-boundary.py --run-id <runId> --evidence-dir <证据目录> --baseline <cache-before.json> --postrun <cache-postrun.json> --out <判定.json>`
+把"运行前基线 + 各阶段观测点 + 运行后快照"串成一条时间线；快照缺失、读取失败、路径或运行身份不符、缓存新增/删除/内容变化/超容差 mtime 变化，
+都不得给出完整通过（`INCOMPLETE` / `NOT_CLEAN`）。该判定不启动任何模型代理。
 
 `finalDecision` 逐项列出成功判定的依据（`testsIndependentlyVerified`、`reviewApproved`、`allCriteriaSatisfied`、`criteriaCheckCoversAll`、`reviewIndependentTestsPassed`、`fingerprintsMatch`、`stageReportedRequirementConflicts`），便于人工核查而不必信任一句 `ok`；
 

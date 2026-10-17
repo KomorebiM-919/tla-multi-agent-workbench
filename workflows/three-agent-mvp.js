@@ -1188,7 +1188,14 @@ function judgeTimestamp(value, runStartedAt, windowHours, nowMs) {
 
 /** 生成失败结果（所有提前退出都走这里，保证返回结构一致）。 */
 function failure(status, error, extra) {
-  const base = { ok: false, status: status, error: error };
+  const base = {
+    ok: false,
+    status: status,
+    verdict: 'PROVISIONAL_FAIL',
+    verdictScope: 'provisional-in-run',
+    verdictMeaning: '运行内暂定失败：脚本按契约中止；原始证据保留，最终判定仍由外层复核给出',
+    error: error
+  };
   if (isObject(extra)) {
     Object.keys(extra).forEach(function (key) { base[key] = extra[key]; });
   }
@@ -2193,6 +2200,14 @@ if (!finalOk && C.maxCodingAttempts > 1 && attemptsDetail.length >= C.maxCodingA
 return {
   ok: finalOk,
   status: status,
+  // 工作流脚本没有文件系统 API：它能看到的最后一个缓存观测点是 Review 自报的执行后清单。
+  // 因此这里的 ok 只能是"运行内暂定结果"，最终是否通过由外层确定性工具比对
+  // 运行前基线 / 各阶段观测点 / 运行后 postrun 快照 之后判定（不启动任何模型代理）。
+  verdict: finalOk ? 'PROVISIONAL_OK' : 'PROVISIONAL_FAIL',
+  verdictScope: 'provisional-in-run',
+  verdictMeaning: finalOk
+    ? '运行内暂定结果：Review 返回之后的缓存写入未被观测，最终通过需要外层缓存边界判定'
+    : '运行内暂定失败：脚本按契约中止；原始证据保留，最终判定仍由外层复核给出',
   // 失败原因同样要回传（编排层判定不得只给状态码，复审意见四）。
   error: finalOk ? '' : (isObject(finalAttempt) ? finalAttempt.decision.reasons.join('；') : '没有任何有效轮次'),
   errors: isObject(finalAttempt) ? finalAttempt.decision.reasons : ['没有任何有效轮次'],

@@ -117,6 +117,10 @@ def main(argv):
     parser.add_argument('--repo-root', default=None, help='仓库根（默认从当前目录向上查找 .git）')
     parser.add_argument('--out', default=None, help='把结果 JSON 写到这个文件（UTF-8 无 BOM、LF）')
     parser.add_argument('--pretty', action='store_true', help='输出带缩进的 JSON（默认单行）')
+    parser.add_argument('--run-id', default=None,
+                        help='运行身份：写进快照，外层判定用它核对"这份快照属于这次运行"')
+    parser.add_argument('--snapshot-label', default=None,
+                        help='快照用途标签，例如 cache-before / cache-postrun')
     options = parser.parse_args(argv)
 
     if (options.target_dir is None) == (options.cache_dir is None):
@@ -149,6 +153,8 @@ def main(argv):
         'cache_dir': posix_relative(repo_root, cache_dir),
         'tool': TOOL_PATH,
         'note': note,
+        'run_id': options.run_id,
+        'snapshot_label': options.snapshot_label,
     }
     text = json.dumps(payload, ensure_ascii=False, indent=2 if options.pretty else None,
                       sort_keys=True)
