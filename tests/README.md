@@ -127,10 +127,11 @@ python tests/property_text_stats.py   # 1217 组检查，约 0.2 秒，exit 0 = 
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 ```
 
-期望结果：**86 个用例全部通过**（`OK`），覆盖需求中的每条验收条件与边界条件（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径与退出码等）。
+期望结果：**76 个用例全部通过**（`OK`）。这是 2026-10-17 新版真实流水线（`docs/evidence/v0.2-run1-20261017T121445Z/`）按 `v0.2-demo-input-3` 重写后的套件；覆盖该稿 AC-01 至 AC-27 与 BC-01 至 BC-27（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径、退出码、两类调用作用域）。
 
 - **程序化调用的输出作用域**（2026-10-17 收口新增）：`stdin_text` 显式传入时，成功、`--help`、五类受控错误都必须保持 `stdout`/`stderr` **双流为空**；唯一例外是"非法 `--encoding` 在选输入前就返回 `1`"。命令行侧则保持"成功 4 行 / `--help` 用法 / 错误一行 `error: `"。
-- **新测试确实能抓住旧实现**：把 `git show HEAD:examples/text-stats/text_stats.py` 的旧实现与当前测试放同一目录运行 `python -m unittest test_text_stats`，结果是 `Ran 86 tests` / **8 例失败**，且全部落在上述静默与编码用例上（无一条无关失败）；对当前实现则 86/86 通过。这组对照证明旧实现的三处假 PASS（程序化缺失文件写 stderr、程序化 `--help` 输出用法、程序化非法 `--encoding` 返回 0）已被回归锁住。
+- **新测试确实能抓住旧实现**（2026-10-17 早先那版 86 例套件的对照记录）：把 `git show HEAD:examples/text-stats/text_stats.py` 的旧实现与那版测试放同一目录运行，结果 `Ran 86 tests` / **8 例失败**，全部落在上述静默与编码用例上。
+- **v0.2 套件的变异检查**（`tests/.scratch/unattended/mutation-check-v02.py`，只存本地）：把当前 76 例套件分别对准三个重新引入旧行为的变异体——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 3 例失败；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 2 例失败。基线对未变异实现 76/76 通过，说明这三处假 PASS 仍被回归锁住。
 
 ### 3. 编排层独立复核
 

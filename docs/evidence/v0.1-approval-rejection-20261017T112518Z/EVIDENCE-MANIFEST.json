@@ -141,7 +141,7 @@
   "sha256sums": {
     "file": "SHA256SUMS.txt",
     "bytes": 981,
-    "sha256": "46a196e0bf9ce541eba674045720f3fbb2b234ec6f7831e48f9a5b9e40305258",
+    "sha256": "c9d6473b44a1316ec5ef4269e8e2ce1ed148814e932afbc9f258a356116591db",
     "covers": 11,
     "note": "MANIFEST 与 SHA256SUMS 自身不进入清单；两者都用本表与 SHA256SUMS.txt 复算"
   }

@@ -500,3 +500,50 @@ V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改
 
 **仍未观测 / 未验证**：远端仓库状态；其它工具与"允许一次"路径；快照文件整体真伪（工具只能核对记录值与重算值）；
 新版真实模型流水线；V0.1 最终验收仍未通过。
+## 16. 新版真实流水线：v0.2-run1 首次执行（2026-10-17）
+
+> 第 11、14.5 节里"新版真实流水线未运行"的表述**保持原样**：它们记录当时的事实。
+> 本节追加记录此后完成的一次真实运行，不改写历史。
+
+**结论（限定表述）**：需求 `v0.2-demo-input-3`（R-01 – R-37，经 Q1 批准）已按当前工作流完成**一次**真实流水线运行，
+编排层返回 `ok: true` / `finalVerdict: APPROVED`，并由编排层独立复核通过（50/50 项证据检查，见 §16.1）。
+这**不**等于 V0.1 最终验收通过：仍有未观测范围与一项需求条款在本轮未被严格执行（见下）。
+
+| 项 | 值 |
+| --- | --- |
+| runId / 现场 | `v0.2-run1-20261017T121445Z` → `docs/evidence/v0.2-run1-20261017T121445Z/` |
+| 批准记录 | `docs/run-records/v0.2-run1-20261017T121445Z/approval.md`（批准来源：宿主消息 m07160） |
+| 注入需求 | `docs/run-records/v0.2-run1-20261017T121445Z/requirement-injected.txt`（15249 B / 123 行 / LF / sha256 `6307a7f0ca0a84ccf0b8036ad202d7acaa56e8664d5761b22c10a915a86f71d7`） |
+| 执行前源码版本 | `[C16]` |
+| 模型 | 宿主默认 `deepseek-account / deepseek-flash`（工作流不指定 provider/model） |
+| 原生子代理调用 | **5 次**（Verifier 预检、Requirement、Coding、Verifier 验证、Review），无再派生 |
+| 编码返工 | 0 轮（`attempts: 1`，`maxCodingAttempts: 2`） |
+| 阶段证据 | `.run-owner.json` / `preflight.json` / `requirement.json` / `coding-report.json` / `verify.json` / `review.json` |
+| 需求映射 | 27 条 AC + 27 条 BC（AC-01 – AC-27 / BC-01 – BC-27），Review 逐条 `satisfied` 且 ID 全覆盖 |
+| 验证命令 | `python -m unittest discover -s examples/text-stats -p "test_*.py"` → `Ran 76 tests` / `OK` / 退出码 0 |
+| 交付字节 | `text_stats.py` sha256 `a540ff4a…`（13046 B）、`test_text_stats.py` sha256 `f97e9493…`（39783 B）、`README.md`、`sample_input.txt`（20 B 未变） |
+| 越界改动 | 无：`git status --porcelain --untracked-files=no` 仅 3 个交付文件 |
+
+### 16.1 编排层独立复核（不采信 APPROVED 字面结论）
+
+| 复核项 | 结果 |
+| --- | --- |
+| `python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z` | **50/50** 通过（认领、ID 唯一性、artifact 与磁盘字节一致、Review 覆盖与独立复跑一致、时间顺序、工作区范围）。首轮 48/48 后补了两项工作区归类检查：交付源码越界仍为硬失败，编排层运行后的文档状态更新单列为可复核项 |
+| 独立行为探针 `tests/.scratch/unattended/probe-independent-v02.py`（按需求原文重算，不用交付测试） | **86/86** 通过（两类调用作用域、五类受控错误、argv、归一化、四项统计表、编码分工、依赖与写入边界、README 自洽） |
+| 变异检查 `tests/.scratch/unattended/mutation-check-v02.py` | 基线 76/76；三个"重放旧缺陷"的变异体分别被 3 / 1 / 2 例抓住 |
+| 仓库回归 | 逻辑 85/85 场景·391 断言；认领 6/6·59 断言；取证 131/131；变异 18/18 + strict 11/11；性质 1217 组；`tests/` 下 11 例；交付 76 例——全部退出码 0 |
+
+### 16.2 本轮未严格满足 / 未观测的部分（不得省略）
+
+- **AC-24 的"不新增 `__pycache__`"在本轮未被严格执行**：`examples/text-stats/__pycache__/` 在运行前已存在
+  （目录创建时间 `20:03:12`），但其中两个 `.pyc` 的 mtime 为 `20:27:08`（Verifier 阶段），即规范测试命令
+  在未设 `PYTHONDONTWRITEBYTECODE=1` 的情况下重写了字节码缓存。原因：`isAllowedTestCommand` 只放行规范命令原文
+  （不接受环境变量前缀），而宿主进程环境无法为本会话设置该变量，Coding 侧只能在自己的运行里设置。
+  该目录被根 `.gitignore` 的 `__pycache__/` 忽略，未进入版本库，也未改变任何被跟踪文件。
+  **这是需求条款与编排契约之间的环境冲突，不是本轮编码产物越界**；要彻底满足，需要工作流支持注入环境变量
+  （属于需求/编排变更，须另行批准）。
+- 交付 README 第 137 行写"运行测试前设置 `PYTHONDONTWRITEBYTECODE=1`（本次报告使用该设置）……不会新增 `__pycache__`"：
+  该表述对**人工按 README 运行**成立，对**验证角色按规范命令运行**不成立。保留原文不改，此处如实标注。
+- 远端仓库状态仍未观测（本轮不 push、不创建/修改 PR、不合并）。
+- 宿主侧只提取了白名单字段（事件序列、退出码、时间戳）；未读取凭据、未导出无关消息正文。
+- 快照/日志整体真伪、其它工具与"允许一次"路径仍不在本轮证据范围内。

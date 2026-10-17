@@ -79,9 +79,10 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `docs/ROADMAP.md` | V0.1–V0.4 阶段计划与验收条件 |
 | `docs/REQUIREMENT-BASELINE.md` | V0.1 演示任务需求基线（已人工裁定六项口径，可版本化） |
 | `docs/REQUIREMENT-CALIBER.md` | 需求口径裁定记录（冲突原文、两处更正、逐项裁定记录） |
-| `docs/DEMO-REQUIREMENT-INPUT-v3.md` | V0.1 演示任务需求输入候选稿 v3（`v0.2-demo-input-3`，待 Q1 批准；取代 v2） |
+| `docs/DEMO-REQUIREMENT-INPUT-v3.md` | V0.1 演示任务需求输入稿 v3（`v0.2-demo-input-3`，2026-10-17 经 Q1 批准为 `v0.2-run1` 真实流水线的需求原文；取代 v2） |
 | `docs/DEMO-REQUIREMENT-INPUT-v2.md` | v2 候选稿（`v0.2-demo-input-2`，已被 v3 取代，保留供对照） |
 | `docs/DEMO-REQUIREMENT-INPUT.md` | v1 候选稿（`v0.2-demo-input-1`，已被 v2 取代，保留供对照） |
+| `docs/run-records/` | 每次真实运行的批准记录、注入需求原文与执行前检查（与 `docs/evidence/` 的证据分开） |
 | `agents/` | 角色职责说明与提示词（Requirement / Coding / Review / Verifier） |
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
 | `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |
@@ -133,7 +134,7 @@ node tests/approval-evidence-mutation.test.mjs
 # 文本统计的有界性质测试（固定种子 0–9、1217 组，独立参考实现；约 0.2 秒）
 python tests/property_text_stats.py
 
-# 演示项目的单元测试（86 个用例；含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
+# 演示项目的单元测试（76 个用例；v0.2 真实流水线交付版，含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
 # 编排层独立复核（直接验算需求中的边界条件）
