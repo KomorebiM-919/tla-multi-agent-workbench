@@ -66,3 +66,7 @@ node tests/extract-usage-report.mjs --run-id v0.4-run4-20261017T155454Z `
 
 - 本目录是**不可改写**的运行记录：新增解释请另开文件，不要回填已经归档的数字。
 - 不 push、不建 PR、不合并 `main`、不宣布 V0.1 通过：本次运行既不是通过，也不构成验收证据的一部分。
+- 字节保真：`.gitattributes` 已对 `docs/evidence/**`、`docs/run-records/**` 关闭行尾转换
+  （本机 `core.autocrlf=true`）。`git archive` 导出后复算验证：本目录 `SHA256SUMS.txt` 全部匹配，
+  `preflight.json` 2921 B、`.run-owner.json` 277 B（与运行现场逐字节相同），
+  `workflow-script-at-run.js` sha256 `05c62896…35e8`（= 执行副本 = 固定提交源码）。
