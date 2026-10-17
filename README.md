@@ -111,7 +111,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 ### 运行测试与独立复核
 
 ```powershell
-# 编排逻辑回归测试（模拟子代理返回值，81 个场景 / 372 项断言）
+# 编排逻辑回归测试（模拟子代理返回值，85 个场景 / 391 项断言）
 node tests/workflow-logic.test.mjs
 
 # 预检认领门禁的集成测试（真实调用 tools/claim_evidence_dir.py，6 个场景 / 59 项断言）
@@ -123,6 +123,9 @@ python -m unittest discover -s tests -p "test_*.py"
 # 审批拒绝取证工具的离线回归与反向验证（90 断言 / 18 组；不触发任何审批）
 node tests/approval-rejection-evidence.test.mjs
 node tests/approval-evidence-mutation.test.mjs
+
+# 文本统计的有界性质测试（固定种子 0–9、1217 组，独立参考实现；约 0.2 秒）
+python tests/property_text_stats.py
 
 # 演示项目的单元测试（81 个用例）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v

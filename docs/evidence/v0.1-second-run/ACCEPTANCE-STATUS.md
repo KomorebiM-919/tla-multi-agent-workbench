@@ -331,3 +331,48 @@ run 6 需求 AC-10（`docs/evidence/v0.1-run6-20261016T154400Z/requirement.json:
 `docs/evidence/v0.1-approval-rejection-TEMPLATE/`（6 个模板文件）。
 更新：`tests/README.md`、`README.md`、`docs/ROADMAP.md`、本文件。
 `docs/evidence/` 下除本文件外**没有**改动任何历史 JSON、脚本或输出。
+
+## 12. 无人值守离线加固（2026-10-17，工作包 B–F）
+
+本节记录同一天的第二个工作窗口（离线、无人值守，**未触发真实审批、未跑真实子代理、未联网、未 Push**）。
+完整材料见 [`docs/OFFLINE-REVIEW-2026-10-17.md`](../../OFFLINE-REVIEW-2026-10-17.md)。
+
+### 12.1 修复的确定性缺陷（2 个）
+
+| 缺陷 | 位置 | 最小复现 | 处置 |
+| --- | --- | --- | --- |
+| `OK (skipped=44)`（全体跳过）被当作通过 | `workflows/three-agent-mvp.js:514-545`、`:620-650`、`:686-700` | `verify` 回传 `Ran 44 tests … OK (skipped=44)` → 修复前 `ok=true` | 解析 `skipped=N`，`skipped >= ran` 判未执行；新增 4 个回归场景（含"部分跳过不误拒"） |
+| 干净副本里 `test_ac22` 必然失败 | `examples/text-stats/test_text_stats.py:710` + 仓库缺 `.gitattributes` | `git archive` 导出的 `sample_input.txt` 为 CRLF，断言 `'hello world\r\nfoo bar\r\n' != 'hello world\nfoo bar\n'` | 新增 `.gitattributes` 固定该文件 `text eol=lf`；干净副本七个套件全绿 |
+
+### 12.2 只报告、未改动的观察（5 条）
+
+`ran_tests` 类型未强制（字符串被忽略而非拒绝）；指纹路径 `./` 前缀不被归一（方向安全：拒绝而非放行）；
+子代理抛异常没有结构化兜底（5 个 `await agent(` 调用点均无 `try/catch`）；`tests/` 下 `spawnSync` 无 `timeout`；
+会话日志一次性读入内存（超大日志的上界未压测）。理由与建议见离线审查文档 §3 与 §7。
+
+### 12.3 本轮测试结果（工作区与干净副本一致）
+
+| 套件 | 结果 |
+| --- | --- |
+| `node tests/workflow-logic.test.mjs` | 85/85 场景、391 断言，退出码 0 |
+| `node tests/preflight-claim-integration.test.mjs` | 6/6 场景、59 断言，退出码 0 |
+| `node tests/approval-rejection-evidence.test.mjs` | 90/90 断言，退出码 0 |
+| `node tests/approval-evidence-mutation.test.mjs` | 18/18 用例，退出码 0 |
+| `python tests/property_text_stats.py` | 1217 组检查通过，退出码 0 |
+| `python -m unittest discover -s examples/text-stats -p "test_*.py"` | `Ran 81 tests` / `OK` |
+| `python -m unittest discover -s tests -p "test_*.py"` | `Ran 11 tests` / `OK` |
+
+干净副本：`git archive HEAD` 导出到含空格的路径，95 个文件，不依赖未跟踪文件，七个套件同样全绿。
+
+### 12.4 本轮**仍然没有**改变的事实
+
+- 人工审批安全拒绝测试**仍未执行**（需用户亲自点"拒绝"），验收条件 3 未完成；
+- 新版真实模型流水线**未运行**，run 6 仍是最后一次"门禁通过"的真实运行，不是人工验收结论；
+- 远端分支状态**未观测**（本轮不联网）；
+- RB-1 – RB-6 仍只覆盖六项，其余需求条文**未被批准**；
+- V0.1 最终验收**仍未通过**；本轮所有提交都在本地，未 Push、未改 PR、未合并。
+
+### 12.5 本轮提交
+
+`[C02]` → `[C03]` → `[C04]` → `[C05]`（详见离线审查文档 §0）。
+`docs/evidence/` 下本轮只更新了本文件，历史 JSON 与输出文件零改动。
