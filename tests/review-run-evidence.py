@@ -3,25 +3,35 @@
 
 用法:
     python tests/review-run-evidence.py --run-id <runId> [--repo-root .] [--json-out <path>]
+                                       [--mapping <需求条款→验收项映射.json>]
+    python tests/review-run-evidence.py --self-test      # 用内置夹具验证本工具会拒绝哪些坏证据
 
 复核内容（全部以磁盘原始字节与 git 实际情况为准，不采信任何自述结论）:
-  1. 认领文件 .run-owner.json：run_id 与本次一致、claimed_by / claimed_at 非空；
-  2. requirement.json：验收条件带唯一 ID、自检无冲突且 self_checked 为真；
-  3. coding-report.json：改动文件落在允许的交付文件集合内、自述退出码为 0；
+  1. 认领文件 .run-owner.json：runId 与本次一致、claimedBy / claimedAt 非空、排他创建；
+  2. requirement.json：验收条件与边界条件非空、ID 唯一、自检无冲突且 self_checked 为真；
+  3. coding-report.json：改动文件落在允许的交付文件集合内、自述退出码为 0、无需求冲突；
   4. verify.json：命令为规范化命令、退出码 0、原始输出含 `Ran N tests` 与 `OK`、N >= 1 且非全跳过；
-  5. verify.artifacts：sha256 与磁盘实际字节一致，集合恰好等于 {模块文件, 测试文件}；
+  5. verify.artifacts / review.artifacts_after：路径不重复、sha256 与磁盘实际字节一致、
+     集合恰好等于 {模块文件, 测试文件}；
   6. review.json：APPROVED、criteria_check 恰好覆盖需求验收 ID 且逐条 satisfied、
-     独立复跑命令/退出码/输出成立、用例数与 Verifier 一致、artifacts_after 与 verify.artifacts 及磁盘一致；
-  7. 时间戳：各阶段 generated_at 合法、落在运行窗口内、阶段顺序非递减；
-  8. 工作区范围：git 跟踪文件的改动只出现在允许修改的 4 个交付文件里。
+     独立复跑命令/退出码/输出成立、用例数与 Verifier 一致；
+  7. 三份阶段报告（coding / verify / review）的 requirement_conflicts 都存在且为空；
+  8. 需求条款 → 验收项映射（`--mapping`）：37 条各出现一次、引用的 ID 都存在、
+     每个验收项至少被一条条款引用；
+  9. 时间戳：各阶段 generated_at 带时区且合法、阶段顺序非递减、总跨度不超过 6 小时
+     （与生产门禁 workflows/three-agent-mvp.js 的 TIMESTAMP_WINDOW_HOURS 一致）；
+ 10. 工作区范围：git 跟踪文件的改动只出现在允许修改的 4 个交付文件里。
 
 退出码: 0 = 全部通过; 1 = 有检查失败; 2 = 证据缺失或不合法。
 """
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -40,7 +50,8 @@ RAN_RE = re.compile(r'Ran (\d+) tests? in ')
 FAILED_RE = re.compile(r'(^|\n)FAILED')
 OK_RE = re.compile(r'(^|\n)OK( \([^\n]*\))?(\n|$|\s*$)')
 SKIPPED_RE = re.compile(r'\([^)\n]*\bskipped=(\d+)[^)\n]*\)')
-RUN_WINDOW_HOURS = 24
+RUN_WINDOW_HOURS = 6  # 与生产门禁一致：workflows/three-agent-mvp.js 的 TIMESTAMP_WINDOW_HOURS = 6
+REQUIREMENT_CLAUSE_IDS = tuple('R-%02d' % number for number in range(1, 38))
 
 
 def sha256_file(path):
@@ -52,6 +63,7 @@ def sha256_file(path):
 
 
 def parse_time(value):
+    """解析 ISO 时间；**缺失时区一律拒绝**（不能假定 UTC，否则跨时区会被静默换算）。"""
     text = value if isinstance(value, str) else ''
     if text.endswith('Z'):
         text = text[:-1] + '+00:00'
@@ -59,7 +71,9 @@ def parse_time(value):
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        return None
+    return parsed
 
 
 def criterion_id(text):
@@ -79,17 +93,38 @@ def parse_unittest_output(text):
     }
 
 
+def load_mapping(path):
+    """读取"需求条款 → 验收项"映射文件（由独立复核者建立，工具不生成也不推断）。"""
+    if not path:
+        return None, '没有提供映射文件（--mapping）；映射完整性未被检查'
+    try:
+        payload = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        return None, '映射文件不可读: %s' % exc
+    if not isinstance(payload, dict):
+        return None, '映射文件不是 JSON 对象'
+    return payload, ''
+
+
 def git(repo_root, *args):
     completed = subprocess.run(['git'] + list(args), cwd=str(repo_root), capture_output=True)
     return completed.returncode, completed.stdout.decode('utf-8', 'replace')
 
 
 def main(argv=None):
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if '--self-test' in raw_argv:
+        return self_test()
     parser = argparse.ArgumentParser(description='独立复核一次真实运行的证据目录')
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--repo-root', default='.')
     parser.add_argument('--json-out', default='')
-    args = parser.parse_args(argv)
+    parser.add_argument('--mapping', default='',
+                        help='需求条款 → 验收项映射 JSON；缺失时映射完整性判为未测')
+    parser.add_argument('--allow-scope', action='append', default=[],
+                        help='可重复：运行结束后被人工授权改动的工作树路径前缀；'
+                             '被排除的路径会单独列出（workspace.allow_scope_exclusions），不会静默跳过')
+    args = parser.parse_args(raw_argv)
 
     repo_root = Path(args.repo_root).resolve()
     evidence_dir = repo_root / 'docs' / 'evidence' / args.run_id
@@ -155,6 +190,8 @@ def main(argv=None):
     boundary = requirement.get('boundary_conditions')
     boundary = boundary if isinstance(boundary, list) else []
     criteria_ids = [criterion_id(item) for item in criteria]
+    check('requirement.criteria_nonempty', len(criteria) >= 1, len(criteria))
+    check('requirement.boundary_nonempty', len(boundary) >= 1, len(boundary))
     check('requirement.criteria_ids_present', all(item is not None for item in criteria_ids))
     check('requirement.criteria_ids_unique', len(set(criteria_ids)) == len(criteria_ids), len(criteria_ids))
     self_check = requirement.get('consistency_check')
@@ -164,6 +201,8 @@ def main(argv=None):
     check('requirement.no_conflicts', isinstance(conflicts, list) and len(conflicts) == 0,
           json.dumps(conflicts, ensure_ascii=False)[:200])
     expected_ids = sorted(item for item in criteria_ids if item)
+    # 映射要覆盖验收条件 **与** 边界条件；Review 的 criteria_check 只覆盖验收条件（AC）。
+    mapping_ids = sorted(set(expected_ids) | set(item for item in (criterion_id(entry) for entry in boundary) if item))
 
     # ---- 3. 编码报告
     created = coding.get('files_created')
@@ -190,6 +229,9 @@ def main(argv=None):
     verify_artifacts = verify_artifacts if isinstance(verify_artifacts, list) else []
     verify_map = {str(item.get('path')).replace('\\', '/'): str(item.get('sha256')).lower()
                   for item in verify_artifacts if isinstance(item, dict)}
+    verify_paths = [str(item.get('path')).replace('\\', '/') for item in verify_artifacts if isinstance(item, dict)]
+    check('verify.artifacts_no_duplicate_paths', len(verify_paths) == len(set(verify_paths)),
+          json.dumps(verify_paths, ensure_ascii=False))
     check('verify.artifacts_exact_set', set(verify_map) == expected_files, sorted(verify_map))
     disk_map = {}
     for rel in sorted(expected_files):
@@ -203,6 +245,7 @@ def main(argv=None):
     checks_list = review.get('criteria_check')
     checks_list = checks_list if isinstance(checks_list, list) else []
     review_ids = [criterion_id(item.get('criterion')) for item in checks_list if isinstance(item, dict)]
+    check('review.criteria_check_nonempty', len(checks_list) >= 1, len(checks_list))
     check('review.criteria_ids_present', all(item is not None for item in review_ids))
     check('review.criteria_cover_all', sorted(set(item for item in review_ids if item)) == expected_ids,
           json.dumps({'missing': sorted(set(expected_ids) - set(review_ids)),
@@ -225,11 +268,42 @@ def main(argv=None):
     review_artifacts = review_artifacts if isinstance(review_artifacts, list) else []
     review_map = {str(item.get('path')).replace('\\', '/'): str(item.get('sha256')).lower()
                   for item in review_artifacts if isinstance(item, dict)}
+    review_paths = [str(item.get('path')).replace('\\', '/') for item in review_artifacts if isinstance(item, dict)]
+    check('review.artifacts_no_duplicate_paths', len(review_paths) == len(set(review_paths)),
+          json.dumps(review_paths, ensure_ascii=False))
     check('review.artifacts_exact_set', set(review_map) == expected_files, sorted(review_map))
     check('review.artifacts_equal_verify', review_map == verify_map, json.dumps(review_map, ensure_ascii=False))
     check('review.artifacts_match_disk', all(review_map.get(rel) == disk_map[rel] for rel in expected_files))
-    conflicts_review = review.get('requirement_conflicts')
-    check('review.no_conflicts', isinstance(conflicts_review, list) and len(conflicts_review) == 0)
+    # 三份阶段报告的冲突字段都必须存在且为空：任一阶段报冲突，结论就不能是 PASS。
+    for label, payload in (('coding', coding), ('verify', verify), ('review', review)):
+        value = payload.get('requirement_conflicts')
+        check('%s.conflicts_declared' % label, isinstance(value, list), type(value).__name__)
+        check('%s.conflicts_empty' % label, isinstance(value, list) and len(value) == 0,
+              json.dumps(value, ensure_ascii=False)[:200] if isinstance(value, list) else '字段缺失')
+
+    # ---- 6b. 需求条款 → 验收项映射（映射本身由独立复核者建立，工具只校验完整性）
+    mapping, mapping_error = load_mapping(args.mapping)
+    check('mapping.available', mapping is not None, mapping_error)
+    if mapping is not None:
+        clauses = mapping.get('clauses')
+        clauses = clauses if isinstance(clauses, list) else []
+        declared = [item.get('requirement') for item in clauses if isinstance(item, dict)]
+        referenced = []
+        for item in clauses:
+            if isinstance(item, dict) and isinstance(item.get('criteria'), list):
+                referenced.extend(str(value) for value in item['criteria'])
+        unreferenced = sorted(set(mapping_ids) - set(referenced))
+        check('mapping.clauses_nonempty', len(clauses) >= 1, len(clauses))
+        check('mapping.requirement_ids_unique', len(declared) == len(set(declared)),
+              json.dumps(declared, ensure_ascii=False))
+        check('mapping.covers_requirement_clauses', set(declared) == set(REQUIREMENT_CLAUSE_IDS),
+              json.dumps({'missing': sorted(set(REQUIREMENT_CLAUSE_IDS) - set(declared)),
+                          'unknown': sorted(set(declared) - set(REQUIREMENT_CLAUSE_IDS))},
+                         ensure_ascii=False))
+        check('mapping.criteria_ids_known', len(set(referenced) - set(mapping_ids)) == 0,
+              json.dumps(sorted(set(referenced) - set(mapping_ids)), ensure_ascii=False))
+        check('mapping.covers_all_criteria', len(unreferenced) == 0,
+              json.dumps(unreferenced, ensure_ascii=False))
 
     # ---- 7. 时间戳
     stage_times = []
@@ -276,6 +350,13 @@ def main(argv=None):
 
     delivery_changed = [path for path in changed if path in ALLOWED_DELIVERY_FILES]
     outside_changed = [path for path in changed if path not in ALLOWED_DELIVERY_FILES]
+    # 收口阶段被人工授权改动的工作树路径（--allow-scope）：必须先显式列出，才允许排除。
+    # 排除清单会作为一条检查项原样打印并写入 JSON，避免"默默跳过"。
+    def excluded_by_allow_scope(path):
+        return any(path == prefix or path.startswith(prefix.rstrip('/') + '/') for prefix in args.allow_scope)
+
+    excluded_tracked = [path for path in outside_changed if excluded_by_allow_scope(path)]
+    outside_changed = [path for path in outside_changed if not excluded_by_allow_scope(path)]
     # 编排层在运行后更新状态文档、归档证据是允许的，但必须与交付源码分开统计：
     # 任何 examples/ 下或 .py/.js/.mjs 的越界改动都是硬失败，文档类改动只列出来供人复核。
     out_of_scope_sources = [path for path in outside_changed
@@ -287,6 +368,8 @@ def main(argv=None):
     check('workspace.delivery_files_changed', len(delivery_changed) > 0, ', '.join(delivery_changed))
     check('workspace.tracked_sources_within_scope', len(out_of_scope_sources) == 0, ', '.join(out_of_scope_sources))
     check('workspace.orchestrator_tools', True, ', '.join(orchestrator_tools) or '（无）')
+    check('workspace.allow_scope_exclusions', True,
+          ', '.join(excluded_tracked) if excluded_tracked else '（无）')
     other_changes = [path for path in outside_changed
                      if path not in out_of_scope_sources and path not in ORCHESTRATOR_TOOLS]
     check('workspace.non_source_changes', True, ', '.join(other_changes) or '（无）')
@@ -298,10 +381,14 @@ def main(argv=None):
                                   'docs/evidence/v0.1-approval-rejection-20261017T112518Z/',
                                   'docs/review/', 'tests/.scratch/')
     allowed_untracked_files = ('tests/review-run-evidence.py',)
+    excluded_untracked = [path for path in untracked if excluded_by_allow_scope(path)]
     outside_untracked = [path for path in untracked
                          if path not in allowed_untracked_files
-                         and not any(path.startswith(prefix) for prefix in allowed_untracked_prefixes)]
+                         and not any(path.startswith(prefix) for prefix in allowed_untracked_prefixes)
+                         and not excluded_by_allow_scope(path)]
     check('workspace.untracked_within_scope', len(outside_untracked) == 0, ', '.join(outside_untracked))
+    if excluded_untracked:
+        check('workspace.allow_scope_exclusions_untracked', True, ', '.join(excluded_untracked))
 
     # ---- 输出
     for item in checks:
@@ -326,9 +413,166 @@ def main(argv=None):
             'failures': failures,
             'diskSha256': disk_map,
             'expectedCriteriaIds': expected_ids,
+            'allowScope': list(args.allow_scope),
         }
         Path(args.json_out).write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
+    return 0 if not failures else 1
+
+
+CANONICAL_COMMAND = 'python -m unittest discover -s examples/text-stats -p "test_*.py"'
+DELIVERY_MODULE_SOURCE = 'def main():\n    return 0\n'
+DELIVERY_TEST_SOURCE = 'import unittest\n\n\nclass TestSmoke(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n'
+
+
+def _sha256_text(text):
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def _fixture_payloads():
+    """构造一组"目标检查应当全部通过"的最小证据（时间戳全部带时区）。"""
+    def stamp(minute):
+        return '2026-10-17T20:%02d:00+08:00' % minute
+
+    module = {'path': 'examples/text-stats/text_stats.py', 'sha256': _sha256_text(DELIVERY_MODULE_SOURCE)}
+    tests = {'path': 'examples/text-stats/test_text_stats.py', 'sha256': _sha256_text(DELIVERY_TEST_SOURCE)}
+    output = 'Ran 2 tests in 0.001s\n\nOK\n'
+    return {
+        'owner': {
+            'runId': 'fixture-run', 'claimedAt': stamp(1), 'claimedBy': 'fixture',
+            'claimMode': 'exclusive-create (O_EXCL)', 'claimTool': 'tools/claim_evidence_dir.py',
+        },
+        'preflight': {
+            'evidence_dir_state_before': 'missing', 'claim_created': True, 'claim_exit_code': 0,
+            'generated_at': stamp(1),
+        },
+        'requirement': {
+            'acceptance_criteria': ['AC-01 注入文本时静默', 'AC-02 帮助静默'],
+            'boundary_conditions': ['BC-01 非边界字符集合不变'],
+            'consistency_check': {'self_checked': True, 'conflicts': []},
+            'generated_at': stamp(2),
+        },
+        'coding-report': {
+            'files_created': [{'path': 'examples/text-stats/text_stats.py'}],
+            'test_exit_code': '0', 'requirement_conflicts': [], 'generated_at': stamp(3),
+        },
+        'verify': {
+            'command': CANONICAL_COMMAND, 'exit_code': '0', 'raw_output': output,
+            'artifacts': [module, tests], 'requirement_conflicts': [], 'generated_at': stamp(4),
+        },
+        'review': {
+            'verdict': 'APPROVED',
+            'criteria_check': [
+                {'criterion': 'AC-01 注入文本时静默', 'satisfied': True},
+                {'criterion': 'AC-02 帮助静默', 'satisfied': True},
+                {'criterion': 'BC-01 非边界字符集合不变', 'satisfied': True},
+            ],
+            'independent_test_command': CANONICAL_COMMAND, 'independent_test_exit_code': '0',
+            'independent_test_output': output, 'artifacts_after': [module, tests],
+            'requirement_conflicts': [], 'generated_at': stamp(5),
+        },
+    }
+
+
+def _fixture_mapping():
+    clauses = [{'requirement': 'R-%02d' % number, 'criteria': [], 'rationale': '夹具'} for number in range(1, 38)]
+    clauses[0]['criteria'] = ['AC-01']
+    clauses[1]['criteria'] = ['AC-02']
+    clauses[2]['criteria'] = ['BC-01']
+    return {'runId': 'fixture-run', 'method': '内置夹具', 'clauses': clauses}
+
+
+def _mutate(payloads, mapping, actions):
+    for action in actions:
+        action(payloads, mapping)
+
+
+def self_test():
+    """用内置夹具证明本工具会拒绝各类坏证据（不替代真实运行复核）。"""
+    def set_empty_criteria(p, m):
+        p['requirement']['acceptance_criteria'] = []
+
+    def duplicate_verify_artifact(p, m):
+        p['verify']['artifacts'] = p['verify']['artifacts'] + [p['verify']['artifacts'][0]]
+
+    def coding_conflict(p, m):
+        p['coding-report']['requirement_conflicts'] = [{'clause': 'R-07', 'detail': '冲突'}]
+
+    def verify_conflict(p, m):
+        p['verify']['requirement_conflicts'] = [{'clause': 'R-13', 'detail': '冲突'}]
+
+    def review_conflict(p, m):
+        p['review']['requirement_conflicts'] = [{'clause': 'R-33', 'detail': '冲突'}]
+
+    def naive_timestamp(p, m):
+        p['coding-report']['generated_at'] = '2026-10-17T20:03:00'
+
+    def drop_clause(p, m):
+        m['clauses'] = [item for item in m['clauses'] if item['requirement'] != 'R-37']
+
+    def unknown_criterion(p, m):
+        m['clauses'][0]['criteria'] = ['AC-01', 'AC-99']
+
+    def unmap_boundary(p, m):
+        m['clauses'][2]['criteria'] = []
+
+    cases = [
+        ('baseline', [(_mutate, [])], set(), {
+            'requirement.criteria_nonempty', 'verify.artifacts_no_duplicate_paths',
+            'coding.conflicts_empty', 'verify.conflicts_empty', 'review.conflicts_empty',
+            'time.coding.valid', 'mapping.covers_requirement_clauses', 'mapping.criteria_ids_known',
+            'mapping.covers_all_criteria'}),
+        ('empty_criteria', [(_mutate, [set_empty_criteria])], {'requirement.criteria_nonempty'}, set()),
+        ('duplicate_artifact', [(_mutate, [duplicate_verify_artifact])],
+         {'verify.artifacts_no_duplicate_paths'}, set()),
+        ('coding_conflict', [(_mutate, [coding_conflict])], {'coding.conflicts_empty'}, set()),
+        ('verify_conflict', [(_mutate, [verify_conflict])], {'verify.conflicts_empty'}, set()),
+        ('review_conflict', [(_mutate, [review_conflict])], {'review.conflicts_empty'}, set()),
+        ('naive_timestamp', [(_mutate, [naive_timestamp])], {'time.coding.valid'}, set()),
+        ('mapping_missing_clause', [(_mutate, [drop_clause])], {'mapping.covers_requirement_clauses'}, set()),
+        ('mapping_unknown_id', [(_mutate, [unknown_criterion])], {'mapping.criteria_ids_known'}, set()),
+        ('mapping_orphan', [(_mutate, [unmap_boundary])], {'mapping.covers_all_criteria'}, set()),
+    ]
+
+    failures = []
+    scratch_root = Path(__file__).resolve().parent / '.scratch' / 'review-selftest'
+    for name, actions, expected_fail, expected_pass in cases:
+        root = scratch_root / name
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True)
+        try:
+            (root / 'examples' / 'text-stats').mkdir(parents=True)
+            (root / 'examples' / 'text-stats' / 'text_stats.py').write_text(DELIVERY_MODULE_SOURCE, encoding='utf-8')
+            (root / 'examples' / 'text-stats' / 'test_text_stats.py').write_text(DELIVERY_TEST_SOURCE, encoding='utf-8')
+            payloads = _fixture_payloads()
+            mapping = _fixture_mapping()
+            for action, arguments in actions:
+                action(payloads, mapping, arguments)
+            evidence = root / 'docs' / 'evidence' / 'fixture-run'
+            evidence.mkdir(parents=True)
+            owner = payloads.pop('owner')
+            for key, value in payloads.items():
+                (evidence / (key + '.json')).write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+            (evidence / '.run-owner.json').write_text(json.dumps(owner, ensure_ascii=False), encoding='utf-8')
+            mapping_path = root / 'mapping.json'
+            mapping_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding='utf-8')
+            out_path = root / 'out.json'
+            with contextlib.redirect_stdout(io.StringIO()):
+                main(['--run-id', 'fixture-run', '--repo-root', str(root),
+                      '--json-out', str(out_path), '--mapping', str(mapping_path)])
+            checked = json.loads(out_path.read_text(encoding='utf-8'))
+            failed = {item['check'] for item in checked['checks'] if not item['ok']}
+            missing = sorted(expected_fail - failed)
+            wrong = sorted(expected_pass & failed)
+            ok = not missing and not wrong
+            print(('PASS ' if ok else 'FAIL ') + name +
+                  ('' if ok else ' | 未拒绝=%s 误拒=%s' % (missing, wrong)))
+            if not ok:
+                failures.append(name)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+    print('\n%d/%d 个夹具符合预期' % (len(cases) - len(failures), len(cases)))
     return 0 if not failures else 1
 
 

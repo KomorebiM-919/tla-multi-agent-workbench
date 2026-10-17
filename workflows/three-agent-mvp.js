@@ -68,6 +68,13 @@ const BASENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const PY_MODULE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*\.py$/;
 const PY_TEST_PATTERN = /^test_[A-Za-z0-9_-]*\.py$/;
 const TEST_COMMAND_PATTERN = /^python3? -m unittest discover -s [A-Za-z0-9._/-]+ -p "[A-Za-z0-9._*?-]+"( -v)?$/;
+// 受控执行环境：必须与命令在**同一次进程调用**里设置。不能依赖宿主进程环境——
+// 三个子代理各自是独立会话/进程，编排层里临时设置的变量不会传过去（v0.2-run1 的 AC-24 就是这样漏掉的）。
+const TEST_ENV_VAR = 'PYTHONDONTWRITEBYTECODE';
+const TEST_ENV_VALUE = '1';
+// 前缀只设置这一个变量，然后紧接规范化命令本身：不接受任意 shell 片段。
+const TEST_ENV_PREFIX = '$env:' + TEST_ENV_VAR + " = '" + TEST_ENV_VALUE + "'; ";
+const CACHE_DIR_NAME = '__pycache__';
 const MAX_ATTEMPTS_LIMIT = 5;
 const EVIDENCE_ROOT = 'docs/evidence/';
 // 证据目录认领必须由这个排他创建（O_EXCL）工具完成：预检子代理不得自己拼写认领文件（复审要求二）。
@@ -317,6 +324,119 @@ function judgeFingerprints(verifyArtifacts, reviewArtifacts, expectedFiles) {
 }
 
 /**
+ * 运行期写入边界：交付目录里的 `__pycache__` 在测试执行前后必须完全一致。
+ *
+ * 为什么不能只看 git：`.gitignore` 已经忽略了 `__pycache__`，`git status` 永远看不见它的变化；
+ * 被忽略的写入仍然违反本轮运行期约束（v0.2-run1 的 AC-24 就是这样被误判成 satisfied 的）。
+ * 因此用执行前后的**文件指纹**（路径 / 字节数 / mtime / sha256）比对，不看是否被跟踪。
+ *
+ * 规则（fail-closed）：
+ *  - 未返回 bytecode_scope、字段类型不对、路径不在缓存目录下、清单里有重复路径 → BYTECODE_SCOPE_UNMEASURED（证据不完整，不得判通过）；
+ *  - 测试进程没有拿到受控环境变量（env_applied != true）→ BYTECODE_ENV_NOT_APPLIED；
+ *  - 执行后出现执行前不存在的缓存文件 → BYTECODE_CACHE_WRITTEN；
+ *  - 同一缓存文件的字节数 / mtime / sha256 前后不一致 → BYTECODE_CACHE_WRITTEN（被重写）。
+ */
+function normalizeCacheEntries(raw, cachePrefix, label) {
+  if (!Array.isArray(raw)) { return { ok: false, entries: [], reason: label + ' 的缓存清单不是数组' }; }
+  const entries = [];
+  const seen = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const item = raw[i];
+    if (!isObject(item)) { return { ok: false, entries: [], reason: label + ' 的缓存清单第 ' + (i + 1) + ' 项不是对象' }; }
+    const entryPath = asString(item.path).replace(/\\/g, '/');
+    if (entryPath === '' || entryPath.indexOf('..') !== -1 || entryPath.charAt(0) === '/' || entryPath.indexOf('://') !== -1) {
+      return { ok: false, entries: [], reason: label + ' 的缓存清单第 ' + (i + 1) + ' 项路径不可用：' + JSON.stringify(item.path) };
+    }
+    if (entryPath.indexOf(cachePrefix + '/') !== 0) {
+      return { ok: false, entries: [],
+        reason: label + ' 的缓存清单第 ' + (i + 1) + ' 项不在缓存目录 ' + cachePrefix + ' 下：' + entryPath };
+    }
+    if (seen.indexOf(entryPath) !== -1) {
+      return { ok: false, entries: [], reason: label + ' 的缓存清单出现重复路径：' + entryPath };
+    }
+    seen.push(entryPath);
+    const bytes = item.bytes;
+    const mtimeMs = item.mtime_ms;
+    const sha256 = asString(item.sha256).toLowerCase();
+    if (!isInteger(bytes) || bytes < 0) {
+      return { ok: false, entries: [], reason: label + ' 的缓存清单条目缺少合法字节数：' + entryPath };
+    }
+    if (typeof mtimeMs !== 'number' || !isFinite(mtimeMs) || mtimeMs <= 0) {
+      return { ok: false, entries: [], reason: label + ' 的缓存清单条目缺少合法 mtime_ms：' + entryPath };
+    }
+    if (!SHA256_PATTERN.test(sha256)) {
+      return { ok: false, entries: [], reason: label + ' 的缓存清单条目缺少合法 sha256：' + entryPath };
+    }
+    entries.push({ path: entryPath, bytes: bytes, mtimeMs: mtimeMs, sha256: sha256 });
+  }
+  return { ok: true, entries: entries, reason: '' };
+}
+
+function judgeBytecodeScope(scope, cachePrefix, label) {
+  const boundary = label + ' 的运行期写入边界（' + cachePrefix + '）';
+  if (!isObject(scope)) {
+    return { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED',
+      reasons: [boundary + '：未返回 bytecode_scope，无法证明测试进程没有写缓存（证据不完整）'] };
+  }
+  const before = normalizeCacheEntries(scope.entries_before, cachePrefix, boundary);
+  const after = normalizeCacheEntries(scope.entries_after, cachePrefix, boundary);
+  if (!before.ok || !after.ok) {
+    return { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED', reasons: [before.ok ? after.reason : before.reason] };
+  }
+  if (scope.env_applied !== true) {
+    return { ok: false, status: 'BYTECODE_ENV_NOT_APPLIED',
+      reasons: [boundary + '：测试进程没有获得 ' + TEST_ENV_VAR + '=' + TEST_ENV_VALUE + '（env_applied != true）'] };
+  }
+  if (asString(scope.env_variable).toUpperCase() !== TEST_ENV_VAR) {
+    return { ok: false, status: 'BYTECODE_ENV_NOT_APPLIED',
+      reasons: [boundary + '：报告的受控环境变量不是 ' + TEST_ENV_VAR + '：' + JSON.stringify(scope.env_variable)] };
+  }
+  const beforeMap = {};
+  for (let i = 0; i < before.entries.length; i += 1) { beforeMap[before.entries[i].path] = before.entries[i]; }
+  const created = [];
+  const rewritten = [];
+  for (let i = 0; i < after.entries.length; i += 1) {
+    const entry = after.entries[i];
+    const prior = beforeMap[entry.path];
+    if (prior === undefined) { created.push(entry.path); continue; }
+    if (prior.bytes !== entry.bytes || prior.mtimeMs !== entry.mtimeMs || prior.sha256 !== entry.sha256) {
+      rewritten.push(entry.path);
+    }
+  }
+  const reasons = [];
+  if (created.length > 0) { reasons.push(boundary + '：测试执行后新增了缓存文件：' + created.join(', ')); }
+  if (rewritten.length > 0) { reasons.push(boundary + '：测试执行后缓存文件被重写：' + rewritten.join(', ')); }
+  if (reasons.length > 0) {
+    return { ok: false, status: 'BYTECODE_CACHE_WRITTEN', reasons: reasons, created: created, rewritten: rewritten };
+  }
+  return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [] };
+}
+
+/** Verifier 与 Review 两个阶段都必须成立：任一证伪即拒绝，任一未测量即判证据不完整。 */
+function judgeBytecodeScopePair(verification, review, cachePrefix) {
+  const verdicts = [
+    judgeBytecodeScope(isObject(verification) ? verification.bytecode_scope : null, cachePrefix, 'Verifier'),
+    judgeBytecodeScope(isObject(review) ? review.bytecode_scope : null, cachePrefix, 'Review')
+  ];
+  const failures = verdicts.filter(function (v) { return !v.ok; });
+  if (failures.length === 0) { return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [] }; }
+  const priority = ['BYTECODE_CACHE_WRITTEN', 'BYTECODE_ENV_NOT_APPLIED', 'BYTECODE_SCOPE_UNMEASURED'];
+  let status = priority[priority.length - 1];
+  for (let i = 0; i < priority.length; i += 1) {
+    if (failures.some(function (f) { return f.status === priority[i]; })) { status = priority[i]; break; }
+  }
+  const reasons = [];
+  const created = [];
+  const rewritten = [];
+  failures.forEach(function (f) {
+    f.reasons.forEach(function (r) { if (reasons.indexOf(r) === -1) { reasons.push(r); } });
+    (f.created || []).forEach(function (p) { if (created.indexOf(p) === -1) { created.push(p); } });
+    (f.rewritten || []).forEach(function (p) { if (rewritten.indexOf(p) === -1) { rewritten.push(p); } });
+  });
+  return { ok: false, status: status, reasons: reasons, created: created, rewritten: rewritten };
+}
+
+/**
  * 相对路径安全校验：拒绝绝对路径、盘符、`..`、反斜杠、空段与首尾空白。
  * 返回归一化（去掉尾部 `/`）的路径；不合法时返回 null。
  */
@@ -349,12 +469,38 @@ function canonicalTestCommand(targetDir) {
   return 'python -m unittest discover -s ' + targetDir + ' -p "test_*.py"';
 }
 
-/** 测试命令只允许"规范化命令"本身（可带 -v），不接受来自参数的任何任意 shell 命令。 */
+/** 受控执行环境的说明：与"规范化测试命令"分别记录，避免把环境写死进命令契约。 */
+function testEnvironment() {
+  return {
+    variable: TEST_ENV_VAR,
+    value: TEST_ENV_VALUE,
+    mechanism: 'command-prefix',
+    applies_to: 'single-command-invocation'
+  };
+}
+
+/** 真正下发的执行命令 = 受控环境前缀 + 规范化命令（前缀只对这一次进程调用生效）。 */
+function executionTestCommand(canonical) {
+  return typeof canonical === 'string' && canonical !== '' ? TEST_ENV_PREFIX + canonical : null;
+}
+
+/**
+ * 测试命令只允许"规范化命令"本身（可带 -v）或**带本脚本固定环境前缀**的同一条命令。
+ * 前缀是编排层生成的常量，不是来自参数的自由文本：仍然不允许任意 shell 命令。
+ */
 function isAllowedTestCommand(command, canonical) {
   const value = asString(command);
-  if (value === '') { return false; }
-  if (!TEST_COMMAND_PATTERN.test(value)) { return false; }
-  return value === canonical || value === canonical + ' -v';
+  if (value === '' || typeof canonical !== 'string' || !TEST_COMMAND_PATTERN.test(canonical)) { return false; }
+  const executed = executionTestCommand(canonical);
+  if (executed === null) { return false; }
+  const candidates = [canonical, canonical + ' -v', executed, executed + ' -v'];
+  return candidates.indexOf(value) !== -1;
+}
+
+/** 记录本次命令是否带了受控环境前缀（放行两种形式，但证据里必须能区分）。 */
+function testCommandEnvironmentApplied(command, canonical) {
+  const value = asString(command);
+  return value !== '' && value.indexOf(TEST_ENV_PREFIX) === 0 && isAllowedTestCommand(value, canonical);
 }
 
 /**
@@ -550,8 +696,9 @@ function judgeTestEvidence(evidence, canonicalCommand) {
   const reasons = [];
   if (!isObject(evidence)) { return { passed: false, reasons: ['Verifier 未返回结构化证据（子代理失败或输出不完整）'], parsed: null }; }
   const command = asString(evidence.command);
-  if (command !== canonicalCommand) {
-    reasons.push('Verifier 执行的不是规范化测试命令：' + JSON.stringify(command) + '，期望 ' + JSON.stringify(canonicalCommand));
+  if (!isAllowedTestCommand(command, canonicalCommand)) {
+    reasons.push('Verifier 执行的不是规范化测试命令（可带固定环境前缀）：' + JSON.stringify(command) +
+      '，期望 ' + JSON.stringify(canonicalCommand) + ' 或其受控前缀形式');
   }
   const exitCode = asString(evidence.exit_code);
   if (exitCode !== '0') { reasons.push('Verifier 报告的退出码非 0：' + JSON.stringify(evidence.exit_code)); }
@@ -638,14 +785,14 @@ function judgeReviewConsistency(review, expectedIds, canonicalCommand, verifierR
   }
 
   const ownCommand = asString(review.independent_test_command);
-  const ownCommandMatches = ownCommand === canonicalCommand;
+  const ownCommandMatches = isAllowedTestCommand(ownCommand, canonicalCommand);
   const ownParsed = parseUnittestOutput(review.independent_test_output);
   const ownParseOk = ownParsed.textPresent && ownParsed.ran !== null && !ownParsed.failedMarker && ownParsed.okMarker;
-  // 命令不一致必须是致命的：Review 必须原样执行规范化命令，否则"独立复跑"不能算数（审核发现的可绕过路径）。
+  // 命令不一致必须是致命的：Review 必须原样执行规范化命令（可带固定环境前缀），否则"独立复跑"不能算数。
   let ownTestsPassed = ownParseOk && ownCommandMatches;
   if (!ownCommandMatches) {
-    reasons.push('Review 的独立复跑命令不是规范化命令：' + JSON.stringify(ownCommand) +
-      '（必须原样执行：' + canonicalCommand + '）');
+    reasons.push('Review 的独立复跑命令不是规范化命令（可带固定环境前缀）：' + JSON.stringify(ownCommand) +
+      '（必须原样执行：' + canonicalCommand + ' 或其受控前缀形式）');
   }
   if (!ownParseOk) {
     reasons.push('Review 的独立复跑证据不成立（' + (ownParsed.failedMarker ? '输出含 ' + ownParsed.failedMarker :
@@ -734,7 +881,7 @@ function judgeCodingReportConsistency(codingReport, canonicalCommand) {
  * 指纹恰好覆盖配置的交付文件且前后一致"才算通过。
  * 返回 { ok, status, reasons, reviewEval, verified, fingerprints, codingConsistency, stageConflicts, selfReportVsVerified }。
  */
-function judgeAttempt(codingReport, verification, review, expectedIds, canonicalCommand, codingVerdict, verificationVerdict, expectedArtifacts) {
+function judgeAttempt(codingReport, verification, review, expectedIds, canonicalCommand, codingVerdict, verificationVerdict, expectedArtifacts, bytecodeVerdict) {
   const reasons = [];
   let status = 'OK';
 
@@ -760,6 +907,11 @@ function judgeAttempt(codingReport, verification, review, expectedIds, canonical
   const fingerprints = judgeFingerprints(isObject(verification) ? verification.artifacts : null,
     isObject(review) ? review.artifacts_after : null, expectedArtifacts);
   if (!fingerprints.ok) { reasons.push('文件指纹检查未通过：' + fingerprints.reasons.join('；')); }
+
+  // 运行期写入边界（`__pycache__` 等被忽略的写入）：git 看不见，只能靠执行前后的文件指纹。
+  const bytecode = isObject(bytecodeVerdict) ? bytecodeVerdict
+    : { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED', reasons: ['编排层没有计算运行期写入边界（证据不完整）'] };
+  if (!bytecode.ok) { reasons.push('运行期写入边界检查未通过：' + bytecode.reasons.join('；')); }
 
   const stageConflicts = collectStageConflicts(codingReport, verification, review);
   if (stageConflicts.length > 0) {
@@ -804,6 +956,8 @@ function judgeAttempt(codingReport, verification, review, expectedIds, canonical
     status = 'INCONSISTENT_REVIEW';
   } else if (!fingerprints.ok) {
     status = 'ARTIFACT_FINGERPRINT_MISMATCH';
+  } else if (!bytecode.ok) {
+    status = bytecode.status;
   } else if (!reviewEval.approved) {
     status = 'REVIEW_NOT_APPROVED';
   } else if (!reviewEval.allSatisfied) {
@@ -818,7 +972,7 @@ function judgeAttempt(codingReport, verification, review, expectedIds, canonical
 
   return { ok: status === 'OK', status: status, reasons: reasons, reviewEval: reviewEval,
     verified: verified, fingerprints: fingerprints, codingConsistency: codingConsistency,
-    stageConflicts: stageConflicts, selfReportVsVerified: selfReportVsVerified };
+    stageConflicts: stageConflicts, selfReportVsVerified: selfReportVsVerified, bytecode: bytecode };
 }
 
 /** 需求自检结果：出现冲突就必须停止，不得让 Coding Agent 自选一套解释（审核意见三）。 */
@@ -995,16 +1149,56 @@ const CODING_SCHEMA = {
   }
 };
 
+// 运行期写入边界：Verifier 与 Review 都必须交回"执行测试前后"的缓存目录指纹。
+// 字段名与命令行取值分开记录：环境变量名/值不是"命令"的一部分。
+const BYTECODE_SCOPE_REQUIRED = ['env_applied', 'env_variable', 'cache_dir', 'entries_before', 'entries_after'];
+const BYTECODE_SCOPE_PROPERTIES = {
+  env_applied: { type: 'boolean' },
+  env_variable: { type: 'string' },
+  cache_dir: { type: 'string' },
+  entries_before: {
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['path', 'bytes', 'mtime_ms', 'sha256'],
+      properties: {
+        path: { type: 'string' },
+        bytes: { type: 'integer' },
+        mtime_ms: { type: 'number' },
+        sha256: { type: 'string' }
+      }
+    }
+  },
+  entries_after: {
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['path', 'bytes', 'mtime_ms', 'sha256'],
+      properties: {
+        path: { type: 'string' },
+        bytes: { type: 'integer' },
+        mtime_ms: { type: 'number' },
+        sha256: { type: 'string' }
+      }
+    }
+  }
+};
+
 const VERIFY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['command', 'exit_code', 'raw_output', 'ran_tests', 'result_marker', 'artifacts', 'requirement_conflicts', 'generated_at'],
+  required: ['command', 'exit_code', 'raw_output', 'ran_tests', 'result_marker', 'artifacts', 'bytecode_scope',
+    'requirement_conflicts', 'generated_at'],
   properties: {
     command: { type: 'string' },
     exit_code: { type: 'string' },
     raw_output: { type: 'string' },
     ran_tests: { type: 'integer' },
     result_marker: { type: 'string', enum: ['OK', 'FAILED'] },
+    bytecode_scope: { type: 'object', additionalProperties: false, required: BYTECODE_SCOPE_REQUIRED,
+      properties: BYTECODE_SCOPE_PROPERTIES },
     artifacts: {
       type: 'array',
       items: {
@@ -1032,9 +1226,12 @@ const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['verdict', 'criteria_check', 'issues', 'independent_test_command', 'independent_test_exit_code',
-    'independent_test_output', 'artifacts_after', 'requirement_conflicts', 'summary', 'report_file', 'generated_at'],
+    'independent_test_output', 'artifacts_after', 'bytecode_scope', 'requirement_conflicts', 'summary', 'report_file',
+    'generated_at'],
   properties: {
     verdict: { type: 'string', enum: ['APPROVED', 'CHANGES_REQUESTED'] },
+    bytecode_scope: { type: 'object', additionalProperties: false, required: BYTECODE_SCOPE_REQUIRED,
+      properties: BYTECODE_SCOPE_PROPERTIES },
     criteria_check: {
       type: 'array',
       items: {
@@ -1091,6 +1288,27 @@ const REVIEW_SCHEMA = {
 };
 
 // ================================================================ 提示词构建
+
+/**
+ * 运行期写入边界提示：要求子代理在**同一条命令**里设置受控环境，并在执行前后记录缓存目录指纹。
+ * 不依赖宿主进程环境（子代理是独立进程），也不允许把环境改成任意 shell 片段。
+ */
+function bytecodeScopeNote(cacheDir) {
+  return [
+    '### 运行期写入边界（强制，编排脚本会按文件指纹复核）',
+    '- **必须**用带受控环境前缀的命令执行测试（前缀与命令必须在同一条命令里，不得拆成两条）：',
+    '  `' + executionTestCommand(C.testCommand) + '`；',
+    '- 该前缀只设置一个变量 `' + TEST_ENV_VAR + '=' + TEST_ENV_VALUE + '`，禁止追加别的环境变量、禁止追加别的命令；',
+    '- 执行测试**之前**与**之后**，各记录一次缓存目录 `' + cacheDir + '` 的文件清单：',
+    '  每个文件记录 `path`（仓库内相对路径、正斜杠）、`bytes`、`mtime_ms`（毫秒时间戳）与 `sha256`（按原始字节计算）；',
+    '  目录不存在或为空时写空数组 `[]`；',
+    '- 把两次清单写入 `bytecode_scope`：`{ env_applied: true, env_variable: "' + TEST_ENV_VAR + '", cache_dir: "' + cacheDir +
+      '", entries_before: [...], entries_after: [...] }`；',
+    '- 执行后出现新缓存文件、或已有缓存文件被重写（bytes / mtime_ms / sha256 任一变化），本轮判不通过（`BYTECODE_CACHE_WRITTEN`）；',
+    '- 未记录该字段或记录不完整，本轮判"证据不完整"（`BYTECODE_SCOPE_UNMEASURED`）。',
+    '  `.gitignore` 忽略该目录不代表允许在运行期写入：`git status` 看不见的写入同样违规。'
+  ].join('\n');
+}
 
 function envelopeNote(artifactPath) {
   return [
@@ -1203,6 +1421,8 @@ function codingPrompt(attempt, previousReview) {
     '- 测试文件: ' + C.targetDir + '/' + C.testFile,
     '- 样例输入文件（按需求决定是否创建）: ' + C.targetDir + '/' + C.sampleFile,
     '- 规范化测试命令（**必须用它**运行测试）: ' + C.testCommand,
+    '- 实际执行时必须带上受控环境前缀（同一条命令，不得拆开）: ' + executionTestCommand(C.testCommand),
+    '- `test_command` 字段仍然只填上面那条规范化命令本身（不含环境前缀）：环境与命令分开记录；',
     '- 依赖边界: ' + depsBoundary,
     '',
     '### Requirement Agent 的结构化产出（JSON，原样传递）',
@@ -1257,6 +1477,7 @@ function verifyPrompt(artifactPath) {
     '',
     '【第二步】独立复跑验收测试，并回传**原始输出**：',
     '- 必须执行的命令（不得改写、不得增删参数）: ' + C.testCommand,
+    '- 实际执行时必须带上受控环境前缀（同一条命令，不得拆开）: ' + executionTestCommand(C.testCommand),
     '- 在交付目录 `' + C.targetDir + '` 存在的前提下，从仓库根目录执行它；',
     '- 把命令的完整输出（含 `Ran N tests` 与 `OK`/`FAILED` 行）原样放进 `raw_output`；不得摘要、不得改写、不得为了让结果好看而重跑别的命令；',
     '- `exit_code` 填真实退出码；`ran_tests` 填原始输出里的用例数；`result_marker` 填 `OK` 或 `FAILED`；',
@@ -1265,6 +1486,9 @@ function verifyPrompt(artifactPath) {
       C.targetDir + '/' + C.testFile + '`：',
     '  多列（README、.gitignore、样例输入等）或**少列**（例如漏掉测试文件）都会被判为指纹不一致；路径不得含 `.` / `..` 点段；',
     '  哈希一律对文件的**原始字节**计算（二进制读取，不做任何换行/编码转换，Windows 上尤其不要用文本模式读取）；',
+    '- `command` 填你**实际执行**的完整命令（含受控环境前缀）；`raw_output` 仍是该命令的原始输出；',
+    '',
+    bytecodeScopeNote(C.targetDir + '/' + CACHE_DIR_NAME),
     '- 你在本次运行中**唯一允许的写操作**是把结果写入产物文件 `' + artifactPath + '`；',
     '  不得修改交付目录或仓库中任何其他文件（不修复缺陷、不格式化代码、不删除文件、不新建文件）；发现问题只需如实报告。',
     '- `requirement_conflicts`：若你在复跑或阅读中发现需求本身自相矛盾（两条验收/边界条件对同一调用给出互斥期望），',
@@ -1289,6 +1513,7 @@ function reviewPrompt(attempt, codingReport, verification, artifactPath) {
     '- 模块文件: ' + C.targetDir + '/' + C.moduleFile,
     '- 测试文件: ' + C.targetDir + '/' + C.testFile,
     '- 规范化测试命令（**请你自己独立执行一次**）: ' + C.testCommand,
+    '- 实际执行时必须带上受控环境前缀（同一条命令，不得拆开）: ' + executionTestCommand(C.testCommand),
     '- 依赖边界: ' + depsBoundary,
     '',
     '### Requirement Agent 的结构化产出（审核依据）',
@@ -1322,6 +1547,9 @@ function reviewPrompt(attempt, codingReport, verification, artifactPath) {
     '- 若你发现 Coding Agent 的自述、Verifier 的原始输出、你自己的复跑结果三者之间存在矛盾，',
     '  必须在 `consistency_note` 中写明矛盾点，并把 `verdict` 判为 `CHANGES_REQUESTED`。',
     '  编排脚本会独立重算这些判定：矛盾结论不会被当作通过。',
+    '',
+    bytecodeScopeNote(C.targetDir + '/' + CACHE_DIR_NAME),
+    '- `independent_test_command` 填你**实际执行**的完整命令（含受控环境前缀）；',
     '',
     '【第三步】以你亲眼读到的文件内容与你亲自运行的命令输出为唯一依据，',
     '写入产物文件并返回结构化结果。只返回结构化结果。',
@@ -1679,8 +1907,13 @@ while (attempt <= C.maxCodingAttempts) {
     }
   }
 
+  const cachePrefix = C.targetDir === null ? CACHE_DIR_NAME : C.targetDir + '/' + CACHE_DIR_NAME;
+  const bytecodeVerdict = judgeBytecodeScopePair(verification, review, cachePrefix);
+  if (!bytecodeVerdict.ok) {
+    log('第 ' + attempt + ' 轮运行期写入边界：' + bytecodeVerdict.status + '（' + bytecodeVerdict.reasons.join('；') + '）');
+  }
   const decision = judgeAttempt(codingReport, verification, review, expectedCriteriaIds, C.testCommand,
-    { outputValid: codingOutputValid, consistency: codingConsistency }, verificationJudge, deliveryFiles);
+    { outputValid: codingOutputValid, consistency: codingConsistency }, verificationJudge, deliveryFiles, bytecodeVerdict);
   if (!decision.ok) { reportProblems('第 ' + attempt + ' 轮判定未通过', decision.reasons); }
   log('第 ' + attempt + ' 轮判定：' + (decision.ok ? 'PASS' : decision.status));
 
@@ -1749,6 +1982,9 @@ return {
   pipeline: ['Verifier(preflight)', 'Requirement Agent', 'Coding Agent', 'Verifier(verify)', 'Review Agent'],
   targetDir: C.targetDir,
   testCommand: C.testCommand,
+  // 命令与执行环境分开记录：环境不改变规范化命令本身，也不放开任意 shell。
+  testEnvironment: testEnvironment(),
+  testExecutionCommand: executionTestCommand(C.testCommand),
   maxCodingAttempts: C.maxCodingAttempts,
   criteriaIds: expectedCriteriaIds,
   evidenceFiles: attemptsDetail.reduce(function (list, d) {
@@ -1770,7 +2006,8 @@ return {
       verification: d.verification,
       review: d.review,
       decision: { ok: d.decision.ok, status: d.decision.status, reasons: d.decision.reasons },
-      selfReportVsVerified: d.decision.selfReportVsVerified
+      selfReportVsVerified: d.decision.selfReportVsVerified,
+      bytecodeScope: d.decision.bytecode
     };
   }),
   finalVerdict: isObject(finalAttempt) && isObject(finalAttempt.review) ? finalAttempt.review.verdict : null,
@@ -1788,6 +2025,12 @@ return {
     reviewIndependentTestsPassed: reviewFinal.ownTestsPassed === true,
     fingerprintsMatch: isObject(finalFingerprints) ? finalFingerprints.ok === true : false,
     fingerprintReasons: isObject(finalFingerprints) ? finalFingerprints.reasons : ['无有效轮次'],
+    bytecodeScopeOk: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
+      ? finalAttempt.decision.bytecode.ok === true : false,
+    bytecodeScopeStatus: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
+      ? finalAttempt.decision.bytecode.status : 'BYTECODE_SCOPE_UNMEASURED',
+    bytecodeScopeReasons: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
+      ? finalAttempt.decision.bytecode.reasons : ['无有效轮次'],
     stageReportedRequirementConflicts: finalStageConflicts,
     criteriaIds: expectedCriteriaIds
   }

@@ -14,7 +14,7 @@ import path from 'node:path';
 import {
   NOW, TARGET_DIR, REPO_ROOT, TEST_SHA, CANONICAL, FAILED_OUTPUT, criteria, preflightOk, requirementOk,
   codingOk, verifyOk, verifyFailed, reviewOk, baseArgs, happyPlan, advanceClock, clockIso, clockNowMs,
-  makeRunner
+  makeRunner, EXEC_COMMAND, cacheEntry, bytecodeScope
 } from './workflow-harness.mjs';
 
 const runner = makeRunner();
@@ -694,6 +694,101 @@ await scenario('认领前状态为 empty 的空目录可被排他认领 → OK',
   }),
   baseArgs(),
   { status: 'OK', ok: true, attempts: 1, calls: 5 });
+
+// 42. 运行期写入边界：Verifier 执行测试时新生成了缓存文件 → 不得 ok（git 看不见，但文件指纹看得见）
+await scenario('Verifier 阶段新写 __pycache__ → BYTECODE_CACHE_WRITTEN（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ bytecode_scope: bytecodeScope({ entries_after: [cacheEntry()] }) });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 5, errorIncludes: '运行期写入边界' });
+
+// 43. 已有缓存文件被重写（mtime 与哈希都变了）→ 同样算运行期写入
+await scenario('已有缓存文件被重写 → BYTECODE_CACHE_WRITTEN（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({
+        bytecode_scope: bytecodeScope({
+          entries_before: [cacheEntry()],
+          entries_after: [cacheEntry({ mtime_ms: 1760000009999, sha256: 'd'.repeat(64) })]
+        })
+      });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 5, errorIncludes: '重写' });
+
+// 44. 报告自述"没有设置环境"→ 环境没有真正到达测试进程，运行期写入边界不成立
+await scenario('Verifier 报告 env_applied=false → BYTECODE_ENV_NOT_APPLIED（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ bytecode_scope: bytecodeScope({ env_applied: false }) });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_ENV_NOT_APPLIED', ok: false, calls: 5, errorIncludes: 'PYTHONDONTWRITEBYTECODE' });
+
+// 45. Review 阶段没有交回 bytecode_scope → 证据不完整，不得当作"没有写入"
+await scenario('Review 未记录 bytecode_scope → BYTECODE_SCOPE_UNMEASURED（不得 ok）',
+  happyPlan({
+    review: function () { const r = reviewOk(); delete r.bytecode_scope; return r; }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, calls: 5, errorIncludes: '证据不完整' });
+
+// 46. 缓存清单里出现重复路径 → 清单不可信（字典覆盖会吞掉一次写入）
+await scenario('缓存清单含重复路径 → BYTECODE_SCOPE_UNMEASURED（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry(), cacheEntry()] }) });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, calls: 5, errorIncludes: '重复' });
+
+// 47. 缓存目录里本来就有文件、执行前后完全一致 → 不得误判为写入
+await scenario('已存在缓存且执行前后一致 → OK（不得误拒）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
+    review: function () {
+      return reviewOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    }
+  }),
+  baseArgs(),
+  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+
+// 48. 实际执行命令带固定环境前缀（同一命令上下文）→ 接受
+await scenario('实际执行命令带固定环境前缀 → OK',
+  happyPlan({
+    coding: function () { return codingOk({ test_command: EXEC_COMMAND }); },
+    verify: function () { return verifyOk({ command: EXEC_COMMAND }); },
+    review: function () { return reviewOk({ independent_test_command: EXEC_COMMAND }); }
+  }),
+  baseArgs(),
+  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+
+// 49. 命令前缀换成任意别的环境变量 → 等于放开任意 shell，拒绝
+await scenario('命令前缀是任意别的环境变量 → INCONSISTENT_EVIDENCE（不得 ok）',
+  happyPlan({
+    verify: function () { return verifyOk({ command: "$env:PYTHONPATH = 'x'; " + CANONICAL }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5 });
+
+// 50. 参数级 testCommand 允许固定前缀形式，但拒绝别的环境变量前缀
+await scenario('任务参数 testCommand 带固定环境前缀 → 接受（OK）',
+  happyPlan(),
+  baseArgs({ task: { testCommand: EXEC_COMMAND } }),
+  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+
+await scenario('任务参数 testCommand 带任意环境变量前缀 → INVALID_ARGS',
+  happyPlan(),
+  baseArgs({ task: { testCommand: "$env:PYTHONPATH = 'x'; " + CANONICAL } }),
+  { status: 'INVALID_ARGS', ok: false, calls: 0 });
 
 // ---------------------------------------------------------------- 结果
 

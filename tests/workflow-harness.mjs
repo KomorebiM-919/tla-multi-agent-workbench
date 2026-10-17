@@ -66,6 +66,11 @@ export const REPO_ROOT = path.resolve(HERE, '..').replace(/\\/g, '/');
 export const MODULE_SHA = 'a'.repeat(64);
 export const TEST_SHA = 'b'.repeat(64);
 export const CANONICAL = 'python -m unittest discover -s ' + TARGET_DIR + ' -p "test_*.py"';
+// 受控环境前缀：与 workflows/three-agent-mvp.js 的 TEST_ENV_PREFIX 形状一致（同一命令上下文）。
+export const ENV_VAR = 'PYTHONDONTWRITEBYTECODE';
+export const ENV_PREFIX = '$env:' + ENV_VAR + " = '1'; ";
+export const EXEC_COMMAND = ENV_PREFIX + CANONICAL;
+export const CACHE_DIR = TARGET_DIR + '/__pycache__';
 export const OK_OUTPUT = '...........\n' +
   '----------------------------------------------------------------------\n' +
   'Ran 44 tests in 0.021s\n\nOK\n';
@@ -111,6 +116,15 @@ export function preflightOk(over) {
   return Object.assign(base, over || {});
 }
 
+/** 预检夹具：目标目录换成调用方指定的目录（集成测试用临时交付目录）。 */
+export function preflightFor(targetDirRel) {
+  return preflightOk({
+    target_dir: targetDirRel,
+    target_dir_realpath: REPO_ROOT + '/' + targetDirRel,
+    resolved_paths: [REPO_ROOT + '/' + targetDirRel, REPO_ROOT + '/' + EVIDENCE_DIR]
+  });
+}
+
 export function requirementOk(criteriaCount, conflicts) {
   const acs = [];
   for (let i = 0; i < criteriaCount; i += 1) { acs.push('AC-' + String(i + 1).padStart(2, '0') + '（可检查描述）'); }
@@ -142,6 +156,28 @@ export function codingOk(over) {
   return Object.assign(base, over || {});
 }
 
+// 缓存条目夹具：path 必须是 cache_dir 下的相对路径，mtime_ms 为毫秒时间戳，sha256 为 64 位十六进制。
+export function cacheEntry(over) {
+  const base = {
+    path: CACHE_DIR + '/text_stats.cpython-313.pyc',
+    bytes: 1024,
+    mtime_ms: 1760000000000,
+    sha256: 'c'.repeat(64)
+  };
+  return Object.assign(base, over || {});
+}
+
+export function bytecodeScope(over) {
+  const base = {
+    env_applied: true,
+    env_variable: ENV_VAR,
+    cache_dir: CACHE_DIR,
+    entries_before: [],
+    entries_after: []
+  };
+  return Object.assign(base, over || {});
+}
+
 export function verifyOk(over) {
   const base = {
     command: CANONICAL,
@@ -153,6 +189,7 @@ export function verifyOk(over) {
       { path: TARGET_DIR + '/text_stats.py', sha256: MODULE_SHA, bytes: 1024 },
       { path: TARGET_DIR + '/test_text_stats.py', sha256: TEST_SHA, bytes: 2048 }
     ],
+    bytecode_scope: bytecodeScope(),
     requirement_conflicts: [],
     notes: '',
     generated_at: NOW
@@ -176,6 +213,7 @@ export function reviewOk(over) {
       { path: TARGET_DIR + '/text_stats.py', sha256: MODULE_SHA, bytes: 1024 },
       { path: TARGET_DIR + '/test_text_stats.py', sha256: TEST_SHA, bytes: 2048 }
     ],
+    bytecode_scope: bytecodeScope(),
     requirement_conflicts: [],
     consistency_note: 'none',
     summary: '全部验收条件满足',
