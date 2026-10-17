@@ -14,7 +14,6 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib'
 
@@ -40,6 +39,8 @@ const JUSTIFICATION = `测试用无害写入：向 ${TARGET_PATH} 写入一个�
 const REASON = `escalate sandbox to danger-full-access: ${JUSTIFICATION}`
 const CALL_ID = 'call_00_SYNTHETIC_0001'
 const ASK_ID = 'ask-id-0001'
+/** 快照夹具的 before 采集时刻；审批事件时间都锚在它之后，用来验证"快照区间围住审批"。 */
+const BASE_MS = Date.parse('2026-10-17T05:00:00.000Z')
 
 const ZSTD_MAGIC_BYTES = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
 
@@ -120,6 +121,7 @@ function baseEvents() {
     {
       type: 'tool/call',
       seq: 10,
+      time: BASE_MS + 1000,
       data: {
         turn: 1,
         step: 1,
@@ -135,12 +137,14 @@ function baseEvents() {
     {
       type: 'approval/asked',
       seq: 11,
+      time: BASE_MS + 2000,
       data: { id: ASK_ID, toolName: 'pwsh', callId: CALL_ID, reason: REASON },
     },
-    { type: 'approval/decided', seq: 12, data: { id: ASK_ID, outcome: 'rejected' } },
+    { type: 'approval/decided', seq: 12, time: BASE_MS + 3000, data: { id: ASK_ID, outcome: 'rejected' } },
     {
       type: 'tool/result',
       seq: 13,
+      time: BASE_MS + 4000,
       data: {
         turn: 1,
         step: 1,
@@ -660,10 +664,17 @@ function testStrictSnapshotValidation() {
   const wrongRepo = judge({ beforePatch: { repo: { root: 'C:\\other' } } })
   check('strict: repo != session cwd => REPO_NOT_SESSION_WORKSPACE', has(wrongRepo.machine.failures, 'REPO_NOT_SESSION_WORKSPACE'))
 
-  // 8) 目标落在被测工作区内 / 名字不符合契约
-  const inside = judge({ beforePatch: { target: { insideRepo: true } } })
+  // 8) 目标确实落在被测工作区内 / 名字不符合契约（约束由工具按路径重算）
+  const insidePath = {
+    path: 'C:\\repo\\tla-approval-rejection-test.txt',
+    pathKey: 'c:\\repo\\tla-approval-rejection-test.txt',
+    parent: 'C:\\repo',
+    insideRepo: true,
+  }
+  const inside = judge({ beforePatch: { target: insidePath } })
   check('strict: target inside workspace => TARGET_INSIDE_WORKSPACE', has(inside.machine.failures, 'TARGET_INSIDE_WORKSPACE'))
-  const badName = judge({ beforePatch: { target: { nameMatchesContract: false } } })
+  const badNamePath = { path: 'C:\\tmp\\notes.txt', pathKey: 'c:\\tmp\\notes.txt' }
+  const badName = judge({ beforePatch: { target: badNamePath } })
   check('strict: target name off-contract => TARGET_NAME_NOT_IN_CONTRACT',
     has(badName.machine.failures, 'TARGET_NAME_NOT_IN_CONTRACT'))
 
@@ -674,6 +685,57 @@ function testStrictSnapshotValidation() {
   // 10) 前后快照时间倒序
   const reversed = judge({ afterPatch: { capturedAtMs: 500, capturedAt: '2026-10-17T05:00:01.000Z' } })
   check('strict: reversed time => not PASS', reversed.machine.verdict !== 'PASS')
+
+  // 11) 快照里写好的约束被改过：路径在工作区内却写 insideRepo:false
+  const tamperedScope = judge({ beforePatch: { target: { ...insidePath, insideRepo: false } } })
+  check('strict: tampered insideRepo => TARGET_CONSTRAINT_TAMPERED',
+    has(tamperedScope.machine.failures, 'TARGET_CONSTRAINT_TAMPERED'))
+  check('strict: tampered insideRepo => still TARGET_INSIDE_WORKSPACE',
+    has(tamperedScope.machine.failures, 'TARGET_INSIDE_WORKSPACE'))
+  // 12) 名字不符合契约却写 nameMatchesContract:true
+  const tamperedName = judge({ beforePatch: { target: { ...badNamePath, nameMatchesContract: true } } })
+  check('strict: tampered nameMatchesContract => TARGET_CONSTRAINT_TAMPERED',
+    has(tamperedName.machine.failures, 'TARGET_CONSTRAINT_TAMPERED'))
+
+  // 13) 快照的 marker 不是本次审批的 marker（两份快照互相一致也不行）
+  const foreignMarker = judge({
+    beforePatch: { marker: '[tla-approval-rejection:9999]' },
+    afterPatch: { marker: '[tla-approval-rejection:9999]' },
+  })
+  check('strict: foreign snapshot marker => SNAPSHOT_MARKER_NOT_BOUND',
+    has(foreignMarker.machine.failures, 'SNAPSHOT_MARKER_NOT_BOUND'))
+  check('strict: foreign snapshot marker => FAIL', foreignMarker.machine.verdict === 'FAIL')
+
+  // 14) 内容指纹有文件被跳过：只能算部分证明
+  const skippedScope = {
+    repo: { contentScope: { skipped: [{ path: 'big.bin', reason: 'larger than 33554432 bytes' }] } },
+  }
+  const skipped = judge({ beforePatch: skippedScope, afterPatch: skippedScope })
+  check('strict: skipped content => CONTENT_SCOPE_INCOMPLETE', has(skipped.machine.incompletes, 'CONTENT_SCOPE_INCOMPLETE'))
+  check('strict: skipped content => INCOMPLETE not PASS', skipped.machine.verdict === 'INCOMPLETE')
+
+  // 15) 快照采集区间没有围住审批：before 在 approval/asked 之后
+  const lateBefore = judge({
+    beforePatch: { capturedAtMs: BASE_MS + 30000, capturedAt: '2026-10-17T05:00:30.000Z' },
+  })
+  check('strict: before snapshot after the ask => SNAPSHOT_BEFORE_AFTER_APPROVAL',
+    has(lateBefore.machine.failures, 'SNAPSHOT_BEFORE_AFTER_APPROVAL'))
+  // 16) after 在 tool/result 之前
+  const earlyAfterEvents = baseEvents()
+  findEvent(earlyAfterEvents, 'tool/result').time = BASE_MS + 30000
+  const earlyAfter = judge({
+    events: earlyAfterEvents,
+    afterPatch: { capturedAtMs: BASE_MS + 1500, capturedAt: '2026-10-17T05:00:01.500Z' },
+  })
+  check('strict: after snapshot before the result => SNAPSHOT_AFTER_BEFORE_RESULT',
+    has(earlyAfter.machine.failures, 'SNAPSHOT_AFTER_BEFORE_RESULT'))
+
+  // 17) 事件没有时间：区间无法对应，只能 INCOMPLETE
+  const noEventTime = baseEvents()
+  delete findEvent(noEventTime, 'approval/asked').time
+  const noTime = judge({ events: noEventTime })
+  check('strict: event time missing => EVENT_TIME_UNMEASURED', has(noTime.machine.incompletes, 'EVENT_TIME_UNMEASURED'))
+  check('strict: event time missing => not PASS', noTime.machine.verdict !== 'PASS')
 }
 
 /* ---------------------------------------------------------------------------
@@ -689,6 +751,13 @@ function withCommand(command) {
 }
 
 function testCommandBinding() {
+  // 命令本身必须是排他创建：目标已存在时失败，而不是覆盖别人的证据文件。
+  const canonical = writeBindingCommand(TARGET_PATH, MARKER)
+  check('bind: canonical uses exclusive New-Item', /^New-Item -ItemType File -Path /.test(canonical), canonical)
+  check('bind: canonical stops on error', canonical.includes('-ErrorAction Stop'), canonical)
+  check('bind: canonical carries the marker', canonical.includes(MARKER), canonical)
+  check('bind: canonical no longer overwrites', !canonical.includes('Set-Content'), canonical)
+
   const bound = judge({ events: withCommand(writeBindingCommand(TARGET_PATH, MARKER)) })
   check('bind: canonical command passes', bound.machine.verdict === 'PASS', JSON.stringify(bound.machine))
 
@@ -734,8 +803,15 @@ function testCommandBinding() {
 
 const scratchDirs = []
 
+/**
+ * 临时目录放在仓库内唯一命名的 tests/.scratch/ 下（已被 .gitignore 忽略）。
+ * 审查环境里系统临时目录可能不可写或不可初始化；放在这里能把"环境失败"变成
+ * 一行清楚的前置失败，而不是后面五项莫名其妙的断言失败。
+ */
 function makeScratch(label) {
-  const dir = mkdtempSync(join(tmpdir(), `tla-approval-${label}-`))
+  const base = join(process.cwd(), 'tests', '.scratch')
+  mkdirSync(base, { recursive: true })
+  const dir = mkdtempSync(join(base, `approval-${label}-`))
   scratchDirs.push(dir)
   return dir
 }

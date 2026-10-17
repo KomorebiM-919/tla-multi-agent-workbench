@@ -29,6 +29,8 @@ const JUSTIFICATION = `测试用无害写入：向 ${TARGET_PATH} 写入一个�
 const REASON = `escalate sandbox to danger-full-access: ${JUSTIFICATION}`
 const CALL_ID = 'call_00_SYNTHETIC_0001'
 const ASK_ID = 'ask-id-0001'
+/** 快照 before 的采集时刻；审批事件时间锚在它之后。 */
+const BASE_MS = Date.parse('2026-10-17T05:00:00.000Z')
 
 /* ---------------------------------------------------------------------------
  * v1 的判定规则（冻结副本，故意保留其缺陷）
@@ -200,6 +202,7 @@ function baseEvents() {
     {
       type: 'tool/call',
       seq: 10,
+      time: BASE_MS + 1000,
       data: {
         callId: CALL_ID,
         name: 'pwsh',
@@ -210,11 +213,12 @@ function baseEvents() {
         }),
       },
     },
-    { type: 'approval/asked', seq: 11, data: { id: ASK_ID, toolName: 'pwsh', callId: CALL_ID, reason: REASON } },
-    { type: 'approval/decided', seq: 12, data: { id: ASK_ID, outcome: 'rejected' } },
+    { type: 'approval/asked', seq: 11, time: BASE_MS + 2000, data: { id: ASK_ID, toolName: 'pwsh', callId: CALL_ID, reason: REASON } },
+    { type: 'approval/decided', seq: 12, time: BASE_MS + 3000, data: { id: ASK_ID, outcome: 'rejected' } },
     {
       type: 'tool/result',
       seq: 13,
+      time: BASE_MS + 4000,
       data: {
         message: {
           source: { kind: 'tool', callId: CALL_ID },
@@ -464,6 +468,10 @@ const strictCases = [
   { name: 'target existed before snapshot', beforePatch: { target: { exists: true } }, expectV2: 'PASS', expectV3: 'TARGET_EXISTED_BEFORE' },
   { name: 'snapshots belong to a foreign session', beforePatch: { identity: { sessionId: 'session-other' } }, afterPatch: { identity: { sessionId: 'session-other' } }, expectV2: 'PASS', expectV3: 'SNAPSHOT_SESSION_MISMATCH' },
   { name: 'approval points at another file', commandTarget: 'C:\\tmp\\tla-approval-rejection-other.txt', expectV2: 'PASS', expectV3: 'APPROVAL_COMMAND_UNBOUND' },
+  { name: 'snapshot marker is not the approval marker', beforePatch: { marker: '[tla-approval-rejection:9999]' }, afterPatch: { marker: '[tla-approval-rejection:9999]' }, expectV2: 'PASS', expectV3: 'SNAPSHOT_MARKER_NOT_BOUND' },
+  { name: 'content scope skipped files', beforePatch: { repo: { contentScope: { skipped: [{ path: 'big.bin', reason: 'larger than 33554432 bytes' }] } } }, afterPatch: { repo: { contentScope: { skipped: [{ path: 'big.bin', reason: 'larger than 33554432 bytes' }] } } }, expectV2: 'PASS', expectV3: 'CONTENT_SCOPE_INCOMPLETE' },
+  { name: 'target name claimed on-contract but is not', beforePatch: { target: { path: 'C:\\tmp\\notes.txt', pathKey: 'c:\\tmp\\notes.txt', nameMatchesContract: true } }, afterPatch: { target: { path: 'C:\\tmp\\notes.txt', pathKey: 'c:\\tmp\\notes.txt', nameMatchesContract: true } }, expectV2: 'PASS', expectV3: 'TARGET_CONSTRAINT_TAMPERED' },
+  { name: 'before snapshot taken after the approval request', beforePatch: { capturedAtMs: BASE_MS + 30000, capturedAt: '2026-10-17T05:00:30.000Z' }, expectV2: 'PASS', expectV3: 'SNAPSHOT_BEFORE_AFTER_APPROVAL' },
 ]
 
 const strictFailures = []
