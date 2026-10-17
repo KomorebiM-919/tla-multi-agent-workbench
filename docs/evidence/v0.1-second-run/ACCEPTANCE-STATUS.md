@@ -274,3 +274,60 @@ run 6 需求 AC-10（`docs/evidence/v0.1-run6-20261016T154400Z/requirement.json:
 - "人工审批的安全拒绝测试"（V0.1 验收条件 3）仍未完成；
 - 当前门禁下**没有**重跑真实子代理：run 6 之后 `workflows/three-agent-mvp.js` 已被修改（两个时钟、认领前状态门禁等），"门禁通过"不能外推为"新代码下真实跑通"；
 - 因此 **V0.1 最终验收仍未通过**；本次只是把需求口径由"待裁定"变为"已裁定并有可版本化基线"。
+
+## 11. 人工审批拒绝取证工具加固（2026-10-17，离线，**测试仍未执行**）
+
+本轮只加固"取证与判定"这一层，**没有**触发任何真实审批：方案里的步骤 A（基线）与步骤 B（被拒绝的升级请求）
+都保持未执行。因此 V0.1 验收条件 3 仍然是**未完成**。
+
+### 11.1 实测依据
+
+- `node:zlib` 的 `zstdDecompressSync` 对**多帧拼接只返回第一帧**，对截断/损坏**不报错**（无校验和时位翻转也静默）；
+  `bytesWritten` 不可用于求帧长。⇒ 会话日志**不能**靠解压器报错或扫描 zstd 魔数来切帧，改为按 RFC 8878 帧结构求帧长。
+- 真实父会话日志（只读）：**6573 帧 / 0 坏帧 / 10395 事件 / 0 坏行**；5 次历史审批的顺序均为
+  `tool/call(n)` → `approval/asked(n+1)` → `approval/decided(n+2)` → `tool/result(n+3)`，全部 `allowed-once`，
+  调用时刻 `policy=ask`、`mode=workspace-write`，父会话 `parentSession=null` / `delegationDepth=0`。
+
+### 11.2 缺陷 → 修复 → 回归证据
+
+| 原缺陷 | 修复 | 回归证据（离线） |
+| --- | --- | --- |
+| 权限/HEAD/status 未测得时两个"空值"被当成"前后未变"，仍判 PASS | 任一测量失败 ⇒ `INCOMPLETE`（退出码 3）；值与类型都要合法 | 用例：权限未测、HEAD 未测、`null` 相等；反向验证中 2 例"v1 误放行"被拦下 |
+| `isError` 缺失被当成"不是失败" | 只有 `isError === true` 才算"被拒绝"；`false` ⇒ FAIL；缺失 ⇒ INCOMPLETE；空文本 ⇒ INCOMPLETE | 3 例（`false` / 缺失 / 空文本） |
+| 快照可混用（`runId`、目标、仓库、身份、时间顺序不校验） | 五者必须一致；`capturedAtMs` 必须递增；`schemaVersion` 必须相同 | 5 例（`runId` 不符、目标不符、仓库不符、身份不符、时间倒序） |
+| `policy = never` 只要在整段历史里出现就判不通过 | 改为"调用时刻生效的策略"（取 `seq` 之前最后一条），决定之后才出现的 `never` 不影响判定 | 1 例"误拒绝"被修正，另 1 例"调用时刻为 never"仍被拒绝 |
+| 审批事件只按 marker 找 ask，不校验 id/callId/顺序/重复 | 校验 `toolName`、`callId`、`sandbox_permissions`、`reason` 前缀、`reason === 前缀 + justification`、唯一 ask、唯一决定、唯一 tool/call，顺序 `call < asked < decided ≤ result`；区分 allowed / rejected / cancelled / unavailable / 未知 | 12 例（允许、取消、不可用、未知超时、缺决定、重复决定、歧义、工具不符、缺前缀、缺 tool/call、重复 call、结果先于决定） |
+| `git status` 相同即当作工作区未变 | 增**逐文件内容指纹**（排除取证目录），聚合值变化 ⇒ `WORKSPACE_CONTENT_CHANGED` | 临时 git 仓库里"status 文本相同但内容变了"被抓到；另含改名、依赖清单变化 |
+| 本地 remote-tracking refs 未变被写成"远端未变" | 快照固定 `remoteObserved: false`，只记保留意见"remote refs NOT observed" | 用例断言 caveat 存在且不产生"远端已核实"结论 |
+| 快照/产物可被覆盖；`--repo` 参数被忽略 | 全部产物**排他创建**（已存在则退出码 4）；`--repo` 真正生效 | 用例：排他写入拒绝覆盖、`repo.root` 参与前后一致性比较 |
+| 日志按魔数切帧 | 按帧结构解析；载荷内部含 `28 B5 2F FD` 时仍得到 2 帧 | 手工构造原始块帧的用例 |
+| 缺证据与 FAIL 混为一谈、退出码只有 0/1 | 退出码 `0 PASS / 1 FAIL / 3 INCOMPLETE / 4 用法 / 5 IO`；机器判定、人工确认、最终结论**三段分开**，缺人工确认最多 INCOMPLETE | CLI 用例覆盖 0/1/3/4；`composeFinalVerdict` 各分支 |
+
+### 11.3 本轮测试结果（全部离线）
+
+| 套件 | 结果 |
+| --- | --- |
+| `node tests/approval-rejection-evidence.test.mjs` | **90 断言 / 24 组场景通过**，退出码 0 |
+| `node tests/approval-evidence-mutation.test.mjs` | **18/18 组符合预期**（11 误放行 / 1 误拒绝 / 3 状态不符 / 3 无差异），退出码 0 |
+| `node tests/workflow-logic.test.mjs` | 81/81 场景、372 断言，退出码 0 |
+| `node tests/preflight-claim-integration.test.mjs` | 6/6 场景、59 断言，退出码 0 |
+| `python -m unittest discover -s examples/text-stats -p "test_*.py"` | `Ran 81 tests` / `OK` |
+| `python -m unittest discover -s tests -p "test_*.py"` | `Ran 11 tests` / `OK` |
+
+### 11.4 本项**仍然不能**证明的事（如实记录）
+
+- **没有发生人工拒绝**：无 `approval/asked` + `rejected` 的真实记录，本项验收条件 3 未完成；
+- **真实远端未观测**：本轮不访问网络，只证明本地 remote-tracking refs 未变；
+- 权限快照只覆盖所测目录的 DACL，不代表系统权限整体；
+- 依赖清单哈希未变**不等于**没有安装依赖；
+- 前后两次快照不能单独排除"中途创建后删除 / 修改后还原"（需 `tool/result` 的失败证据辅助）；
+- 帧未启用内容校验和时，日志位翻转无法被 zstd 发现，只能靠"行不是 JSON"兜底；
+- 会话日志是宿主写入的主要证据源，但其权限与防篡改能力**未经本仓库验证**，因此不能声称"Agent 绝对无法伪造"。
+
+### 11.5 本轮改动文件
+
+新增：`tools/approval-rejection-evidence.mjs`、`tests/approval-rejection-evidence.test.mjs`、
+`tests/approval-evidence-mutation.test.mjs`、`docs/APPROVAL-REJECTION-TEST-PLAN.md`、
+`docs/evidence/v0.1-approval-rejection-TEMPLATE/`（6 个模板文件）。
+更新：`tests/README.md`、`README.md`、`docs/ROADMAP.md`、本文件。
+`docs/evidence/` 下除本文件外**没有**改动任何历史 JSON、脚本或输出。

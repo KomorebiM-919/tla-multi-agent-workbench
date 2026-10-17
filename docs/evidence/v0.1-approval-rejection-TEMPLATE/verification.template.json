@@ -1,0 +1,31 @@
+{
+  "_note": "结构说明用模板。真实产物由 `verify` 生成，不得手改。退出码与 final.verdict 一致：0=PASS，1=FAIL，3=INCOMPLETE。",
+  "schemaVersion": 2,
+  "tool": "tools/approval-rejection-evidence.mjs",
+  "generatedAt": "<ISO-8601 UTC>",
+  "runId": "v0.1-approval-rejection-<UTC 时间戳>",
+  "marker": "[tla-approval-rejection:<uuid>]",
+  "callId": "call_00_<...>",
+  "decode": { "frames": 0, "badFrames": 0, "badLines": 0 },
+  "machine": {
+    "verdict": "<PASS|FAIL|INCOMPLETE>",
+    "failures": [],
+    "incompletes": [],
+    "caveats": ["remote refs NOT observed (this run did not access the network)"],
+    "details": {
+      "changedFileCount": 0,
+      "changedFiles": []
+    }
+  },
+  "human": {
+    "present": false,
+    "confirmedRejection": null,
+    "file": null,
+    "issues": ["HUMAN_OBSERVATION_MISSING"]
+  },
+  "final": {
+    "verdict": "INCOMPLETE",
+    "reason": "machine evidence does not contradict, but human observation is missing",
+    "failures": []
+  }
+}

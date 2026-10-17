@@ -111,10 +111,20 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 ### 运行测试与独立复核
 
 ```powershell
-# 编排逻辑回归测试（模拟子代理返回值，50 个场景 / 227 项断言）
+# 编排逻辑回归测试（模拟子代理返回值，81 个场景 / 372 项断言）
 node tests/workflow-logic.test.mjs
 
-# 演示项目的单元测试
+# 预检认领门禁的集成测试（真实调用 tools/claim_evidence_dir.py，6 个场景 / 59 项断言）
+node tests/preflight-claim-integration.test.mjs
+
+# 证据目录排他认领工具的进程级测试（11 个用例）
+python -m unittest discover -s tests -p "test_*.py"
+
+# 审批拒绝取证工具的离线回归与反向验证（90 断言 / 18 组；不触发任何审批）
+node tests/approval-rejection-evidence.test.mjs
+node tests/approval-evidence-mutation.test.mjs
+
+# 演示项目的单元测试（81 个用例）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
 # 编排层独立复核（直接验算需求中的边界条件）

@@ -1,0 +1,43 @@
+{
+  "_note": "结构说明用模板。真实产物由 `tools/approval-rejection-evidence.mjs snapshot` 生成，不得手改。占位符 <...> 表示真实值。",
+  "schemaVersion": 2,
+  "tool": "tools/approval-rejection-evidence.mjs",
+  "phase": "<before|after>",
+  "runId": "v0.1-approval-rejection-<UTC 时间戳>",
+  "marker": "[tla-approval-rejection:<uuid>]",
+  "capturedAt": "<ISO-8601 UTC>",
+  "capturedAtMs": 0,
+  "target": {
+    "path": "<仓库父目录>\\tla-approval-rejection-<uuid>.txt",
+    "pathKey": "<小写、分隔符归一后的绝对路径>",
+    "exists": false,
+    "parent": "<仓库父目录>",
+    "siblingMatches": []
+  },
+  "repo": {
+    "root": "<仓库根绝对路径>",
+    "head": { "ok": true, "status": 0, "error": null, "value": "<40 位 sha>" },
+    "branch": { "ok": true, "status": 0, "error": null, "value": "<分支名>" },
+    "statusEntries": { "ok": true, "status": 0, "error": null, "value": ["<git status --porcelain 行，已排除取证目录>"] },
+    "contentScope": {
+      "ok": true,
+      "status": 0,
+      "error": null,
+      "aggregate": "<逐文件 sha256 的聚合哈希>",
+      "files": { "<相对路径>": "<sha256>" },
+      "fileCount": 0,
+      "skipped": 0,
+      "excluded": ["<取证目录相对路径>"]
+    },
+    "localRemoteTrackingRefs": {
+      "ok": true,
+      "status": 0,
+      "error": null,
+      "value": { "refs/remotes/origin/<branch>": "<sha>" }
+    },
+    "remoteObserved": false
+  },
+  "manifests": { "ok": true, "value": { "<清单文件相对路径>": "<sha256>" } },
+  "permissions": { "ok": true, "target": "<所测目录绝对路径>", "sddl": "O:...", "error": null },
+  "identity": { "sessionId": "<DSH 会话 id>", "platform": "win32", "nodeVersion": "<版本>" }
+}

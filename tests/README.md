@@ -68,6 +68,27 @@ python -m unittest discover -s tests -p "test_*.py"
 
 第三轮结果：旧脚本下**逻辑套件 54/81 场景通过，24 个场景返回了 `ok: true`（误放行）**，另有 **3 个场景虽被拒绝但状态码 / 原因不符合新契约**（`Coding test_succeeded=false` + 退出码 0 ⇒ 旧 `INCONSISTENT_EVIDENCE`（新契约 `CODING_REPORT_INCONSISTENT`）；`2026-02-30` 这类非法日历时间 ⇒ 靠 6 小时窗口"偶然"拒绝（原因是"不在运行窗口内"而不是"日历时间非法"）；把 `runId` 与 `runStartedAt` 一起伪造成一天前的旧时间 ⇒ 旧 `INVALID_TIMESTAMP` 且已经启动了预检子代理（新契约在启动前即 `INVALID_ARGS`））。集成套件在旧脚本下 **5/6** 通过：认领前状态不一致那个场景被拒绝，但走的是旧的"未完成认领"原因，说明 `evidence_dir_state_before` 当时并未被消费；含空格路径那个场景在旧脚本下照样通过——它针对的是**子进程启动方式**（测试自身），不是编排层的门禁逻辑。
 
+### 1d. 审批拒绝取证工具的离线回归与反向验证
+
+人工审批安全拒绝测试本身**尚未执行**（见 `docs/APPROVAL-REJECTION-TEST-PLAN.md` 的"未执行"状态）。
+下面两个套件只验证**取证与判定逻辑**，全程不触发审批、不访问网络、不读凭据、不跑真实子代理：
+
+```powershell
+node tests/approval-rejection-evidence.test.mjs   # 90 断言 / 24 组场景
+node tests/approval-evidence-mutation.test.mjs    # 18 组反向验证用例
+```
+
+- `tests/approval-rejection-evidence.test.mjs`：合成事件流 + 合成指纹 + 临时 git 仓库。
+  - **日志切帧**：按 RFC 8878 帧结构求帧长，而不是按 zstd 魔数扫——有一个用例手工构造原始块，让**载荷内部**出现 `28 B5 2F FD`（魔数扫描会切成 3 段），结构解析仍得到 2 帧；另有截断尾部、保留块类型、帧头保留位、坏校验和（⇒ `badFrames=1`）、空文件、坏行计数。
+  - **事件关联**：唯一 marker、approval id、callId、`toolName`、`sandbox_permissions`、`reason` 前缀与 `justification` 一致、决定与工具结果对应、事件顺序（`call < asked < decided ≤ result`）、重复/歧义/缺失、`never` 只取"调用时刻"生效的策略（决定之后才出现的 `never` 不得污染判定）、子代理会话拒绝。
+  - **无副作用四要件**：`git status` 文本相同但工作区内容变了（⇒ `WORKSPACE_CONTENT_CHANGED`）、目标被创建、本地 remote-tracking refs 变化、依赖清单变化、权限未测得（⇒ INCOMPLETE 而不是 PASS）、两个缺失值不算"相等"、快照 `runId`/目标/仓库/身份/时间顺序/标记不一致、同前缀文件已存在。
+  - **写入与 CLI**：排他创建拒绝覆盖、取证目录被排除在内容指纹之外、`pathKey` 大小写归一、`verify` 的退出码 `0/1/3/4`。
+- `tests/approval-evidence-mutation.test.mjs`：把加固前的判定规则冻结成 `judgeV1` / `compareStatesV1`，同一批 18 个用例同时喂给两版，分类为"误放行 / 误拒绝 / 状态不符 / 无差异"。当前结果：**11 组误放行被 v2 拦下、1 组误拒绝被 v2 修正、3 组理由不符、3 组无差异**（例如权限未测得、HEAD 未测得、`isError` 缺失、空文本、`runId` 不符、时间倒序这些旧版都会 PASS）。
+
+> 这两个套件同样受环境约束：DSH 文件沙箱下不能捕获子进程管道输出，因此 CLI 用例直接调用
+> 导出的 `main()` 并临时接管 `process.stdout/stderr`；需要真实 git 的用例用 `tests/.scratch/` 下的临时仓库
+> （该目录已被 `.gitignore` 忽略），用后即删。
+
 ### 2. 演示项目的自动验证（普通测试脚本）
 
 首个 MVP 的交付产物是一个演示用 Python 文本统计工具（`examples/text-stats/`，属于工作流测试样例，不是 TLA 工作台自身的核心功能）。它的单元测试就是本阶段的自动验证脚本：
