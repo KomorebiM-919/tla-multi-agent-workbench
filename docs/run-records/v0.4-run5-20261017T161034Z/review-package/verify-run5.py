@@ -28,8 +28,8 @@ touched timestamps, clean copy, undeclared file, failing git).
 
 Usage (from the repository root, outputs land outside the delivered tree)::
 
-    python docs/review/run5-offline-acceptance/verify-run5.py \
-        --out docs/review/run5-offline-acceptance/verification.json
+    python docs/run-records/v0.4-run5-20261017T161034Z/review-package/verify-run5.py \
+        --out docs/run-records/v0.4-run5-20261017T161034Z/review-package/verification.json
 
 Exit codes: 0 = every criterion reproduced and the self-test contract holds,
 1 = at least one criterion differs or the self-test finds a harness bug.
@@ -92,6 +92,51 @@ CACHE_TIME_CRITERION = (
     "runs with PYTHONDONTWRITEBYTECODE=1, so the cache cannot be written; any "
     "mtime movement means the command wrote bytecode and the suppression failed."
 )
+
+# R-35: the four stdin examples the README documents as copy-paste commands.
+# Each is replayed through a real subprocess, so the assertion covers the exit
+# code, both streams and the four statistics instead of matching README text.
+README_EXAMPLES = (
+    (
+        "hello world\\n",
+        b"hello world\n",
+        {"char_count": 12, "line_count": 1, "non_empty_line_count": 1, "word_count": 2},
+    ),
+    (
+        "a\\r\\nb\\rc",
+        b"a\r\nb\rc",
+        {"char_count": 5, "line_count": 3, "non_empty_line_count": 3, "word_count": 3},
+    ),
+    (
+        "'  \\r\\n \\r\\n'",
+        b"  \r\n \r\n",
+        {"char_count": 5, "line_count": 2, "non_empty_line_count": 0, "word_count": 0},
+    ),
+    ("empty stdin", b"", ZERO_STATS),
+)
+
+# R-29 / BC-22: the UTF-16LE demonstration the README itself documents.
+UTF16_DEMO_NAME = "utf16le-demo.txt"
+UTF16_DEMO_TEXT = "abc\n"
+UTF16_DEMO_STATS = {
+    "char_count": 4,
+    "line_count": 1,
+    "non_empty_line_count": 1,
+    "word_count": 1,
+}
+
+# R-29: stdin of this text decoded as UTF-16 gives 3/1/1/1; the same bytes read
+# with the default stream codec cannot give that result, which is what makes the
+# probe falsifiable.
+STDIO_ENCODING_TEXT = "ab\r\n"
+STDIO_ENCODING_STATS = {
+    "char_count": 3,
+    "line_count": 1,
+    "non_empty_line_count": 1,
+    "word_count": 1,
+}
+STDIO_ENCODING_VAR = "PYTHONIOENCODING"
+STDIO_ENCODING_VALUE = "utf-16"
 
 CFG = {}
 
@@ -255,12 +300,19 @@ def cache_delta(before, after, tolerance_ns=0):
 
 def run_cli(args, stdin_bytes=b"", cwd=None):
     """Run ``python text_stats.py <args>`` and return (code, stdout, stderr)."""
+    return run_cli_env(args, stdin_bytes, {}, cwd)
+
+
+def run_cli_env(args, stdin_bytes=b"", extra_env=None, cwd=None):
+    """Run the CLI with extra variables that apply to the child process only."""
+    env = child_env()
+    env.update(extra_env or {})
     completed = subprocess.run(
         [sys.executable, os.path.basename(CFG["tool"])] + list(args),
         input=stdin_bytes,
         capture_output=True,
         cwd=cwd or CFG["tool_dir"],
-        env=child_env(),
+        env=env,
     )
     return completed.returncode, completed.stdout, completed.stderr
 
@@ -289,10 +341,13 @@ def run_programmatic(body):
     return run_py(code)
 
 
-def parse_stats(stdout):
+def parse_stats(stdout, encoding="utf-8"):
     """Parse the four output lines into a dict, or return None when malformed."""
     if isinstance(stdout, bytes):
-        stdout = stdout.decode("utf-8", "replace")
+        try:
+            stdout = stdout.decode(encoding)
+        except UnicodeDecodeError:
+            return None
     lines = stdout.splitlines()
     if len(lines) != 4:
         return None
@@ -306,6 +361,50 @@ def parse_stats(stdout):
             return None
         stats[key] = int(value)
     return stats
+
+
+def readme_block(stats):
+    """Return the four-line block the README must show for these statistics."""
+    return "\n".join("{0}: {1}".format(key, stats[key]) for key in KEYS)
+
+
+def documented_forms(stats):
+    """Return the two shapes the README uses to state the same four numbers.
+
+    Console examples show four lines; python examples show ``count_text``'s dict
+    repr. Both make the same claim, so a probe accepts either form but nothing
+    weaker (a bare number such as ``12`` does not count as documentation).
+    """
+    block = readme_block(stats)
+    pairs = ", ".join("'{0}': {1}".format(key, stats[key]) for key in KEYS)
+    return (block, "{" + pairs + "}")
+
+
+def example_problems(code, out, err, expected, encoding="utf-8"):
+    """Return the ways one subprocess example deviates from its expectation.
+
+    Comparing only the four numbers would let a probe pass while the exit code
+    was wrong, an error line leaked into stderr, or extra text reached stdout,
+    so every documented facet is checked separately.
+    """
+    problems = []
+    if code != 0:
+        problems.append("exit code {0}".format(code))
+    if err != b"":
+        problems.append("stderr {0!r}".format(err))
+    stats = parse_stats(out, encoding=encoding)
+    if stats != expected:
+        problems.append("stats {0} != {1}".format(stats, expected))
+    text = out.decode(encoding, "replace") if isinstance(out, bytes) else out
+    if text.replace("\r\n", "\n").rstrip("\n") != readme_block(expected):
+        problems.append("stdout text {0!r} is not the four documented lines".format(text))
+    return problems
+
+
+def readme_text():
+    """Return the delivery README with newlines normalised to LF."""
+    with open(CFG["readme"], "r", encoding="utf-8") as stream:
+        return stream.read().replace("\r\n", "\n")
 
 
 def one_error_line(code, out, err):
@@ -764,6 +863,109 @@ def check_ac27():
     )
 
 
+def check_readme_examples():
+    """R-35: every remaining README stdin example is replayed as a real process."""
+    readme = readme_text()
+
+    def documented(stats):
+        return any(form in readme for form in documented_forms(stats))
+
+    problems = []
+    for label, payload, expected in README_EXAMPLES:
+        code, out, err = run_cli([], stdin_bytes=payload)
+        for problem in example_problems(code, out, err, expected):
+            problems.append("{0}: {1}".format(label, problem))
+        if not documented(expected):
+            problems.append("{0}: README does not show the documented numbers".format(label))
+    detail = "examples={0} documented={1} problems={2}".format(
+        len(README_EXAMPLES),
+        sum(1 for _, _, expected in README_EXAMPLES if documented(expected)),
+        problems or "none",
+    )
+    return not problems, detail
+
+
+def check_r29_utf16_file():
+    """R-29 / BC-22: ``--encoding`` decides how a *file* is decoded.
+
+    The fixtures are the README's own demonstration (BOM-less UTF-16LE read as
+    ``utf-16-le``, and the same text with a BOM read as ``utf-16``).  The same
+    file read *without* the flag must produce different statistics: that contrast
+    is what shows the flag, not the file content, is doing the work.
+    """
+    plain = os.path.join(CFG["scratch"], UTF16_DEMO_NAME)
+    with open(plain, "wb") as stream:
+        stream.write(UTF16_DEMO_TEXT.encode("utf-16-le"))
+    bom = os.path.join(CFG["scratch"], "utf16-demo-bom.txt")
+    with open(bom, "wb") as stream:
+        stream.write(b"\xff\xfe" + UTF16_DEMO_TEXT.encode("utf-16-le"))
+
+    problems = []
+    code, out, err = run_cli([plain, "--encoding", "utf-16-le"])
+    problems.extend(example_problems(code, out, err, UTF16_DEMO_STATS))
+    bom_code, bom_out, bom_err = run_cli([bom, "--encoding", "utf-16"])
+    for problem in example_problems(bom_code, bom_out, bom_err, UTF16_DEMO_STATS):
+        problems.append("bom: {0}".format(problem))
+
+    control_code, control_out, control_err = run_cli([plain])
+    control_stats = parse_stats(control_out)
+    if control_code != 0:
+        if not one_error_line(control_code, control_out, control_err):
+            problems.append(
+                "control without --encoding neither succeeded nor failed cleanly: "
+                "code={0} out={1!r} err={2!r}".format(control_code, control_out[:80], control_err[:80])
+            )
+    elif control_stats in (None, UTF16_DEMO_STATS):
+        problems.append(
+            "control without --encoding produced {0}; the flag made no difference".format(control_stats)
+        )
+
+    readme = readme_text()
+    if UTF16_DEMO_NAME not in readme or not any(form in readme for form in documented_forms(UTF16_DEMO_STATS)):
+        problems.append("README does not document this UTF-16LE demonstration")
+    detail = "fixtures=2 control_code={0} control_stats={1} problems={2}".format(
+        control_code, control_stats, problems or "none"
+    )
+    return not problems, detail
+
+
+def check_r29_stdio_encoding():
+    """R-29: the stream codec decides how *stdin* is decoded.
+
+    ``PYTHONIOENCODING`` is set for the child process only.  The parent's
+    environment is compared before and after, so a probe that leaked the
+    variable into the harness cannot pass.
+    """
+    payload = b"\xff\xfe" + STDIO_ENCODING_TEXT.encode("utf-16-le")
+    before = os.environ.get(STDIO_ENCODING_VAR)
+    code, out, err = run_cli_env([], stdin_bytes=payload, extra_env={STDIO_ENCODING_VAR: STDIO_ENCODING_VALUE})
+    after = os.environ.get(STDIO_ENCODING_VAR)
+
+    problems = []
+    if code != 0:
+        problems.append("exit code {0}".format(code))
+    if err != b"":
+        problems.append("stderr {0!r}".format(err))
+    stats = parse_stats(out, encoding=STDIO_ENCODING_VALUE)
+    if stats != STDIO_ENCODING_STATS:
+        problems.append("stats under {0}={1}: {2}".format(STDIO_ENCODING_VAR, STDIO_ENCODING_VALUE, stats))
+    # The child re-encodes stdout with the same variable; if it were ignored the
+    # bytes would be plain ASCII and this decode would not reproduce the block.
+    if readme_block(STDIO_ENCODING_STATS) not in out.decode(STDIO_ENCODING_VALUE, "replace").replace("\r\n", "\n"):
+        problems.append("stdout was not written with the child's stream codec")
+    if after != before:
+        problems.append("parent environment changed: {0} -> {1}".format(before, after))
+
+    control_code, control_out, control_err = run_cli([], stdin_bytes=payload)
+    if parse_stats(control_out) == STDIO_ENCODING_STATS:
+        problems.append("control without {0} produced the same statistics".format(STDIO_ENCODING_VAR))
+
+    detail = "child_code={0} control_code={1} parent_{2}={3!r} problems={4}".format(
+        code, control_code, STDIO_ENCODING_VAR, after, problems or "none"
+    )
+    return not problems, detail
+
+
 def run_delivery_tests():
     """Run the documented test command once and return (code, combined output)."""
     completed = subprocess.run(
@@ -918,6 +1120,9 @@ CHECKS = [
     ("AC-25", check_ac25),
     ("AC-26", check_ac26),
     ("AC-27", check_ac27),
+    ("R-35", check_readme_examples),
+    ("R-29-UTF16-FILE", check_r29_utf16_file),
+    ("R-29-STDIO-ENCODING", check_r29_stdio_encoding),
 ]
 
 
@@ -1046,9 +1251,9 @@ def self_test():
             "a clean checkout (empty status) passes the stability half",
         )
         declared = status_problems(
-            [("??", "docs/review/run5-offline-acceptance/verification.json")],
+            [("??", "docs/run-records/v0.4-run5-20261017T161034Z/review-package/verification.json")],
             ALLOWED_HISTORY_PREFIXES,
-            ["docs/review/run5-offline-acceptance/verification.json"],
+            ["docs/run-records/v0.4-run5-20261017T161034Z/review-package/verification.json"],
         )
         record(
             "declared-output-excluded",
@@ -1085,6 +1290,59 @@ def self_test():
         finally:
             CFG.clear()
             CFG.update(saved)
+
+        # The three documented facets of a subprocess example must each be able
+        # to fail on its own, otherwise "reproduced the README" would mean
+        # "printed the right numbers" and nothing more.
+        hello = README_EXAMPLES[0][2]
+        good_out = readme_block(hello).replace("\n", "\r\n").encode("utf-8") + b"\r\n"
+        wrong_stats = good_out.replace(b"word_count: 2", b"word_count: 3")
+        record(
+            "example-stats-mismatch",
+            any("stats" in item for item in example_problems(0, wrong_stats, b"", hello)),
+            "a different word_count fails: {0}".format(example_problems(0, wrong_stats, b"", hello)),
+        )
+        record(
+            "example-stderr-leak",
+            any("stderr" in item for item in example_problems(0, good_out, b"warning\n", hello)),
+            "a leaked stderr line fails: {0}".format(example_problems(0, good_out, b"warning\n", hello)),
+        )
+        record(
+            "example-exit-code",
+            any("exit code" in item for item in example_problems(1, good_out, b"", hello)),
+            "a wrong exit code fails: {0}".format(example_problems(1, good_out, b"", hello)),
+        )
+        record(
+            "example-extra-stdout",
+            any("stdout text" in item for item in example_problems(0, good_out + b"extra\r\n", b"", hello)),
+            "extra stdout text fails: {0}".format(example_problems(0, good_out + b"extra\r\n", b"", hello)),
+        )
+        record(
+            "documented-form-needs-all-four",
+            not any(form in "a sample showing only char_count: 12" for form in documented_forms(hello)),
+            "a README that shows only one number does not document the example: {0}".format(
+                documented_forms(hello)
+            ),
+        )
+
+        # PYTHONIOENCODING must be scoped to the child: the parent keeps its own
+        # value, and the child sees the value handed to it.
+        sentinel = "cp1252"
+        os.environ[STDIO_ENCODING_VAR] = sentinel
+        try:
+            code, out, err = run_cli_env(
+                [], stdin_bytes="ab\n".encode("utf-8"), extra_env={STDIO_ENCODING_VAR: "utf-8"}
+            )
+            parent_after = os.environ.get(STDIO_ENCODING_VAR)
+        finally:
+            os.environ.pop(STDIO_ENCODING_VAR, None)
+        record(
+            "child-env-does-not-leak",
+            code == 0 and parent_after == sentinel and os.environ.get(STDIO_ENCODING_VAR) is None,
+            "parent kept {0!r} while the child got its own value: code={1} parent_after={2!r}".format(
+                sentinel, code, parent_after
+            ),
+        )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -1187,7 +1445,7 @@ def main(argv):
 
     failures = [row["criterion"] for row in results if not row["ok"]]
     report = {
-        "tool": "docs/review/run5-offline-acceptance/verify-run5.py",
+        "tool": "docs/run-records/v0.4-run5-20261017T161034Z/review-package/verify-run5.py",
         "run_id": "v0.4-run5-20261017T161034Z",
         "repo_head": head,
         "change_scope": {"base": cfg.base, "delivery": cfg.delivery},

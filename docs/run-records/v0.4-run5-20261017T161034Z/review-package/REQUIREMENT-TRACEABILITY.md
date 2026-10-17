@@ -39,18 +39,18 @@
 | R-26 | 数字与下划线不是单词字符 | AC-15；BC-09 | `:85`、`:120` | `V:用例`（`123 456`→0、`a1b`→2、`a_b`→2、`foo_bar baz`→3） | 通过 | 无 |
 | R-27 | 非 ASCII 字母与组合记号不是单词字符/连接符 | AC-15；BC-10 | `:85` | `V:用例`（`caf\u00e9`→1、`caf\u00e9-mocha`→2） | 通过 | 无 |
 | R-28 | 连接符两侧必须紧邻 ASCII 字母 | AC-16；BC-11 | `:85` | `V:用例`（`" -abc"`→1、`"abc- "`→1、`"'abc"`→1） | 通过 | 无 |
-| R-29 | 解码分工：文件默认 UTF-8 + `--encoding` 只作用于文件；stdin 用宿主文本流 | AC-05、AC-06、AC-20、AC-22；BC-21、BC-22 | `:144-155`（`_encoding_for`）、`:242-256`（`_read_stdin_text`，`:246` `sys.stdin.read()`） | `V:AC-05`/`V:AC-06`（stdin 与 PATH 同值）、`V:AC-20`/`V:AC-22`（非法编码名） | 通过（部分） | stdin 编码切换（`PYTHONIOENCODING`）与 `--encoding utf-16` 文件解码未由工具覆盖；run5 期间曾用 UTF-16LE 临时文件人工复算 4/1/1/1，本轮未复跑 |
+| R-29 | 解码分工：文件默认 UTF-8 + `--encoding` 只作用于文件；stdin 用宿主文本流 | AC-05、AC-06、AC-20、AC-22；BC-21、BC-22 | `:144-155`（`_encoding_for`）、`:242-256`（`_read_stdin_text`，`:246` `sys.stdin.read()`） | `V:AC-05`/`V:AC-06`（stdin 与 PATH 同值）、`V:AC-20`/`V:AC-22`（非法编码名）、`V:R-29-UTF16-FILE`（无 BOM `utf-16-le` 与带 BOM `utf-16` 两个夹具均 4/1/1/1，对照“同文件不加 `--encoding`”得 8/2/2/3）、`V:R-29-STDIO-ENCODING`（子进程 `PYTHONIOENCODING=utf-16` → 3/1/1/1，stdout 以子进程流编码写回，父进程环境未变，对照组得 10/3/3/2） | 通过 | 无（探针固定了变量值，未穷举所有可用编码名；这属于实现能力而非本条款断言） |
 | R-30 | `codecs.lookup` 校验编码名；文件解码失败同退出 1 | AC-20、AC-22；BC-18、BC-22 | `:153` `codecs.lookup(name)` | `V:AC-20`（非法编码名 + 非法 UTF-8 文件）、`V:AC-22` | 通过 | 无 |
 | R-31 | 实现与测试只允许 Python 标准库 | AC-26；BC-26 | `text_stats.py` 全部 import（`argparse`、`codecs`、`contextlib`、`io`、`re`、`sys`）；测试另含 `ast`、`hashlib`、`inspect`、`os`、`subprocess`、`unittest` | `V:AC-26`（AST 清单 ⊆ `sys.stdlib_module_names`，且无 `requirements.txt`/`pyproject.toml`/`setup.py`/`Pipfile`） | 通过 | “无网络、不读凭据、不读 `~/.dsh`”只能由“没有相应 import”间接证明 |
 | R-32 | 只改交付目录下 4 个文件 | AC-29（变更范围半）；BC-27 | 交付提交 `[C39]` | `V:AC-29`（`git diff --name-only [C39]^..[C39]` 恰 3 个交付文件，`sample_input.txt` 未触碰；无交付目录外路径） | 通过 | 无 |
 | R-33 | 运行期只允许 `.test-scratch/` 与注入的证据路径；不新增 `__pycache__` | AC-28、AC-29（稳定性半）；BC-27、BC-28 | 运行期行为（非交付代码） | `V:AC-28`（测试命令前后缓存集合/哈希/`mtime` 全同）、`E:preflight.json`/`E:verify.json` 的 `bytecode_scope` 前后一致、`E:*` 证据目录仅 6 个注入文件 + 本轮采集的 `cache-postrun.json`、`.test-scratch/tmp*` 创建时间早于运行（2026-10-16 19:20–19:27） | 通过（依证据） | 写入窗口由采集点插值，窗口内“写完又改回原样且 mtime 变化 ≤5 ms”的瞬时写入不可观测（run5 已声明） |
 | R-34 | `sample_input.txt` 20 字节固定内容 + README 四项自洽 | AC-27；BC-29、BC-30 | `examples/text-stats/sample_input.txt`、`README.md` | `V:AC-27`（20 字节、内容逐字节等于 `hello world\nfoo bar\n`、README 含 20/2/2/4） | 通过 | 无 |
-| R-35 | README 每条可复制示例与规则自洽；不得保留矛盾历史值 | AC-27（部分）；BC-30 | `examples/text-stats/README.md` | `V:AC-27`（sample 示例四项一致、无 `char_count: 6`） | 部分通过 | README 其余示例（`hello world\n`→12/1/1/2、`a\r\nb\rc`→5/3/3/3、`'  \r\n \r\n'`→5/2/0/0、空文本→0）本轮未逐条机器复算；run5 人工复核时已逐条复算通过 |
+| R-35 | README 每条可复制示例与规则自洽；不得保留矛盾历史值 | AC-27；BC-30 | `examples/text-stats/README.md` | `V:AC-27`（sample 示例四项一致、无 `char_count: 6`）+ `V:R-35`（`check_readme_examples`：四个示例真实子进程重放，分别断言退出码、stdout、stderr、四项统计值，并要求 README 以 4 行块或 dict repr 之一展示同一组数值） | 通过 | 无（README 其余“命令示例”如 `--help`、目录参数、测试命令由 AC-17/AC-20/AC-28 覆盖；纯文字说明不属于“可复制示例”） |
 | R-36 | 描述连接符不得出现裸 U+2019 | AC-27；BC-30 | `examples/text-stats/README.md` | `V:AC-27`（`no_bare_u2019=True`，即 README 中不存在裸 U+2019） | 通过 | 无 |
 | R-37 | 需求互斥即报冲突并停止，不自行选边 | 运行期约束（编排门禁） | `workflows/three-agent-mvp.js` 门禁 + 需求阶段自检 | `E:requirement.json`（`conflicts: []`、`consistency_check.self_checked: true`）、`E:coding-report.json`（`requirement_conflicts: []`） | 通过（依证据） | 离线未构造互斥需求场景验证门禁确实中止（本轮不发起真实运行） |
 
 ## 汇总
 
-- 37 条全部有依据；其中 **R-35 为部分自动化覆盖**（README 只有 sample 示例被机器校验），**R-29 有两条子情形未由工具覆盖**（stdin 编码切换、`--encoding utf-16` 文件解码）。
-- 涉及“运行期行为”的 R-33、R-37 只能依据 run5 的历史证据，不能离线重放；这部分属“不可复证事实”，判定为“依证据通过”。
+- 37 条全部有依据；此前的两处部分覆盖（**R-35** 只机器校验 sample 示例、**R-29** 的 stdin 编码与 `--encoding utf-16` 未自动化）已在本轮补齐并重跑（`checked 28, passed 28`），追踪表中相应行改为“通过”。
+- 涉及“运行期行为”的 R-33、R-37 只能依据 run5 的历史证据，不能离线重放；这部分属“不可复证事实”，判定为“依证据通过”，未伪装成离线重放。
 - 文档类（R-34、R-35、R-36）、修改范围（R-32）、运行期约束（R-33、R-37）已按用户要求分别核实，未合并成一条“APPROVED”结论。

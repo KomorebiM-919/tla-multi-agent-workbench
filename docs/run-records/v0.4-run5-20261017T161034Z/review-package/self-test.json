@@ -63,7 +63,37 @@
     },
     {
       "counter_example": "git-failure-is-not-clean",
-      "detail": "a failing git command raises instead of reporting an empty tree: git status --porcelain could not run in <repo-root>\\tests\\.scratch\\run5-review\\no-such-repo-13388: [WinError 267] 目录名称无效。",
+      "detail": "a failing git command raises instead of reporting an empty tree: git status --porcelain could not run in <repo-root>\\tests\\.scratch\\run5-review\\no-such-repo-37732: [WinError 267] 目录名称无效。",
+      "ok": true
+    },
+    {
+      "counter_example": "example-stats-mismatch",
+      "detail": "a different word_count fails: [\"stats {'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 3} != {'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}\", \"stdout text 'char_count: 12\\\\r\\\\nline_count: 1\\\\r\\\\nnon_empty_line_count: 1\\\\r\\\\nword_count: 3\\\\r\\\\n' is not the four documented lines\"]",
+      "ok": true
+    },
+    {
+      "counter_example": "example-stderr-leak",
+      "detail": "a leaked stderr line fails: [\"stderr b'warning\\\\n'\"]",
+      "ok": true
+    },
+    {
+      "counter_example": "example-exit-code",
+      "detail": "a wrong exit code fails: ['exit code 1']",
+      "ok": true
+    },
+    {
+      "counter_example": "example-extra-stdout",
+      "detail": "extra stdout text fails: [\"stats None != {'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}\", \"stdout text 'char_count: 12\\\\r\\\\nline_count: 1\\\\r\\\\nnon_empty_line_count: 1\\\\r\\\\nword_count: 2\\\\r\\\\nextra\\\\r\\\\n' is not the four documented lines\"]",
+      "ok": true
+    },
+    {
+      "counter_example": "documented-form-needs-all-four",
+      "detail": "a README that shows only one number does not document the example: ('char_count: 12\\nline_count: 1\\nnon_empty_line_count: 1\\nword_count: 2', \"{'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}\")",
+      "ok": true
+    },
+    {
+      "counter_example": "child-env-does-not-leak",
+      "detail": "parent kept 'cp1252' while the child got its own value: code=0 parent_after='cp1252'",
       "ok": true
     }
   ]

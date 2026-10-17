@@ -4,10 +4,10 @@
     "base": "54a19d9^",
     "delivery": "54a19d9"
   },
-  "criteria_checked": 25,
-  "criteria_passed": 25,
+  "criteria_checked": 28,
+  "criteria_passed": 28,
   "declared_outputs": [
-    "docs/review/run5-offline-acceptance/verification-main-checkout.json"
+    "../../../../docs/run-records/v0.4-run5-20261017T161034Z/review-package/verification-clean-copy.json"
   ],
   "failed": [],
   "repo_head": "54a19d99c1c841cbc3438564ef6881dccc947459",
@@ -128,16 +128,31 @@
       "ok": true
     },
     {
+      "criterion": "R-35",
+      "detail": "examples=4 documented=4 problems=none",
+      "ok": true
+    },
+    {
+      "criterion": "R-29-UTF16-FILE",
+      "detail": "fixtures=2 control_code=0 control_stats={'char_count': 8, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 3} problems=none",
+      "ok": true
+    },
+    {
+      "criterion": "R-29-STDIO-ENCODING",
+      "detail": "child_code=0 control_code=0 parent_PYTHONIOENCODING=None problems=none",
+      "ok": true
+    },
+    {
       "criterion": "AC-28",
-      "detail": "code=0 stats=97 cache_files_before=2 after=2 problems=none time_criterion='mtime_ns must be identical (tolerance 0 ns). The documented test command runs with PYTHONDONTWRITEBYTECODE=1, so the cache cannot be written; any mtime movement means the command wrote bytecode and the suppression failed.'",
+      "detail": "code=0 stats=97 cache_files_before=0 after=0 problems=none time_criterion='mtime_ns must be identical (tolerance 0 ns). The documented test command runs with PYTHONDONTWRITEBYTECODE=1, so the cache cannot be written; any mtime movement means the command wrote bytecode and the suppression failed.'",
       "ok": true
     },
     {
       "criterion": "AC-29",
-      "detail": "base=54a19d9^ delivery=54a19d9 changed=['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py'] allowed=['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py', 'examples/text-stats/sample_input.txt'] not_touched=['examples/text-stats/sample_input.txt'] declared_outputs=['docs/review/run5-offline-acceptance/verification-main-checkout.json'] problems=none",
+      "detail": "base=54a19d9^ delivery=54a19d9 changed=['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py'] allowed=['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py', 'examples/text-stats/sample_input.txt'] not_touched=['examples/text-stats/sample_input.txt'] declared_outputs=['../../../../docs/run-records/v0.4-run5-20261017T161034Z/review-package/verification-clean-copy.json'] problems=none",
       "ok": true
     }
   ],
   "run_id": "v0.4-run5-20261017T161034Z",
-  "tool": "docs/review/run5-offline-acceptance/verify-run5.py"
+  "tool": "docs/run-records/v0.4-run5-20261017T161034Z/review-package/verify-run5.py"
 }
