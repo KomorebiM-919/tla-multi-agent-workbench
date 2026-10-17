@@ -64,7 +64,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   [`docs/evidence/v0.1-approval-rejection-20261017T112518Z/`](docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md)；
   范围仅这一次：其它工具与"允许一次"路径未验证、远端未观测）
 - [x] **新版真实模型流水线的完整运行（第五次，`v0.4-run5-20261017T161034Z`）**：5 个角色各 1 次调用（5/8，无派生）、交付测试 97 项全绿、编排层独立复核 28/28、缓存边界 `CLEAN`、用量 4 465 947 tokens（声明 8 000 000，`WITHIN_BUDGET`）；证据见 [`docs/run-records/v0.4-run5-20261017T161034Z/`](docs/run-records/v0.4-run5-20261017T161034Z/README.md)。**所有者已于 2026-10-18 基于审核报告确认“本轮演示功能验收通过”**（记录：[`OWNER-ACCEPTANCE.md`](docs/run-records/v0.4-run5-20261017T161034Z/review-package/OWNER-ACCEPTANCE.md)）；该确认是“基于报告的验收确认”，不是所有者逐行审查或独立复跑，也不代表整个多模型平台开发完成
-- [ ] **远端发布授权**：交付与归档均只在本地，未 push、未建 PR、未合并 `main`；按 `AGENTS.md` §9 需所有者单独授权
+- [ ] **远端发布授权**：交付与归档均只在本地，未 push、未建 PR、未合并 `main`；按 `AGENTS.md` §9 需所有者单独授权。发布前的离线检查、PR 文稿与安全检查见 [docs/PUBLICATION-READINESS-v0.1.md](docs/PUBLICATION-READINESS-v0.1.md)
 - [ ] V0.1 扩展目标：加入 discussion、testing 两个角色，构成五角色完整流水线（不是首次运行成功的前提）
 - [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、ChatGPT Plus/Codex 兼容性验证、LangGraph 互补路线评估（V0.2–V0.4 均未开始）
 - 详见 [docs/ROADMAP.md](docs/ROADMAP.md)
@@ -120,7 +120,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 ### 运行测试与独立复核
 
 ```powershell
-# 编排逻辑回归测试（模拟子代理返回值，85 个场景 / 391 项断言）
+# 编排逻辑回归测试（模拟子代理返回值，114 个场景 / 547 项断言）
 node tests/workflow-logic.test.mjs
 
 # 预检认领门禁的集成测试（真实调用 tools/claim_evidence_dir.py，6 个场景 / 59 项断言）
@@ -136,7 +136,7 @@ node tests/approval-evidence-mutation.test.mjs
 # 文本统计的有界性质测试（固定种子 0–9、1217 组，独立参考实现；约 0.2 秒）
 python tests/property_text_stats.py
 
-# 演示项目的单元测试（76 个用例；v0.2 真实流水线交付版，含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
+# 演示项目的单元测试（97 个用例；v0.4-run5 交付版，含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
 # 编排层独立复核（直接验算需求中的边界条件）

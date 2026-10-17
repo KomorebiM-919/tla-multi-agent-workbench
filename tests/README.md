@@ -137,11 +137,11 @@ python tests/property_text_stats.py   # 1217 组检查，约 0.2 秒，exit 0 = 
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 ```
 
-期望结果：**81 个用例全部通过**（`OK`）。这是 2026-10-17 第二次真实流水线（`docs/evidence/v0.2-run2-20261017T133204Z/`）按同一份 `v0.2-demo-input-3` 需求重写后的套件；覆盖该稿 AC-01 至 AC-25 与 BC-01 至 BC-26（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径、退出码、两类调用作用域）。
+期望结果：**97 个用例全部通过**（`OK`）。当前套件来自第五次真实流水线（`docs/run-records/v0.4-run5-20261017T161034Z/`，需求同为 `v0.2-demo-input-3`）的交付版本，覆盖验收条件与边界条件（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径、退出码、两类调用作用域）；逐条映射见该运行审查包里的 `REQUIREMENT-TRACEABILITY.md`。**历史记录**：2026-10-17 第二次真实流水线（`docs/evidence/v0.2-run2-20261017T133204Z/`）交付的是 81 例套件。
 
 - **程序化调用的输出作用域**（2026-10-17 收口新增）：`stdin_text` 显式传入时，成功、`--help`、五类受控错误都必须保持 `stdout`/`stderr` **双流为空**；唯一例外是"非法 `--encoding` 在选输入前就返回 `1`"。命令行侧则保持"成功 4 行 / `--help` 用法 / 错误一行 `error: `"。
 - **新测试确实能抓住旧实现**（2026-10-17 早先那版 86 例套件的对照记录）：把 `git show HEAD:examples/text-stats/text_stats.py` 的旧实现与那版测试放同一目录运行，结果 `Ran 86 tests` / **8 例失败**，全部落在上述静默与编码用例上。
-- **v0.2 套件的变异检查**（正式工具：`python tests/mutation-text-stats.py`）：把当前 81 例套件分别对准三个重新引入旧行为的变异体——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 5 例失败（4 例命中 `silent` 关键词）；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 3 例失败（2 例命中 `encoding` 关键词）。基线对未变异实现 81/81 通过，说明这三处假 PASS 仍被回归锁住。
+- **v0.2 套件的变异检查**（正式工具：`python tests/mutation-text-stats.py`）：把 run2 交付的那版 81 例套件分别对准三个重新引入旧行为的变异体（工具总是对准 `examples/text-stats/` 的**当前**套件，下面的数字是 2026-10-17 那次记录的）——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 5 例失败（4 例命中 `silent` 关键词）；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 3 例失败（2 例命中 `encoding` 关键词）。基线对未变异实现 81/81 通过，说明这三处假 PASS 仍被回归锁住。
 - **"被抓住"的判据从固定用例名改为行为关键词**（2026-10-17 run2 收口）：旧判据要求失败用例名以 run1 那套名字（`test_ac12_…`/`test_ac09_…`/`test_bc14_…`）开头，而用例名由交付方自己起；run2 交付的是 `test_ac15_…`/`test_ac16_…`/`test_bc13_…`，于是三个变异体明明都被杀掉，报告却写"命中目标=0"、整步 `exit=1`。现在判据是"套件失败 **且** 至少一个失败用例名命中该变异体的行为关键词（`name_hint`）"，理由与边界写在 `tests/mutation-text-stats.py` 的 `matched_failures` 文档字符串里，`tests/test_mutation_gate.py` 用 run2 的真实用例名把这个判据钉住（含"提示不得退回 `test_` 固定名"的断言）。
 - **独立行为探针**（正式工具：`python tests/probe-text-stats-requirement.py`）：按需求原文独立推导期望，**不 import 交付测试**、
   不读交付实现之外的判定逻辑，当前 **180 项**（文本层 46、程序化层、命令行层、交付文件层）。它和交付套件是两条独立证据，
