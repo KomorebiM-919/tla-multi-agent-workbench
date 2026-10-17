@@ -1,0 +1,16 @@
+f2bc0d879ffff04ada8cb4885204fd9a1fec172ddab60fc5122b4d7d1f3f0796  docs/evidence/v0.3-run3-20261017T151029Z/.run-owner.json
+d83ac609f47518e78fba47533cfd32872144db6e45030781daf103a676abf740  docs/evidence/v0.3-run3-20261017T151029Z/cache-before.json
+c775ba4d82c8a5e63705f3b197c08ffc42dfb118b8bdff9f3117bb1c12e51549  docs/evidence/v0.3-run3-20261017T151029Z/cache-postrun.json
+4d1384d0c1ef1ae775d3c544e902874d38e214805388744f8d246140f9f46186  docs/evidence/v0.3-run3-20261017T151029Z/coding-report.json
+ccc20aa30140c1e2a7ec5fe8addce4a28a9a444a472476d33397d78f49a0436f  docs/evidence/v0.3-run3-20261017T151029Z/preflight.json
+385e0346dcd23513bc23c11ba0efffbb912abf27faa8028d0a4e5bef569f850e  docs/evidence/v0.3-run3-20261017T151029Z/requirement.json
+84fd48c2fd33947359102027efc518c3472a2cf2edbfc07ac64c237aa24d28e1  docs/evidence/v0.3-run3-20261017T151029Z/verify.json
+7868aab1b2ced8a62ec803e96321d94bd6402a155a8e3fc113a054eca0dccc87  docs/run-records/v0.3-run3-20261017T151029Z/README.md
+fdbde139da08320a6f5849dc076d468a8280546850ab3c7f434030469b571020  docs/run-records/v0.3-run3-20261017T151029Z/cache-boundary.json
+31d2d7dc3b762c90e5fac2abf2118c189a23b28f2a08187c114096a1c7e3a8d8  docs/run-records/v0.3-run3-20261017T151029Z/delivery.diff
+c3102945979a735c3c54dbfdac959134d7d2e3a91706b9b4ff53e8de6cc5bc20  docs/run-records/v0.3-run3-20261017T151029Z/native-events.json
+583e8a08ddd0e9403707b2ed84ef5803258e580fc7851330850f71df2b08330b  docs/run-records/v0.3-run3-20261017T151029Z/run-aborted.md
+2851aa82e6c98f86b5dba820391b5c64363b2cac3290a5f228e84b773c4e216c  docs/run-records/v0.3-run3-20261017T151029Z/usage/declared-budget.json
+34f6e323ac357729e5f5862eba5ace77951382c7b2324aad5e0ac3ec3680ebe4  docs/run-records/v0.3-run3-20261017T151029Z/usage/extraction-metadata.json
+91dc88763fa5af08b739697ee122485032d1aa4d6eb61d12ed4d2af104f850d9  docs/run-records/v0.3-run3-20261017T151029Z/usage/usage-report.json
+5766ccc3fb0791691b4b458cbe18f825c6c7998be0749ee28b660b186de2c481  docs/run-records/v0.3-run3-20261017T151029Z/workflow-script-at-run.js

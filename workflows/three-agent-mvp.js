@@ -726,6 +726,29 @@ function validateRunConfig(rawArgs, startupNowMs) {
   // 拦在启动前会让"预算不足"变成参数错误、掩盖真实的限额语义；
   // 这里让它在**启动前检查**处按预算中止，并留下"第 N 次未启动"的记录（可测试、可审计）。
 
+  // 内联脚本指纹自检（可选）：脚本必须以纯文本内联进 workflow 调用（脚本没有文件系统 API），
+  // 逐字转录 2000+ 行时可能漏掉一行（v0.3-run3 就漏了 REVIEW_SCHEMA 里 `items` 的 type，
+  // 宿主在第 5 次调用前以 schema 不合法拒绝，白花了 4 次调用）。
+  // 因此允许把 `tests/script-fingerprint.mjs` 生成的期望指纹作为 args.selfCheck 传入：
+  // 每次调用前比对提示词与 schema 的指纹，不一致就在**启动该子代理之前**中止。
+  let selfCheck = null;
+  if (cfg.selfCheck !== undefined) {
+    if (!isObject(cfg.selfCheck)) {
+      errors.push('selfCheck 非法（必须是 { "<label>": { "prompt": "...", "schema": "..." } } 对象）');
+    } else {
+      const badKeys = Object.keys(cfg.selfCheck).filter(function (key) {
+        const entry = cfg.selfCheck[key];
+        return !isObject(entry) || asString(entry.prompt) === '' || asString(entry.schema) === '';
+      });
+      if (badKeys.length > 0) {
+        errors.push('selfCheck 的条目必须同时给出 prompt 与 schema 指纹，以下条目不合法：' + badKeys.join(', '));
+      } else {
+        selfCheck = cfg.selfCheck;
+      }
+    }
+  }
+  const selfCheckRequired = cfg.selfCheckRequired === true;
+
   let runStartedAt = null;
   if (cfg.runStartedAt !== undefined) {
     const parsedStarted = parseIsoTimestamp(cfg.runStartedAt);
@@ -800,7 +823,9 @@ function validateRunConfig(rawArgs, startupNowMs) {
     maxCodingAttempts: maxCodingAttempts,
     maxAgentCalls: maxAgentCalls,
     cacheBaseline: cacheBaseline,
-    runStartedAt: runStartedAt
+    runStartedAt: runStartedAt,
+    selfCheck: selfCheck,
+    selfCheckRequired: selfCheckRequired
   };
 
   if (errors.length > 0) { return { ok: false, errors: errors, config: config }; }
@@ -1859,13 +1884,68 @@ function budgetFailure(marker) {
     });
 }
 
+// ---------------------------------------------------------------- 内联脚本指纹自检
+
+/**
+ * 轻量文本指纹：FNV-1a 32 位 + djb2 32 位 + 字符数，用 `-` 连接。
+ * 用途只有一个：发现"内联进 workflow 调用的脚本文本与仓库文件不一致"（漏行、错行、粘贴走样）。
+ * 它不是密码学校验（能被构造碰撞），也不用于安全判定——安全判定全部靠文件哈希与原始输出。
+ * 期望值由 `node tests/script-fingerprint.mjs` 从仓库文件生成。
+ */
+function driftHash(text) {
+  const value = typeof text === 'string' ? text : String(text);
+  let h1 = 2166136261;
+  let h2 = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 16777619) >>> 0;
+    h2 = (Math.imul(h2, 33) + code) >>> 0;
+  }
+  return h1.toString(16) + '-' + h2.toString(16) + '-' + value.length.toString(16);
+}
+
+/** 一次调用的指纹 = 提示词指纹 + schema 指纹（schema 先稳定序列化，避免键序影响）。 */
+function selfCheckValue(prompt, schema) {
+  return { prompt: driftHash(prompt), schema: driftHash(JSON.stringify(schema)) };
+}
+
+/**
+ * 在启动子代理**之前**比对指纹。返回 null 表示可以继续；返回失败结果表示必须中止。
+ * 未提供该 label 的期望值时：`selfCheckRequired` 为真则中止（fail-closed），否则放行（旧调用方兼容）。
+ */
+function checkSelfCheck(label, prompt, schema) {
+  const expected = isObject(C.selfCheck) ? C.selfCheck[label] : null;
+  if (!isObject(expected)) {
+    if (C.selfCheckRequired === true) {
+      return failure('SCRIPT_DRIFT', '本次运行要求逐项比对脚本指纹，但 args.selfCheck 缺少 ' + JSON.stringify(label) + ' 的期望值',
+        { runId: C.runId, evidenceDir: C.evidenceDir, label: label });
+    }
+    return null;
+  }
+  const actual = selfCheckValue(prompt, schema);
+  const problems = [];
+  if (asString(expected.prompt) !== actual.prompt) {
+    problems.push('提示词指纹不一致（期望 ' + JSON.stringify(expected.prompt) + '，实际 ' + actual.prompt + '）');
+  }
+  if (asString(expected.schema) !== actual.schema) {
+    problems.push('schema 指纹不一致（期望 ' + JSON.stringify(expected.schema) + '，实际 ' + actual.schema + '）');
+  }
+  if (problems.length === 0) { return null; }
+  log('脚本指纹自检失败（' + label + '）：' + problems.join('；'));
+  return failure('SCRIPT_DRIFT', '内联脚本与仓库文件不一致，已在启动子代理前中止：' + problems.join('；'),
+    { runId: C.runId, evidenceDir: C.evidenceDir, label: label, expected: expected, actual: actual });
+}
+
 // ================================================================ 编排
 
 phaseStatic('preflight');
 log('run_id=' + C.runId + ' | evidence_dir=' + C.evidenceDir + ' | target_dir=' + C.targetDir);
 log('step 1/5: Verifier (preflight) -> ' + artifact(1, 'preflight'));
 
-const preflight = await runBudgetedAgent(preflightPrompt(artifact(1, 'preflight'), ownerMarkerPath), {
+const preflightPromptText = preflightPrompt(artifact(1, 'preflight'), ownerMarkerPath);
+const preflightDrift = checkSelfCheck('Verifier (preflight)', preflightPromptText, PREFLIGHT_SCHEMA);
+if (preflightDrift !== null) { return preflightDrift; }
+const preflight = await runBudgetedAgent(preflightPromptText, {
   label: 'Verifier (preflight)',
   phase: 'preflight',
   schema: PREFLIGHT_SCHEMA
@@ -2012,7 +2092,10 @@ log('环境预检通过：repo_root=' + repoRoot + ' | 证据目录状态=' + pr
 phaseStatic('requirement');
 log('step 2/5: Requirement Agent -> ' + artifact(1, 'requirement'));
 
-const requirement = await runBudgetedAgent(requirementPrompt(artifact(1, 'requirement')), {
+const requirementPromptText = requirementPrompt(artifact(1, 'requirement'));
+const requirementDrift = checkSelfCheck('Requirement Agent', requirementPromptText, REQUIREMENT_SCHEMA);
+if (requirementDrift !== null) { return requirementDrift; }
+const requirement = await runBudgetedAgent(requirementPromptText, {
   label: 'Requirement Agent',
   phase: 'requirement',
   schema: REQUIREMENT_SCHEMA
@@ -2064,8 +2147,13 @@ while (attempt <= C.maxCodingAttempts) {
   phaseStatic('coding' + (attempt > 1 ? '-revision-' + attempt : ''));
   log('step 3/5: Coding Agent' + revTag + ' -> ' + artifact(attempt, 'coding-report'));
 
-  const codingReport = await runBudgetedAgent(codingPrompt(attempt, previousReview), {
-    label: 'Coding Agent' + revTag,
+  const codingLabel = 'Coding Agent' + revTag;
+  const codingPromptText = codingPrompt(attempt, previousReview);
+  const codingDrift = checkSelfCheck(codingLabel, codingPromptText, CODING_SCHEMA);
+  if (codingDrift !== null) { return codingDrift; }
+
+  const codingReport = await runBudgetedAgent(codingPromptText, {
+    label: codingLabel,
     phase: 'coding' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: CODING_SCHEMA
   });
@@ -2092,8 +2180,13 @@ while (attempt <= C.maxCodingAttempts) {
   phaseStatic('verify' + (attempt > 1 ? '-revision-' + attempt : ''));
   log('step 4/5: Verifier (verify)' + revTag + ' -> ' + artifact(attempt, 'verify'));
 
-  const verification = await runBudgetedAgent(verifyPrompt(artifact(attempt, 'verify')), {
-    label: 'Verifier (verify)' + revTag,
+  const verifyLabel = 'Verifier (verify)' + revTag;
+  const verifyPromptText = verifyPrompt(artifact(attempt, 'verify'));
+  const verifyDrift = checkSelfCheck(verifyLabel, verifyPromptText, VERIFY_SCHEMA);
+  if (verifyDrift !== null) { return verifyDrift; }
+
+  const verification = await runBudgetedAgent(verifyPromptText, {
+    label: verifyLabel,
     phase: 'verify' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: VERIFY_SCHEMA
   });
@@ -2110,8 +2203,13 @@ while (attempt <= C.maxCodingAttempts) {
   phaseStatic('review' + (attempt > 1 ? '-revision-' + attempt : ''));
   log('step 5/5: Review Agent' + revTag + ' -> ' + artifact(attempt, 'review'));
 
-  const review = await runBudgetedAgent(reviewPrompt(attempt, codingReport, verification, artifact(attempt, 'review')), {
-    label: 'Review Agent' + revTag,
+  const reviewLabel = 'Review Agent' + revTag;
+  const reviewPromptText = reviewPrompt(attempt, codingReport, verification, artifact(attempt, 'review'));
+  const reviewDrift = checkSelfCheck(reviewLabel, reviewPromptText, REVIEW_SCHEMA);
+  if (reviewDrift !== null) { return reviewDrift; }
+
+  const review = await runBudgetedAgent(reviewPromptText, {
+    label: reviewLabel,
     phase: 'review' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: REVIEW_SCHEMA
   });
@@ -2223,6 +2321,12 @@ return {
   // 命令与执行环境分开记录：环境不改变规范化命令本身，也不放开任意 shell。
   testEnvironment: testEnvironment(),
   testExecutionCommand: executionTestCommand(C.testCommand),
+  // 内联脚本指纹自检的结果范围：enabled=true 时，每次调用前都逐项比对了提示词与 schema。
+  scriptSelfCheck: {
+    enabled: isObject(C.selfCheck),
+    required: C.selfCheckRequired === true,
+    labels: isObject(C.selfCheck) ? Object.keys(C.selfCheck).sort() : []
+  },
   maxCodingAttempts: C.maxCodingAttempts,
   // 调用预算与实际启动记录：预算在每次启动前检查，台账是"实际启动了几次"的权威记录。
   // 这里能强制限制的是"启动多少次子代理"，不能限制单个子代理内部的 token 消耗。

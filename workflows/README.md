@@ -70,10 +70,16 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 `BYTECODE_CACHE_CHANGED_ACROSS_RUN`、`BYTECODE_CACHE_WRITTEN`、`BYTECODE_ENV_NOT_APPLIED`、`BYTECODE_SCOPE_UNMEASURED`、
 `REQUIREMENT_CONFLICT`、`PREFLIGHT_PROBLEMS`、`PATH_NOT_NORMALIZED`、`PATH_TARGET_MISMATCH`、`TARGET_DIR_OUTSIDE_REPO`、`LINK_ESCAPE`、
 `EVIDENCE_NOT_CLAIMED`、`EVIDENCE_EXISTS`、`PREFLIGHT_FAILED`、`NO_ATTEMPT`、`INVALID_ARGS`、
-`INVALID_TIMESTAMP`、`PROMPT_MISSING`、`REQUIREMENT_OUTPUT_INVALID`、`REQUIREMENT_IDS_INVALID`、`AGENT_CALL_BUDGET_EXCEEDED`；轮次用尽时前缀 `MAX_ATTEMPTS_`。
+`INVALID_TIMESTAMP`、`PROMPT_MISSING`、`REQUIREMENT_OUTPUT_INVALID`、`REQUIREMENT_IDS_INVALID`、`AGENT_CALL_BUDGET_EXCEEDED`、
+`SCRIPT_DRIFT`；轮次用尽时前缀 `MAX_ATTEMPTS_`。
 
 `AGENT_CALL_BUDGET_EXCEEDED` 的含义是"**下一次调用没有启动**"：返回值 `agentCallBudget.calls` 的最后一项 `started: false`，
 `attempted` 比 `started` 多 1——这样"第 N+1 次没有发生"是可验证的事实，而不是靠事后把调用次数加起来推断。
+
+`SCRIPT_DRIFT` 的含义是"**内联脚本与仓库文件不一致，已在启动该子代理之前中止**"：脚本必须以纯文本内联进 `workflow` 调用
+（脚本没有文件系统 API，读不到仓库文件），2000+ 行逐字转录可能漏行——`v0.3-run3` 就漏了 `REVIEW_SCHEMA` 里 `issues.items.type`，
+宿主在第 5 次调用前以"schema 不在支持子集内"拒绝，4 次调用白花。把 `node tests/script-fingerprint.mjs` 的输出作为 `args.selfCheck`
+传入后，每次调用前都比对提示词与 schema 的指纹，漂移在**花钱之前**中止（返回值 `scriptSelfCheck` 说明是否启用）。
 
 ### 输入（`args`）
 
@@ -93,7 +99,9 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
     "maxCodingAttempts": 2,
     "maxAgentCalls": 8,
     "cacheBaseline": []
-  }
+  },
+  "selfCheck": { "<label>": { "prompt": "<driftHash>", "schema": "<driftHash>" } },
+  "selfCheckRequired": true
 }
 ```
 
@@ -113,6 +121,8 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 | `task.testCommand` | 默认由 `targetDir` 推导为 `python -m unittest discover -s <targetDir> -p "test_*.py"`；显式传入时**只接受该规范命令（可加 `-v`）或带固定环境前缀的同一命令**（`$env:PYTHONDONTWRITEBYTECODE = '1'; ` + 规范命令），任意其他 shell 命令一律拒绝 |
 | `task.maxCodingAttempts` | 1–5 的整数；0、小数、字符串、超大值一律 `INVALID_ARGS` |
 | `task.maxAgentCalls` | 可选，子代理调用**硬上限**：1–32 的整数，默认 8；0、小数、字符串、超大值 ⇒ `INVALID_ARGS`。检查发生在**每次调用启动前**，到上限就返回 `AGENT_CALL_BUDGET_EXCEEDED` 并中止（不会"先跑完再算账"）。注意：它限制的是**调用次数**，单个子代理内部的 token 消耗无法由编排层硬限制 |
+| `selfCheck` | 可选，`node tests/script-fingerprint.mjs` 打印的 `{ "<label>": { "prompt", "schema" } }`；每次调用前比对，不一致即 `SCRIPT_DRIFT`（在启动该子代理之前中止，不花钱）。条目必须是含 `prompt` 与 `schema` 两个非空字符串的对象，否则 `INVALID_ARGS` |
+| `selfCheckRequired` | 可选，布尔；为 `true` 时缺少某个 label 的期望指纹也判 `SCRIPT_DRIFT`（fail-closed），为 `false`（默认）时未提供 `selfCheck` 按旧方式运行（返回 `scriptSelfCheck.enabled: false`） |
 | `task.cacheBaseline` | **必填**数组：启动前实测的 `<targetDir>/__pycache__` 清单（`path`/`bytes`/`mtime_ms`/`sha256`）；目录不存在传 `[]`；缺失或条目不合法 ⇒ `INVALID_ARGS` |
 | `runStartedAt` | 可选；必须是**合法的、带时区的 ISO-8601 日历时间**（`2026-02-30`、`25:00`、`+25:00` 一律非法 ⇒ `INVALID_ARGS`），且必须与 `runId` 的时间戳同秒；**省略时由 `runId` 的 UTC 时间戳还原**（时间窗门禁不会因为省略该参数而失效）。它还必须是**这次真实运行的起点**：与编排层实际时间相差超过 1 小时即 `INVALID_ARGS`（把 `runId` 与 `runStartedAt` 一起改成旧时间也会被拦下）。子代理产物（preflight / requirement / coding-report / verify / review）的时间戳必须落在运行窗口（默认 6 小时，含 60 秒时钟偏差容差）内且**不得晚于编排层当前时间**，否则 `INVALID_TIMESTAMP`（防止用占位时间或未来时间冒充真实记录） |
 
@@ -135,7 +145,7 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 
 ### 输出
 
-结构化运行结果：`{ ok, status, verdict, verdictScope, verdictMeaning, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, cacheBaseline, cacheDirPrefix, maxCodingAttempts, maxAgentCalls, agentCallBudget, postRunCacheSnapshot, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
+结构化运行结果：`{ ok, status, verdict, verdictScope, verdictMeaning, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, scriptSelfCheck, cacheBaseline, cacheDirPrefix, maxCodingAttempts, maxAgentCalls, agentCallBudget, postRunCacheSnapshot, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
 `verdict` 只有 `PROVISIONAL_OK` / `PROVISIONAL_FAIL` 两种取值，`verdictScope` 固定 `provisional-in-run`——**运行内暂定结果不是最终判决**，
 最终缓存边界由外层工具给出（见 `tests/verify-cache-boundary.py`）。
 每一轮的 `codingReport` / `verification` / `review` 与编排层判定都挂在该轮的 `attemptsDetail[n]` 下（没有 `codingReports` 之类的顶层键）。
@@ -143,6 +153,9 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 `agentCallBudget` 是本次运行的**统一调用账本**：`{ limit, started, attempted, calls: [{ index, label, phase, started }], limits }`。
 它把预检、需求、每一轮编码/验证/审核、以及任何重试都算在同一本账上——`started: false` 的那一项就是"被预算拦住、没有启动"的调用。
 `limits` 字段固定写明"调用次数可硬限制；单个子代理内部的 token 消耗无法由编排层硬限制"。
+`scriptSelfCheck` 是本次运行的**内联脚本指纹自检范围**：`{ enabled, required, labels }`。
+`enabled: true` 时每次调用的提示词与 schema 都与 `args.selfCheck` 逐项比对过；`enabled: false` 时要看清"脚本指纹未固定"这一事实，
+不要把"运行成功"读成"内联脚本与仓库文件一致"（后者还要靠 `tests/extract-native-events.mjs` 的 `invocation.scriptMatchesRepo` 事后核对）。
 `postRunCacheSnapshot` 声明运行结束后必须补采的一次性动作（`python tests/collect-cache-state.py --run-id <runId> --snapshot-label cache-postrun`，写 `cache-postrun.json`），
 因为工作流脚本没有文件系统 API，读不到文件指纹。**补采必须被消费**：外层用
 `python tests/verify-cache-boundary.py --run-id <runId> --evidence-dir <证据目录> --baseline <cache-before.json> --postrun <cache-postrun.json> --out <判定.json>`

@@ -264,9 +264,14 @@ export async function runWith(plan, args, options) {
   }
   const calls = [];
   const logs = [];
+  // 可选的调用捕获：记录每次调用收到的提示词与 schema（供 tests/script-fingerprint.mjs 计算指纹）。
+  const captured = Array.isArray(opts.capture) ? opts.capture : null;
   const agent = async function (prompt, opts) {
     const label = opts && typeof opts.label === 'string' ? opts.label : '(无 label)';
     calls.push(label);
+    if (captured !== null) {
+      captured.push({ label: label, phase: opts.phase, prompt: prompt, schema: opts.schema });
+    }
     const key = pickKey(label);
     const responder = plan[key];
     if (typeof responder !== 'function') {

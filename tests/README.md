@@ -255,6 +255,23 @@ node tests/extract-usage-report.mjs `
   只保留会话 id；易变元数据里也不再写本机 `cwd` 绝对路径（改为工作区名字）。`usage-report.json` 与时间无关，两次运行
   逐字节相同（实测 sha256 一致），`extraction-metadata.json` 才带提取时间。
 
+### 1i. 内联脚本指纹自检（0 次模型调用）
+
+脚本以**纯文本**内联进 `workflow` 调用（脚本没有文件系统 API，读不到仓库文件），2000+ 行逐字转录可能漏行：
+`v0.3-run3` 就漏了 `REVIEW_SCHEMA` 里 `issues.items.type`，宿主在第 5 次调用前以"schema 不在支持子集内"拒绝，
+4 次调用白花（缓存边界仍是 `CLEAN`，但本次运行没有产出审核结论）。
+
+- `node tests/script-fingerprint.mjs`：跑一次两轮模拟（8 次调用：预检 / 需求 / 编码 / 验证 / 审核 + 编码 / 验证 / 审核修订），
+  采集每次调用收到的**提示词**与 **schema**，输出 `{ "<label>": { "prompt": "<driftHash>", "schema": "<driftHash>" } }`，
+  直接作为 `args.selfCheck` 传入即可在每次调用**启动前**比对，不一致返回 `SCRIPT_DRIFT`。
+- `node tests/script-fingerprint.mjs --check`：4 项自检——正确指纹必须通过；篡改 `Review Agent` 的 schema 指纹必须
+  只发出 4 次调用（Review 未启动）；`selfCheckRequired: true` 但没给指纹必须 0 次调用即中止；不提供 `selfCheck` 的旧方式仍可用
+  且返回值如实写 `scriptSelfCheck.enabled: false`。
+- 指纹算法（`driftHash` = FNV-1a 32 位 + djb2 32 位 + 字符数）在脚本与测试里**各实现一次**：两份实现对同一文本必须给出同一结果，
+  这本身就是一条被断言的性质；它只用于发现转录漂移，不是密码学校验，不参与安全判定。
+- 局限：`selfCheck` 只覆盖"提示词 + schema"，判定逻辑（`judgeAttempt` 等）的转录漂移仍要靠
+  `tests/extract-native-events.mjs` 的 `invocation.scriptMatchesRepo` 事后核对，以及运行后的独立复核。
+
 ### 3. 编排层独立复核
 
 编排层（不是三个角色）另行编写了独立复核脚本，直接对交付实现验算需求文件中的边界条件与验收口径，并静态检查实现是否只用标准库：
