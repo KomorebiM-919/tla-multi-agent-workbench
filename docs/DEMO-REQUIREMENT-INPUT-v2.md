@@ -1,5 +1,7 @@
 # V0.1 演示任务需求输入（候选稿 v2）
 
+> **状态**：已被 [`v0.2-demo-input-3`](DEMO-REQUIREMENT-INPUT-v3.md) 取代（v3 只收口 R-07 / R-13 / R-29 / R-33 的措辞）。本文件按原样保留，供逐字对照，不再修改。
+
 > **版本**：`v0.2-demo-input-2`（候选，**尚未批准**）
 > **日期**：2026-10-17
 > **取代**：`v0.2-demo-input-1`（`docs/DEMO-REQUIREMENT-INPUT.md`，保留原文件不改写）。
