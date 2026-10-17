@@ -101,9 +101,12 @@
 
 ### 3.6 观察：并发/重复执行
 
-`tools/claim_evidence_dir.py` 的重复认领（marker 已存在 → 退出码 10）与既有回归 `tests/test_claim_evidence_dir.py`
-（11 用例）已覆盖；本轮未做真并发压测（两个进程同时认领同一目录的竞争窗口未被实验覆盖）。
-**未证明**"并发认领绝不会双成功"，只证明"顺序重复执行被拒绝"。
+`tools/claim_evidence_dir.py` 的重复认领（marker 已存在 → 退出码 10）既有回归 `tests/test_claim_evidence_dir.py`
+（11 用例）**已经包含 8 个进程同时认领同一目录的用例：只有一个成功，其余退出码 10**
+（见 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md:152`）。
+所以"并发认领会双成功"这一点已有实验覆盖；**未做的是额外压力测试**（更长时间、更多进程、跨机器、断网等情况），
+这两件事不能混为一谈——本文档早先写成"并发窗口没有实验覆盖"是错的，已在此更正。
+仍然**未证明**的是"任意调度下绝不双成功"：已有用例只覆盖 8 进程这一种竞争形态。
 
 ### 3.7 观察：指纹与配置的绑定
 
@@ -116,7 +119,13 @@
 
 - 参考实现**独立编写**（按字符扫描切行、扫描式词计数），不 import 生产函数自证正确；
 - 固定种子 `0–9`、每种子 120 组随机输入 + 16 条固定示例 + 1 条 200000 字符长文本 = **1217 组**，墙钟上限 60 秒；
-- 校验已批准口径 RB-1 – RB-6 与确定性质（四个计数非负、`non_empty_line_count <= line_count`、归一化幂等）；
+- **证明范围分两层**：(A) 16 条固定示例直接断言已批准口径 RB-2/RB-3/RB-4/RB-6 的可观察结果；
+  (B) 其余 1201 组是"生产实现与独立参考实现一致"的检查，**其中包含尚未逐条批准的规则**（单词正则形状、
+  连接符集合、只剥一个前导 BOM）。这一层不构成对这些规则的批准；
+- 脚本**不覆盖** RB-1（程序化调用静默）与 RB-5（编排层冲突门禁），也不证明 RB-2 的 CLI 输出路径——
+  那些由 `examples/text-stats/test_text_stats.py`、`tests/preflight-claim-integration.test.mjs`、
+  `tests/workflow-logic.test.mjs` 各自提供证据；
+- **不断言"归一化幂等"**：只剥一个前导 BOM 时 `'\ufeff\ufeffabc'` 第二次归一化还会再少一个字符，幂等并不成立；
 - 未批准口径（数字算不算词、词中组合记号）只记录出现次数，不作结论；
 - 失败时缩减为最小反例并打印复现命令。
 
@@ -184,7 +193,7 @@
 
 | 要求 | 实现 | 测试 | 状态 |
 | --- | --- | --- | --- |
-| 判定逻辑（缺证据不得 PASS、事件关联、无副作用边界、日志切帧） | `tools/approval-rejection-evidence.mjs` | 90 断言 / 18 组反向验证 | 已证明（逻辑层） |
+| 判定逻辑（缺证据不得 PASS、事件关联、无副作用边界、日志切帧） | `tools/approval-rejection-evidence.mjs` | 116 断言 / 18 组 v1→v3 + 7 组 v2→v3 反向验证 | 已证明（逻辑层；不含真实审批） |
 | **真实人工拒绝** | — | — | **未执行**（需用户亲自点"拒绝"） |
 | 远端未被改动 | — | — | **未观测**（本轮不联网） |
 
@@ -210,9 +219,72 @@
 ```powershell
 node tests/workflow-logic.test.mjs                       # 85/85、391 断言
 node tests/preflight-claim-integration.test.mjs          # 6/6、59 断言
-node tests/approval-rejection-evidence.test.mjs          # 90/90
-node tests/approval-evidence-mutation.test.mjs           # 18/18
+node tests/approval-rejection-evidence.test.mjs          # 116/116
+node tests/approval-evidence-mutation.test.mjs           # 18/18 + strict 7/7
 python tests/property_text_stats.py                      # 1217 组
 python -m unittest discover -s examples/text-stats -p "test_*.py"   # Ran 81 / OK
 python -m unittest discover -s tests -p "test_*.py"      # Ran 11 / OK
 ```
+
+## 9. 复审修复（2026-10-17 第二轮，离线）
+
+首次审查交上去之后被复审推翻了几处"以为已经证明"的地方。原样记录，因为它们比结论更有用：
+
+### 9.1 六种"缺失值相等"曾被判 PASS
+
+`compareStates` 旧版只在"两边的值都存在且不相等"时报失败，于是下面六种情形全部通过（都在合成夹具上复现过）：
+
+| 情形 | 旧版结果 | v3 结果 |
+| --- | --- | --- |
+| `before.target` 与 `after.target` 都是 `null` | PASS | `TARGET_UNMEASURED` + INCOMPLETE |
+| `target.exists` 两边都是 `null` | PASS | `TARGET_EXISTS_UNMEASURED` |
+| `identity.sessionId` 两边都是 `null` | PASS | `SNAPSHOT_IDENTITY_UNMEASURED` |
+| 两份快照 `sessionId` 相同但不是日志里的会话 | PASS | `SNAPSHOT_SESSION_MISMATCH`（FAIL） |
+| `repo.root` 两边都是 `null` | PASS | `REPO_ROOT_UNMEASURED` |
+| 执行前目标已存在、执行后不存在 | PASS | `TARGET_EXISTED_BEFORE`（FAIL） |
+
+根因是"用相等代替测量"：`undefined === undefined` 被当成"前后一致"。v3 改成**先判是否测到（→ INCOMPLETE），
+再判是否相同（→ FAIL）**，并给每个字段加类型判据（`isMeasuredString/Boolean/Number`）。
+
+### 9.2 审批操作没有被绑定到被观察的目标
+
+旧版只检查"有一次带 marker 的审批被拒绝、有一次工具失败、目标前后都在"，**没有核对被审批的命令是什么**，
+所以"审批一次无害写入、快照却检查另一个文件"也能通过。v3 引入规范命令契约：
+
+```
+Set-Content -LiteralPath '<target>' -Value '<marker>' -Encoding ascii -NoNewline
+```
+
+`toolCall.command` 必须与该契约逐字一致（规范化只折叠空白、统一分隔符）：不一致 → `APPROVAL_COMMAND_UNBOUND`（FAIL），
+没有 `command` 字段 → `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE，**不**降级成 PASS），`justification` 里没写目标路径 →
+`TARGET_NOT_IN_JUSTIFICATION`。这里刻意**不**解析任意 PowerShell 命令——只是比对一条已知写法，读不懂就判证据不完整。
+
+### 9.3 取证回归在审查环境里 85/90
+
+原因是临时 git 仓库 `git init` 没成功，随后 HEAD、内容范围等五项断言级联失败。v3 的修法不是"跳过"，而是：
+先断言 `git init` 的退出码与 stderr，**前置失败就单独报错并 return**，不把环境问题伪装成产品缺陷；
+临时仓库改到仓库内唯一命名的 `tests/.scratch/` 下（已被 `.gitignore` 忽略），不依赖系统临时目录。
+
+### 9.4 被夸大的证明范围
+
+- 性质测试曾被写成"校验已批准口径 RB-1 – RB-6"，实际它比对的是**完整参考计数**（含未批准的单词正则、连接符、BOM 规则），
+  且**不**覆盖 RB-1（程序化调用）与 RB-5（编排冲突门禁）。现在分 (A) 已批准固定示例 / (B) 实现一致性两层标注。
+- "归一化幂等"曾被写成性质，但只剥一个前导 BOM 时它并不成立（`'\ufeff\ufeffabc'`）。已删除该断言。
+- 并发：认领工具的 11 项既有测试**已含 8 进程并发用例**，"没有实验覆盖"的说法是错的；正确表述是"已有 8 进程覆盖，
+  未做额外压力测试，也未证明任意调度下绝不双成功"（见 §3.6 的更正）。
+- **机器局部判定 ≠ 完整验收**：`machine.verdict = PASS` 只代表日志与快照里那些被测量的字段符合预期；
+  远端未被观测、内容范围有跳过项、真实人工拒绝未发生时，不得宣称"无副作用已完整证明"。
+
+### 9.5 本轮修订后的计数
+
+| 套件 | 命令 | 结果 |
+| --- | --- | --- |
+| 取证回归 | `node tests/approval-rejection-evidence.test.mjs` | 116 断言，exit 0 |
+| 反向验证 | `node tests/approval-evidence-mutation.test.mjs` | 18 组 v1→v3 + 7 组 v2→v3，exit 0 |
+| 工作流逻辑 | `node tests/workflow-logic.test.mjs` | 85/85、391 断言，exit 0 |
+| 认领集成 | `node tests/preflight-claim-integration.test.mjs` | 6/6、59 断言，exit 0 |
+| 性质测试 | `python tests/property_text_stats.py` | 1217 组，exit 0 |
+| 交付单元测试 | `python -m unittest discover -s examples/text-stats -p "test_*.py"` | Ran 81 / OK |
+| 认领工具单元测试 | `python -m unittest discover -s tests -p "test_*.py"` | Ran 11 / OK |
+
+原始输出见 `tests/.scratch/unattended/v3/`。

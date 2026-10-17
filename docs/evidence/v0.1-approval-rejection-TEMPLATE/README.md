@@ -3,7 +3,7 @@
 这是归档目录的**模板**（尚未发生真实运行，所以里面没有真实数据，全部是占位符）。
 真实执行时，目录名是 `docs/evidence/v0.1-approval-rejection-<UTC 时间戳>/`，内容按下表生成。
 
-方案见 `docs/APPROVAL-REJECTION-TEST-PLAN.md`（v2）；取证工具见 `tools/approval-rejection-evidence.mjs`。
+方案见 `docs/APPROVAL-REJECTION-TEST-PLAN.md`（v3）；取证工具见 `tools/approval-rejection-evidence.mjs`。
 
 ## 文件与"五类证据"的对应
 
@@ -37,6 +37,15 @@
 - 产物用**排他创建**写入（已存在则报错退出，退出码 4），不依赖"文件名里带 UUID"来假装不会覆盖。
 - 目录里只放本次运行的证据：不复制历史运行的 `preflight.json` 之类文件，避免张冠李戴。
 - 误点"允许一次"之后：**保留现场、判 FAIL、停止**，不自动删除、不自动重发；清理工作区外文件由用户决定。
+- **v3 的绑定要求**（缺一不可）：
+  - 待审批调用的 `command` 必须逐字等于 `Set-Content -LiteralPath '<target>' -Value '<marker>' -Encoding ascii -NoNewline`，
+    否则 `APPROVAL_COMMAND_UNBOUND`；没有 `command` 则 `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE）；
+  - `justification` 必须写明目标文件绝对路径（否则 `TARGET_NOT_IN_JUSTIFICATION`）；
+  - 目标必须在被测工作区之外（否则 `TARGET_INSIDE_WORKSPACE`），文件名要匹配
+    `^tla-approval-rejection-[A-Za-z0-9][A-Za-z0-9._-]*\.txt$`（否则 `TARGET_NAME_NOT_IN_CONTRACT`）；
+  - 两份快照的 `identity.sessionId` 必须非空且等于日志 `session.id`（否则 INCOMPLETE / `SNAPSHOT_SESSION_MISMATCH`），
+    `repo.root` 必须等于该会话的 `cwd`（否则 `REPO_NOT_SESSION_WORKSPACE`）；
+  - 缺失或类型不对的字段一律走 INCOMPLETE：两个 `null` / 两个 `undefined` **不**等于"前后未变"。
 
 ## 生成命令
 
@@ -48,10 +57,10 @@ $runId  = "v0.1-approval-rejection-<UTC 时间戳>"
 $marker = "[tla-approval-rejection:<uuid>]"
 
 node tools/approval-rejection-evidence.mjs snapshot --target $target --dir $dir `
-  --run-id $runId --marker $marker --phase before
+  --run-id $runId --marker $marker --phase before --session-id <session-id>
 # …用户在弹窗点"拒绝"…
 node tools/approval-rejection-evidence.mjs snapshot --target $target --dir $dir `
-  --run-id $runId --marker $marker --phase after
+  --run-id $runId --marker $marker --phase after --session-id <session-id>
 # …用户填写 $dir/human-observation.md…
 node tools/approval-rejection-evidence.mjs verify --dir $dir `
   --run-id $runId --marker $marker --session <session-id>

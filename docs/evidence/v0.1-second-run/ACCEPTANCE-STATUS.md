@@ -376,3 +376,51 @@ run 6 需求 AC-10（`docs/evidence/v0.1-run6-20261016T154400Z/requirement.json:
 
 `[C02]` → `[C03]` → `[C04]` → `[C05]`（详见离线审查文档 §0）。
 `docs/evidence/` 下本轮只更新了本文件，历史 JSON 与输出文件零改动。
+
+## 13. 复审修复（2026-10-17 第三窗口，离线，**仍未执行真实审批**）
+
+第 11、12 节交上去之后，复审独立复现出两处"判据不够硬"的地方，本节记录修复。
+边界与前面几节相同：**没有触发任何真实审批、没有跑真实模型子代理、没有联网、没有 Push、没有改 PR**。
+
+### 13.1 复审复现出的问题与修复
+
+| 复审复现 | 旧版结果 | 修复后 |
+| --- | --- | --- |
+| `before.target` / `after.target` 都是 `null` | PASS | `TARGET_UNMEASURED` + INCOMPLETE |
+| `target.exists` 两边都是 `null` | PASS | `TARGET_EXISTS_UNMEASURED` |
+| `identity.sessionId` 两边都是 `null` | PASS | `SNAPSHOT_IDENTITY_UNMEASURED` |
+| 两份快照 `sessionId` 相同、但属于**另一个**会话 | PASS | `SNAPSHOT_SESSION_MISMATCH`（FAIL） |
+| `repo.root` 两边都是 `null` | PASS | `REPO_ROOT_UNMEASURED` |
+| 执行前目标已存在、执行后不存在 | PASS | `TARGET_EXISTED_BEFORE`（FAIL） |
+| 被审批的命令与快照检查的文件**不是同一个** | PASS | `APPROVAL_COMMAND_UNBOUND`（FAIL）；命令缺失 ⇒ `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE） |
+
+机制上只有两条改动：① `compareStates` 从"值相等即未变"改为"**先判是否测到**（缺失/类型不符 ⇒ INCOMPLETE），
+**再判是否相同**（⇒ FAIL）"；② 新增**规范命令契约**（`Set-Content -LiteralPath '<target>' -Value '<marker>' -Encoding ascii -NoNewline`），
+`toolCall.command` 必须逐字匹配，`justification` 必须含目标路径，目标必须在工作区外且名字符合
+`^tla-approval-rejection-[A-Za-z0-9][A-Za-z0-9._-]*\.txt$`。刻意不解析任意 PowerShell：读不懂就判证据不完整。
+
+### 13.2 测试与反向验证（全部离线）
+
+| 套件 | 修复前 | 修复后 |
+| --- | --- | --- |
+| `node tests/approval-rejection-evidence.test.mjs` | 90 断言 | **116 断言，exit 0**（新增 6 项缺失值/身份错配 + 5 项命令绑定） |
+| `node tests/approval-evidence-mutation.test.mjs` | 18 组（v1→v2） | **18 组 v1→v3 + 7 组 v2→v3**，`strict: 7/7`，exit 0 |
+| 其余五套 | — | 逻辑 85/391、认领 6/59、性质 1217、交付 81、工具 11，全部 exit 0 |
+
+`tests/.scratch/` 下的临时 git 仓库改为仓库内唯一命名目录，并在 `git init` 后**先断言退出码**，
+前置失败单独报错并 `return`——不再把环境问题级联成五项莫名失败（审查环境那次 85/90 的根因）。
+
+### 13.3 证明范围的更正（本轮）
+
+- 性质测试分两层标注：(A) 16 条固定示例 = 已批准口径；(B) 1201 组 = "生产实现与独立参考实现一致"，
+  **含未批准规则**（单词正则形状、连接符、只剥一个前导 BOM）。它**不**覆盖 RB-1、RB-5，也不证明 RB-2 的 CLI 路径。
+- 删除了"归一化幂等"的说法：只剥一个前导 BOM 时 `'\ufeff\ufeffabc'` 并不幂等。
+- 更正"并发窗口没有实验覆盖"：`tests/test_claim_evidence_dir.py` 的 11 项里**已经包含 8 进程并发用例**
+  （见本文件 `:152`）；未做的只是额外压力测试，也未证明任意调度下绝不双成功。
+- **机器局部判定 ≠ 完整验收**：`machine.verdict = PASS` 只覆盖被测量的字段；远端未观测、内容范围有跳过项、
+  真实人工拒绝未发生时，不得写成"无副作用已完整证明"。
+
+### 13.4 仍然没有改变的事实
+
+人工审批安全拒绝测试**仍未执行**（验收条件 3 未完成）；新版真实模型流水线**未运行**；远端状态**未观测**；
+V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改 PR、未合并。

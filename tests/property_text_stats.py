@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 """有界、可复现的性质测试：用独立参考实现校验交付的文本统计程序。
 
-目的（无人值守加固工作包 C）：
-  * 只校验**已批准**口径（RB-1 – RB-6，见 docs/REQUIREMENT-BASELINE.md）与由此推出的确定性质
-    （计数非负、非空行数不大于总行数等）；
-  * 参考期望在本文件里**独立实现**（按字符扫描），不 import 生产实现的任何函数来"自证正确"，
-    只把生产实现的 count_text() 输出与参考值比对；
+本脚本包含**两类**检查，输出里分开计数，不得混为一谈：
+
+  A. 已批准口径的固定示例（approved）：
+     16 条固定示例的期望值是人工裁定的 RB-2 / RB-3 / RB-4 / RB-6 与相关计数
+     （见 docs/REQUIREMENT-BASELINE.md 与 run 6 的 BC-01/BC-05/BC-08/BC-12），
+     直接写在 FIXED_EXAMPLES 里，不经过参考实现。
+     它**不覆盖** RB-1（显式 stdin_text 时静默返回）、RB-5（AC/BC 冲突编排门禁），
+     也不覆盖 RB-2 的 CLI 输出路径本身——那几项由交付测试、编排回归与认领集成测试提供证据。
+
+  B. 随机输入上的实现一致性（implementation consistency）：
+     参考实现独立按字符扫描，但 `word_count` 的单词正则与连接符集合、`char_count` 的
+     "只剥一个前导 BOM"都仍是**尚未逐条批准**的规则。因此随机部分证明的是"生产实现与这份
+     参考读法一致"，不是"需求已被批准"。
+
   * 随机输入固定种子与用例数，附墙钟超时，失败时缩减为最小反例并给出复现命令；
-  * 未批准的口径不做断言，只统计出现次数（现状记录）。
+  * 未批准的口径（数字算不算词、词中组合记号等）只统计次数，不作正确性结论；
+  * 本脚本不断言"归一化幂等"：只剥一个前导 BOM 的归一化对 "\\ufeff\\ufeffabc" 并不幂等。
 
 运行：python tests/property_text_stats.py
 退出码：0 = 全部通过；1 = 有失败（会打印最小反例与复现命令）。
@@ -240,6 +250,10 @@ def main():
     print("通过：检查 " + str(checked) + " 组（固定示例 " + str(len(FIXED_EXAMPLES)) + " + 随机 " +
           str(len(SEEDS) * CASES_PER_SEED) + " + 长文本 1），种子 " + str(SEEDS) + "，耗时 " +
           format(time.monotonic() - started, ".1f") + " 秒")
+    print("分类：(A) 已批准口径固定示例 " + str(len(FIXED_EXAMPLES)) + " 条；" +
+          "(B) 随机+长文本上的实现一致性 " + str(checked - len(FIXED_EXAMPLES)) + " 组")
+    print("覆盖边界：(A) 不含 RB-1 / RB-5，也不证明 RB-2 的 CLI 输出路径；" +
+          "(B) 的单词正则、连接符与 BOM 归一化仍是未逐条批准的规则。")
     print("未批准口径的现状记录（不作正确性结论）：" + json.dumps(unapproved_notes, ensure_ascii=False))
     return 0
 

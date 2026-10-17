@@ -74,14 +74,16 @@ python -m unittest discover -s tests -p "test_*.py"
 下面两个套件只验证**取证与判定逻辑**，全程不触发审批、不访问网络、不读凭据、不跑真实子代理：
 
 ```powershell
-node tests/approval-rejection-evidence.test.mjs   # 90 断言 / 24 组场景
-node tests/approval-evidence-mutation.test.mjs    # 18 组反向验证用例
+node tests/approval-rejection-evidence.test.mjs   # 116 断言 / 24 组场景
+node tests/approval-evidence-mutation.test.mjs    # 18 组 v1→v3 + 7 组 v2→v3 反向验证
 ```
 
 - `tests/approval-rejection-evidence.test.mjs`：合成事件流 + 合成指纹 + 临时 git 仓库。
   - **日志切帧**：按 RFC 8878 帧结构求帧长，而不是按 zstd 魔数扫——有一个用例手工构造原始块，让**载荷内部**出现 `28 B5 2F FD`（魔数扫描会切成 3 段），结构解析仍得到 2 帧；另有截断尾部、保留块类型、帧头保留位、坏校验和（⇒ `badFrames=1`）、空文件、坏行计数。
   - **事件关联**：唯一 marker、approval id、callId、`toolName`、`sandbox_permissions`、`reason` 前缀与 `justification` 一致、决定与工具结果对应、事件顺序（`call < asked < decided ≤ result`）、重复/歧义/缺失、`never` 只取"调用时刻"生效的策略（决定之后才出现的 `never` 不得污染判定）、子代理会话拒绝。
   - **无副作用四要件**：`git status` 文本相同但工作区内容变了（⇒ `WORKSPACE_CONTENT_CHANGED`）、目标被创建、本地 remote-tracking refs 变化、依赖清单变化、权限未测得（⇒ INCOMPLETE 而不是 PASS）、两个缺失值不算"相等"、快照 `runId`/目标/仓库/身份/时间顺序/标记不一致、同前缀文件已存在。
+  - **缺失值与身份错配（v3 新增 6 项）**：`target` 两边都是 `null`、`target.exists` 两边都是 `null`、`identity.sessionId` 两边都是 `null`、两份快照的会话 id 相同但不是日志里的会话、`repo.root` 两边都是 `null`、执行前目标已存在——六种情形旧版都会 PASS，现在分别判 `TARGET_UNMEASURED` / `TARGET_EXISTS_UNMEASURED` / `SNAPSHOT_IDENTITY_UNMEASURED` / `SNAPSHOT_SESSION_MISMATCH` / `REPO_ROOT_UNMEASURED` / `TARGET_EXISTED_BEFORE`。
+  - **审批操作与目标绑定（v3 新增 5 项）**：命令必须逐字等于规范命令（`APPROVAL_COMMAND_UNBOUND`）、缺命令判 `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE）、命令指向另一个文件（同 marker）、命令里追加别的动作、`justification` 没写目标路径（`TARGET_NOT_IN_JUSTIFICATION`）、目标落在工作区内（`TARGET_INSIDE_WORKSPACE`）、目标名不符合契约（`TARGET_NAME_NOT_IN_CONTRACT`）。
   - **写入与 CLI**：排他创建拒绝覆盖、取证目录被排除在内容指纹之外、`pathKey` 大小写归一、`verify` 的退出码 `0/1/3/4`。
 - `tests/approval-evidence-mutation.test.mjs`：把加固前的判定规则冻结成 `judgeV1` / `compareStatesV1`，同一批 18 个用例同时喂给两版，分类为"误放行 / 误拒绝 / 状态不符 / 无差异"。当前结果：**11 组误放行被 v2 拦下、1 组误拒绝被 v2 修正、3 组理由不符、3 组无差异**（例如权限未测得、HEAD 未测得、`isError` 缺失、空文本、`runId` 不符、时间倒序这些旧版都会 PASS）。
 
@@ -95,9 +97,16 @@ node tests/approval-evidence-mutation.test.mjs    # 18 组反向验证用例
 python tests/property_text_stats.py   # 1217 组检查，约 0.2 秒，exit 0 = 全部通过
 ```
 
-- 只校验**已批准**口径（RB-1 – RB-6，见 `docs/REQUIREMENT-BASELINE.md`）与由此推出的确定性质：
-  四个计数均为非负整数、`non_empty_line_count <= line_count`、归一化幂等；未批准口径（数字算不算词、
-  词中出现组合记号）只统计出现次数、**不作正确性结论**。
+- **证明范围分两层，必须分开看**（脚本 docstring 与末尾输出也这么写）：
+  - (A) **已批准口径**：16 条固定示例直接断言 RB-1 – RB-6 的可观察结果（不经过参考实现）；
+  - (B) **实现一致性**：随机输入上把生产实现的四个计数与脚本内独立参考实现比对，其中**包含尚未逐条批准的规则**
+    （单词正则的具体形状、撇号/连字符连接符、只剥一个前导 BOM）。这一层证明"当前实现与参考实现一致"，
+    **不等于**"这些规则已被需求批准"。
+  - 脚本**不覆盖** RB-1（程序化调用静默）与 RB-5（编排层冲突门禁，那是工作流侧的事），也不证明 RB-2 的 CLI 输出路径；
+    那些分别由 `examples/text-stats/test_text_stats.py`（AC-10/AC-13/BC-15/BC-17 等）、
+    `tests/preflight-claim-integration.test.mjs` 与 `tests/workflow-logic.test.mjs` 提供证据。
+  - 脚本**不断言"归一化幂等"**：参考实现与生产实现都只剥**一个**前导 BOM，`'\ufeff\ufeffabc'` 归一化两次会再少一个字符，
+    幂等性在这条规则下本来就不成立（早先文档里"归一化幂等"的说法已删除）。
 - 参考期望在脚本内**独立实现**（按字符扫描切行、扫描式词计数），不 import 生产函数来自证正确；
   生产实现只作为被比对的一方。
 - 固定种子 `0–9`、每种子 120 组随机输入（字母/数字/空白/CR/LF/CRLF/BOM/U+2028/U+2029/`\x0b`/`\x0c`/
