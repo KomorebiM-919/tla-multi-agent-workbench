@@ -1,7 +1,7 @@
 # 07-bytecode-integration
 # command: node tests/bytecode-integration.test.mjs
 # exit code: 0
-# duration: 3.17s
+# duration: 3.2s
 
 运行期写入边界集成测试（真实 python 子进程）
 生产脚本：workflows\three-agent-mvp.js

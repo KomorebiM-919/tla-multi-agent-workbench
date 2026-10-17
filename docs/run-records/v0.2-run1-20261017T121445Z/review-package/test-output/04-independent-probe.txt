@@ -1,7 +1,7 @@
 # 04-independent-probe
 # command: python tests/probe-text-stats-requirement.py
 # exit code: 0
-# duration: 0.8s
+# duration: 0.82s
 
 PASS AC-04 reference_text.keys
 PASS AC-04 reference_text.values

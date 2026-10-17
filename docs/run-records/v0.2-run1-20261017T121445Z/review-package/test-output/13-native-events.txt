@@ -1,7 +1,7 @@
 # 13-native-events
 # command: node tests/extract-native-events.mjs --parent session-3f96bf08-83ae-48d6-a239-0223d4b1c12c --workflow-name tla-v02-run1 --since 2026-10-17T12:00:00Z --evidence-dir docs/evidence/v0.2-run1-20261017T121445Z --script-file docs/run-records/v0.2-run1-20261017T121445Z/workflow-script-at-run.js --out docs/run-records/v0.2-run1-20261017T121445Z/native-events.json
 # exit code: 0
-# duration: 4.84s
+# duration: 4.86s
 
 1  Verifier (preflight)  2026-10-17T12:19:03.681Z → 2026-10-17T12:19:40.592Z  deepseek-flash/deepseek-account  child=95080ad7-47d1-4914-ba2e-1f5b6f033a52
 2  Requirement Agent  2026-10-17T12:19:40.623Z → 2026-10-17T12:22:32.914Z  deepseek-flash/deepseek-account  child=e97396ba-711a-4947-b3a3-b7527a79a06b

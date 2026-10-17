@@ -1,7 +1,7 @@
 # 08-preflight-claim
 # command: node tests/preflight-claim-integration.test.mjs
 # exit code: 0
-# duration: 0.58s
+# duration: 0.61s
 
 认领工具调用方式：直接执行 <user-home>\AppData\Local\Programs\Python\Python313\python.exe（参数数组 + 已打开的文件句柄，不经过 shell）
 预检认领门禁集成测试（真实认领工具 + 编排层门禁）

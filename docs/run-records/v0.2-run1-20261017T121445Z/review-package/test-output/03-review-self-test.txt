@@ -1,10 +1,12 @@
 # 03-review-self-test
 # command: python tests/review-run-evidence.py --self-test
 # exit code: 0
-# duration: 1.9s
+# duration: 2.28s
 
 PASS baseline
 PASS empty_criteria
+PASS criteria_wrong_type
+PASS criteria_check_wrong_type
 PASS duplicate_artifact
 PASS coding_conflict
 PASS verify_conflict
@@ -14,4 +16,4 @@ PASS mapping_missing_clause
 PASS mapping_unknown_id
 PASS mapping_orphan
 
-10/10 ���о߷���Ԥ��
+12/12 ���о߷���Ԥ��

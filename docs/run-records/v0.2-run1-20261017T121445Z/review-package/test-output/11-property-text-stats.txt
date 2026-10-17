@@ -1,7 +1,7 @@
 # 11-property-text-stats
 # command: python tests/property_text_stats.py
 # exit code: 0
-# duration: 0.18s
+# duration: 0.17s
 
 ���� 0���Ѽ�� 136 �飬ʧ�� 0
 ���� 1���Ѽ�� 256 �飬ʧ�� 0

@@ -1,46 +1,46 @@
 {
   "runId": "v0.2-run1-20261017T121445Z",
-  "generatedAt": "2026-10-17T13:10:30Z",
+  "generatedAt": "2026-10-17T13:16:29Z",
   "results": [
     {
       "name": "01-delivery-unit-tests",
       "command": "python -m unittest discover -s examples/text-stats -p test_*.py",
       "exitCode": 0,
-      "durationSeconds": 2.0,
+      "durationSeconds": 2.2,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/01-delivery-unit-tests.txt",
-      "outputSha256": "e46414094b342b02255679d7e6c33557c0d387b19f41abe35eca67564b965875"
+      "outputSha256": "132d6815943579c38a5221f68110f00fb752b7cc8ec6e20e17dd8adeb1696c6b"
     },
     {
       "name": "02-review-run-evidence",
       "command": "python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z --mapping docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json --allow-scope tests/workflow-harness.mjs --allow-scope tests/workflow-logic.test.mjs --allow-scope workflows/three-agent-mvp.js --allow-scope tests/bytecode-integration.test.mjs --allow-scope tests/extract-native-events.mjs --allow-scope tests/mutation-text-stats.py --allow-scope tests/probe-text-stats-requirement.py --allow-scope tests/run-review-suite.py",
       "exitCode": 0,
-      "durationSeconds": 0.34,
+      "durationSeconds": 0.33,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/02-review-run-evidence.txt",
-      "outputSha256": "c70e2784e48e24db4ee8098e7c54243c71c6b54dae901a6d86bf3679d90cdd18"
+      "outputSha256": "bca3c2bed8ddf3e3a49ac4c9d0dc65b12e521e82a997eb11fb3d063efb5db5ee"
     },
     {
       "name": "03-review-self-test",
       "command": "python tests/review-run-evidence.py --self-test",
       "exitCode": 0,
-      "durationSeconds": 1.9,
+      "durationSeconds": 2.28,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/03-review-self-test.txt",
-      "outputSha256": "43d234cb7b1beac54bb14d772eee6a42d45c4740b78368cac4ed0d733d509e08"
+      "outputSha256": "585c3f0f98ab569ade6230f1a6cabe7a4f84da8bbcbeabed8f44d6c32794f084"
     },
     {
       "name": "04-independent-probe",
       "command": "python tests/probe-text-stats-requirement.py",
       "exitCode": 0,
-      "durationSeconds": 0.8,
+      "durationSeconds": 0.82,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/04-independent-probe.txt",
-      "outputSha256": "bec2f6fc1abcf413df259d1272c726772c5e9163792987c00e034c6328303a24"
+      "outputSha256": "93e8e69430c7bc590823b16398a7487f2de714ef66f2c60c4b001c51462b29bf"
     },
     {
       "name": "05-mutation-check",
       "command": "python tests/mutation-text-stats.py",
       "exitCode": 0,
-      "durationSeconds": 8.12,
+      "durationSeconds": 8.13,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/05-mutation-check.txt",
-      "outputSha256": "a951304fff18bd2bc9d099db4bea2878aca9f59aa68a1adc3f5d55d81d3f027e"
+      "outputSha256": "e36333522996563835c69c2faff12bb245516bbf88d6fcd7c9261bec7e7a401f"
     },
     {
       "name": "06-workflow-logic",
@@ -54,25 +54,25 @@
       "name": "07-bytecode-integration",
       "command": "node tests/bytecode-integration.test.mjs",
       "exitCode": 0,
-      "durationSeconds": 3.17,
+      "durationSeconds": 3.2,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/07-bytecode-integration.txt",
-      "outputSha256": "8bc4dfecc96c6e700859b649abe833af9e4699a0567aa0d4fef292ead508c0b4"
+      "outputSha256": "c0daaf0be791585a94416c31c8df514ae05fbbe53bd7d86d62f1f290789a56be"
     },
     {
       "name": "08-preflight-claim",
       "command": "node tests/preflight-claim-integration.test.mjs",
       "exitCode": 0,
-      "durationSeconds": 0.58,
+      "durationSeconds": 0.61,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/08-preflight-claim.txt",
-      "outputSha256": "b9dfd4f991df47ba885d241a53f7c8e602941b3c2a181ce68c6ad4c445b93ca8"
+      "outputSha256": "1604c3ad606d0a61b812b64059e079309a0954566ae87dba63280caba8fbb190"
     },
     {
       "name": "09-approval-evidence",
       "command": "node tests/approval-rejection-evidence.test.mjs",
       "exitCode": 0,
-      "durationSeconds": 2.45,
+      "durationSeconds": 2.47,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/09-approval-evidence.txt",
-      "outputSha256": "c20bab1839c382a5bac21179bcccad45037cd87f5db3a1450ec64b59cc12c0df"
+      "outputSha256": "3226d440c6c49c3111410a8d75391505f520f536e677a2a51f6cec1943b552a0"
     },
     {
       "name": "10-approval-mutation",
@@ -86,25 +86,25 @@
       "name": "11-property-text-stats",
       "command": "python tests/property_text_stats.py",
       "exitCode": 0,
-      "durationSeconds": 0.18,
+      "durationSeconds": 0.17,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/11-property-text-stats.txt",
-      "outputSha256": "f89348aaf31dd1c8562306c8bef5ea82aac995540e5fcabf119dee15ccea64c2"
+      "outputSha256": "1e69274a443004359c41c4d44826df6cd75367650ce74c966cd9e966a946b454"
     },
     {
       "name": "12-tests-unittest",
       "command": "python -m unittest discover -s tests -p test_*.py",
       "exitCode": 0,
-      "durationSeconds": 1.56,
+      "durationSeconds": 1.62,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/12-tests-unittest.txt",
-      "outputSha256": "9a3bd6639b3e109af982f3c19ff52a691218104758b0e3441d204662706018a9"
+      "outputSha256": "f2dcf207d9145383d243719e5abea57a31ee40ef93fc898c6b4d4f12ce47b21d"
     },
     {
       "name": "13-native-events",
       "command": "node tests/extract-native-events.mjs --parent session-3f96bf08-83ae-48d6-a239-0223d4b1c12c --workflow-name tla-v02-run1 --since 2026-10-17T12:00:00Z --evidence-dir docs/evidence/v0.2-run1-20261017T121445Z --script-file docs/run-records/v0.2-run1-20261017T121445Z/workflow-script-at-run.js --out docs/run-records/v0.2-run1-20261017T121445Z/native-events.json",
       "exitCode": 0,
-      "durationSeconds": 4.84,
+      "durationSeconds": 4.86,
       "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/13-native-events.txt",
-      "outputSha256": "fb7f0bfd515605063edb548aadf1be70f15d8d7cb756c870d0334219f4d30138"
+      "outputSha256": "cf873c464fe250b4415fbece56fbd2bd89497e9d620ac3076a849a3d943d6250"
     }
   ],
   "failed": []

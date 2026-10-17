@@ -1,7 +1,7 @@
 # 05-mutation-check
 # command: python tests/mutation-text-stats.py
 # exit code: 0
-# duration: 8.12s
+# duration: 8.13s
 
 PASS baseline | exit=0 failures=0
 PASS quiet_errors_still_write_stderr | ʧ�ܵ�����=3 ����Ŀ��=3

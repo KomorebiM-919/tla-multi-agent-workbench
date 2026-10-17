@@ -45,6 +45,8 @@ ALLOWED_DELIVERY_FILES = (
 )
 # 编排层自己的复核工具：不是交付源码，但也不能默默放过，单独列出供人复核。
 ORCHESTRATOR_TOOLS = ('tests/review-run-evidence.py',)
+# 记录目录：里面的 .js/.py 是运行当时脚本/代码的字节副本，不算交付源码越界。
+RECORD_PREFIXES = ('docs/run-records/', 'docs/evidence/')
 CRITERION_ID_RE = re.compile(r'^\s*([A-Za-z]{2,8}-[A-Za-z0-9]{1,4})')
 RAN_RE = re.compile(r'Ran (\d+) tests? in ')
 FAILED_RE = re.compile(r'(^|\n)FAILED')
@@ -359,8 +361,14 @@ def main(argv=None):
     outside_changed = [path for path in outside_changed if not excluded_by_allow_scope(path)]
     # 编排层在运行后更新状态文档、归档证据是允许的，但必须与交付源码分开统计：
     # 任何 examples/ 下或 .py/.js/.mjs 的越界改动都是硬失败，文档类改动只列出来供人复核。
+    # 例外：docs/run-records/ 与 docs/evidence/ 是"记录"目录，里面出现 .js/.py 是运行当时脚本/代码的
+    # 字节副本（例如 workflow-script-at-run.js），不是交付源码 —— 否则事后归档脚本反而会被判越界。
+    def is_record(path):
+        return path.startswith(RECORD_PREFIXES)
+
     out_of_scope_sources = [path for path in outside_changed
-                            if path.startswith('examples/') or path.endswith(('.py', '.js', '.mjs'))]
+                            if not is_record(path)
+                            and (path.startswith('examples/') or path.endswith(('.py', '.js', '.mjs')))]
     # 编排层自带的复核工具不算交付源码；但不能因此把它当成"自然合规"——它被单独列出，
     # 由人用 `git show` 复核。这是本工具唯一无法自证的类别，必须显式可见。
     orchestrator_tools = [path for path in out_of_scope_sources if path in ORCHESTRATOR_TOOLS]
@@ -387,8 +395,10 @@ def main(argv=None):
                          and not any(path.startswith(prefix) for prefix in allowed_untracked_prefixes)
                          and not excluded_by_allow_scope(path)]
     check('workspace.untracked_within_scope', len(outside_untracked) == 0, ', '.join(outside_untracked))
-    if excluded_untracked:
-        check('workspace.allow_scope_exclusions_untracked', True, ', '.join(excluded_untracked))
+    # 恒定输出这条检查：排除项数量随提交状态变化（未提交时是未跟踪、提交后是已跟踪），
+    # 若省略这条，同一次运行在提交前后检查项总数会不同，报告里的 "N/N" 无法对照。
+    check('workspace.allow_scope_exclusions_untracked', True,
+          ', '.join(excluded_untracked) if excluded_untracked else '（无）')
 
     # ---- 输出
     for item in checks:
