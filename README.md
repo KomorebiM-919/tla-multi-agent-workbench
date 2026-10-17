@@ -82,6 +82,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `docs/DEMO-REQUIREMENT-INPUT-v3.md` | V0.1 演示任务需求输入稿 v3（`v0.2-demo-input-3`，2026-10-17 经 Q1 批准为 `v0.2-run1` 真实流水线的需求原文；取代 v2） |
 | `docs/DEMO-REQUIREMENT-INPUT-v2.md` | v2 候选稿（`v0.2-demo-input-2`，已被 v3 取代，保留供对照） |
 | `docs/DEMO-REQUIREMENT-INPUT.md` | v1 候选稿（`v0.2-demo-input-1`，已被 v2 取代，保留供对照） |
+| `docs/MULTI-MODEL-BUDGET-STUDY.md` | 多模型分工与运行预算：候选需求（R-M01 – R-M13）+ 可行性研究（可直接实现 / 依赖官方接口 / 尚未核实） |
 | `docs/run-records/` | 每次真实运行的批准记录、注入需求原文与执行前检查（与 `docs/evidence/` 的证据分开） |
 | `agents/` | 角色职责说明与提示词（Requirement / Coding / Review / Verifier） |
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |

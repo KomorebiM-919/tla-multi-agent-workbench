@@ -53,6 +53,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - **人工审批的强制拦截覆盖面**：首个 MVP 已把审批的三层区分写入 `docs/ARCHITECTURE.md` §2.1，但「一句提示词即强制拦截」的假设不成立；强制拦截只能来自沙箱 + 审批策略 + 操作自身的审批点，需逐条验证（见 `docs/ARCHITECTURE.md` §7 未验证项 #11）。
 - **需求一致性自检机制改进**（多次复现，仍未根治）：Requirement Agent 的 `consistency_check` 会漏检真实矛盾——第二次漏掉 AC-12 与 BC-12（"stdout 恰好 `True 0 int`" 与 "成功路径恰好 4 行" 不可同时满足），由 Review Agent 独立发现；第四次漏掉自己写出的 BC-03(b) 与 BC-04 空白行示例（`"  \n\t\n"` 是 2 行与 3 行互斥），第五次漏掉 AC-05 的 `char_count` 示例（示例值 6 与它自己的归一化规则算出的 5 互斥），都由 Verifier 与 Review 各自独立捕获。门禁现已能兜住该类冲突（硬失败 `STAGE_REPORTS_REQUIREMENT_CONFLICT`），但**自检本身仍是"声明式"的**：第六次运行虽然通过（自检报 `conflicts: 0`，下游两阶段与编排层独立复核也都未发现矛盾），并不能证明自检真的会做数值交叉验算。已加入的缓解措施是提示词层面的硬要求（每个数值示例必须给出推导、优先沿用原始需求的示例、示例必须与全部规则逐条比对），仍需在后续运行中持续观察（详见 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md` §6 与 `docs/REQUIREMENT-CALIBER.md`）。
 - **需求基线之外的口径仍未裁定**（2026-10-17 新增）：`docs/REQUIREMENT-BASELINE.md` 的 RB-1 – RB-6 只覆盖 P-1 – P-6 六项；run 6 需求中未被引用的条文（清单见该文件 §5.1）以及"V0.1 验收以哪一轮需求文本为准"这个元问题仍需人工裁定，裁定前不得据此宣称验收通过。**2026-10-17 追记**：元问题已用显式批准解决——所有者批准 `v0.2-demo-input-3` 的 R-01 – R-37 作为 `v0.2-run1` 的需求原文（记录见 `docs/run-records/v0.2-run1-20261017T121445Z/approval.md`）；run 6 需求与 RB-1 – RB-6 的关系仍以 `docs/REQUIREMENT-BASELINE.md` 为准。
+- **多模型分工与运行预算的实现未开始（2026-10-17，只登记需求与研究）**：研究稿见 `docs/MULTI-MODEL-BUDGET-STUDY.md`，把候选需求分三类——可直接实现 9 条（用量与模型归因、可复算、白名单比对、观测型预算判定）、依赖官方接口 3 条（预算强制中止、第三方 provider 接入、目录数据）、尚未核实 5 条（货币价格口径、跨 provider 字段一致性、`meta.phases` 的 provider/model 语义、`model/selection` 事件语义、父子会话用量边界）。本轮不含实现、不新增依赖、不产生付费调用。附带的一次只读取证顺带确认：`v0.2-run2` 的 10 个子代理会话共 184 条助手消息、`input 415 664 / output 240 267 / cacheRead 8 117 760 / total 8 773 691` token，且 `totalTokens = input + cacheRead + cacheWrite + output`，父会话累计不能当作运行级用量。
 - **清理交付目录中的残留临时目录**（需仓库所有者执行）：`examples/text-stats/.test-scratch/` 下有 11 个第一次运行遗留的 `tmp*` 目录，其 ACL 拒绝读取与删除，AI 沙箱内无法清理；不影响测试通过（被 `.gitignore` 忽略），但建议在本机非受限终端删除。
 - **后续 V0.1 扩展目标（不取消，但不是首次运行成功的前提）**：增加方案讨论（discussion）与测试（testing）两个角色，构成五角色完整流水线：需求 → 讨论 → 编码 → 审核 → 测试。
 
@@ -73,6 +74,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 ### 功能规划
 
 - 多模型适配：利用 DSH **agent 级** `agentOptions` 覆盖 + `llm-pi-ai` 多 provider 适配器，让不同角色使用不同模型（如讨论用 A 模型、编码用 B 模型）。分工必须基于**已验证的 agent 级模型覆盖机制**；官方已证实 `phase()` 只用于进度展示、Workflow **无 phase 级** provider/model 覆盖，因此**不假定**可按 phase 切换模型。
+- 用量与预算：候选需求与技术可行性见 `docs/MULTI-MODEL-BUDGET-STUDY.md`（R-M01 – R-M13）。研究结论：**观测型**"每个阶段用了什么模型、花了多少 token"可由宿主原生日志复算（已在 `v0.2-run2` 的 10 个子会话上验证，184 条消息全部带 `usage`），今天就能做；**强制型**"超限即中止"没有已核实的接口，不得声称支持；第三方 provider 接入属人工审批范围。
 - 长任务状态管理：优先评估 DSH 会话持久化与续跑（JSONL+Zstd、`resume`/`fork`）与 Goal 机制（跨轮次持久目标）；当且仅当需要图节点级检查点/时间回溯/图内 HITL 时才考虑引入 LangGraph Checkpointer。
 - 若采用 LangGraph（路线 B）：通过官方 Python SDK（`deepseek-harness-sdk`，stdio JSON-RPC：`session/prompt`→`session/wait`→`session/resume`）或 `dsh headless --json --session-id` 桥接 DSH 的 Agent 执行能力；启用条件见 `docs/ARCHITECTURE.md` 第 5 节。
 - **ChatGPT Plus / Codex 兼容性验证（独立验收项）**：调查并**实际验证**经官方 `openai-codex` OAuth 路由或 `subagent-codex` 后端，用**已有的 ChatGPT Plus 订阅**在 DSH 内完成 Codex 任务委派。必须区分 **ChatGPT 订阅权限**与**独立 OpenAI API 计费**（本机文档已证 `openai` 路由不接受 ChatGPT 登录、只接受 API Key）；不承诺特定模型一定可用，不承诺无限额度；未经用户批准不得安装 Codex、不得授权账户、不得使用付费 API；不得读取、复制、提交 OAuth Token 或其他认证秘密。
