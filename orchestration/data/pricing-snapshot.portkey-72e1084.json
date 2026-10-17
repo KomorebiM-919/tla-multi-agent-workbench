@@ -1,0 +1,96 @@
+{
+  "schema": "tla.pricing-snapshot/v1",
+  "snapshotId": "portkey-72e1084-pinned",
+  "capturedAt": "2026-10-17T17:57:53Z",
+  "currency": "USD",
+  "minorUnit": "cent",
+  "source": {
+    "repository": "https://github.com/Portkey-AI/models",
+    "commit": "72e1084840af7e14350ff6a12d33255a878bbec5",
+    "license": "MIT",
+    "files": [
+      "pricing/deepseek.json",
+      "pricing/moonshot.json",
+      "pricing/zhipu.json"
+    ]
+  },
+  "notes": [
+    "Prices imported from portkey-models, where prices are cents per token (README: \"Prices are in cents per token, not dollars\").",
+    "Converted with $/1M = price * 10000 and stored as integer micro-minor (1e-6 cent) per million tokens.",
+    "The upstream data carries no source URL, no updated_at and no off-peak fields; freshness must be judged from the git commit date."
+  ],
+  "entries": [
+    {
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "mode": "chat",
+      "inputMicroMinorPerMillion": 14000000,
+      "outputMicroMinorPerMillion": 28000000,
+      "provenance": "portkey-models@72e1084 pricing/deepseek.json pay_as_you_go",
+      "unknownFields": [
+        "offPeakPricing"
+      ],
+      "cacheReadMicroMinorPerMillion": 280000
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-reasoner",
+      "mode": "chat",
+      "inputMicroMinorPerMillion": 14000000,
+      "outputMicroMinorPerMillion": 28000000,
+      "provenance": "portkey-models@72e1084 pricing/deepseek.json pay_as_you_go",
+      "unknownFields": [
+        "offPeakPricing"
+      ],
+      "cacheReadMicroMinorPerMillion": 280000
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "mode": "chat",
+      "inputMicroMinorPerMillion": 14000000,
+      "outputMicroMinorPerMillion": 28000000,
+      "provenance": "portkey-models@72e1084 pricing/deepseek.json pay_as_you_go",
+      "unknownFields": [
+        "offPeakPricing"
+      ],
+      "cacheReadMicroMinorPerMillion": 280000
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "mode": "chat",
+      "inputMicroMinorPerMillion": 43500000,
+      "outputMicroMinorPerMillion": 87000000,
+      "provenance": "portkey-models@72e1084 pricing/deepseek.json pay_as_you_go",
+      "unknownFields": [
+        "offPeakPricing"
+      ],
+      "cacheReadMicroMinorPerMillion": 362500
+    },
+    {
+      "provider": "moonshot",
+      "model": "moonshot-v1-8k",
+      "mode": "chat",
+      "inputMicroMinorPerMillion": 20000000,
+      "outputMicroMinorPerMillion": 200000000,
+      "provenance": "portkey-models@72e1084 pricing/moonshot.json pay_as_you_go",
+      "unknownFields": [
+        "offPeakPricing",
+        "cacheReadPricing"
+      ]
+    },
+    {
+      "provider": "zhipu",
+      "model": "glm-5.2",
+      "mode": "chat",
+      "inputMicroMinorPerMillion": 140000000,
+      "outputMicroMinorPerMillion": 440000000,
+      "provenance": "portkey-models@72e1084 pricing/zhipu.json pay_as_you_go",
+      "unknownFields": [
+        "offPeakPricing"
+      ],
+      "cacheReadMicroMinorPerMillion": 26000000
+    }
+  ]
+}
