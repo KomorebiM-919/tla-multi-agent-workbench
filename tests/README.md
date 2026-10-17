@@ -12,7 +12,7 @@ V0.1 的验收对象是"这条多 Agent 流水线本身"，因此本目录当前
 node tests/workflow-logic.test.mjs
 ```
 
-- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**95 个场景 / 439 项断言**。
+- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**98 个场景 / 454 项断言**。
 - 时间相关门禁使用**注入的可控时钟**（`FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z')`，与夹具 `runId` 的时间戳同秒；由 `workflow-harness.mjs` 的 `setClock()` / `advanceClock()` 驱动，`runWith()` 每个场景开始时重置）。因此"运行起点与编排层时钟相差过大""阶段时间戳晚于当前时间""时钟推进 120 秒跨多个阶段仍成功"这类判定都能离线、确定性地测出来，不需要真实等待；夹具区有一条护栏断言时钟与夹具时间戳一致，防止两者漂移后测试失去意义。
 - 覆盖的场景包括：正常成功；Coding 自述测试失败但 Review 返回 `APPROVED`（⇒ `TEST_NOT_VERIFIED`）；自述成功但独立验证失败（⇒ `INCONSISTENT_EVIDENCE`）；有验收条件未满足但 Review 返回 `APPROVED`（⇒ `CRITERIA_NOT_SATISFIED`）；`criteria_check` 覆盖不全、含未知 ID、含重复 ID（⇒ `CRITERIA_CHECK_INCOMPLETE` / `CRITERIA_CHECK_UNKNOWN_IDS` / `CRITERIA_CHECK_DUPLICATE_IDS`）；Review 自述退出码与原始输出矛盾（⇒ `INCONSISTENT_REVIEW`）；验证前后文件指纹不一致或 Review 未回传复核指纹（⇒ `ARTIFACT_FINGERPRINT_MISMATCH`）；审核不通过后自动修订；达到最大轮次仍不通过（⇒ `MAX_ATTEMPTS_*`）；非法 `targetDir`（路径穿越）；交付目录/证据目录真实路径落在仓库之外、未回报 `realpath`、链接逃逸、未完成证据目录认领（⇒ `TARGET_DIR_OUTSIDE_REPO` / `LINK_ESCAPE` / `EVIDENCE_NOT_CLAIMED`）；非法 `maxCodingAttempts`；非法 `runId`（含缺少 UTC 时间戳后缀、时间戳与 `runStartedAt` 不同秒）；`evidenceDir` 不在 `docs/evidence/` 下或与 `runId` 不一致；任意 shell 测试命令；重复/已存在的 `runId` 不得覆盖历史证据；需求自检报冲突；需求缺验收条件或缺少/重复 ID；编码未返回报告（⇒ `CODING_OUTPUT_INVALID`）；**任一阶段报告未解决需求冲突时不得成功**（Review / Verifier / Coding 各自报告冲突，以及"Coding 报告不可用 + Verifier 报告冲突"时冲突状态优先）；`args` 缺失或为空；Review 的独立复跑命令与规范命令不一致（⇒ `INCONSISTENT_REVIEW`）；Verifier 证据时间戳越出运行窗口（⇒ `INVALID_TIMESTAMP`）。
 - 复审后的第二轮加固新增场景（都是"应当拒绝"）：
@@ -149,10 +149,14 @@ node tests/bytecode-integration.test.mjs   # 6 个场景 / 45 项断言，真实
 - 规范测试命令（`python -m unittest discover -s <targetDir> -p "test_*.py"`）在**执行时**加固定前缀
   `$env:PYTHONDONTWRITEBYTECODE = '1'; `，前缀由工作流常量生成，`isAllowedTestCommand` 只放行
   "规范命令"或"固定前缀 + 规范命令"（可带 `-v`），**不接受任意环境变量或任意 shell 命令**；
-- Verifier 与 Review 必须交回 `bytecode_scope`（`env_applied`、`cache_dir`、`entries_before`、`entries_after`，
-  每项含 `path/bytes/mtime_ms/sha256`），编排层 `judgeBytecodeScopePair` 同时看两阶段：
-  新增文件 → `BYTECODE_CACHE_WRITTEN`；未设变量 → `BYTECODE_ENV_NOT_APPLIED`；未测量/清单重复或越界 →
-  `BYTECODE_SCOPE_UNMEASURED`。三者都判不通过，且**已存在缓存前后一致不得被误拒**；
+- **全运行账本**（2026-10-17 第二轮加固）：编排层在启动任何子代理之前采集 `task.cacheBaseline`（必填参数，
+  用调用方的实测清单，不允许默认空数组顶替），Coding / Verifier / Review 各自交回 `bytecode_scope`
+  （`env_applied`、`env_variable`、`cache_dir`、`entries_before`、`entries_after`，每项含 `path/bytes/mtime_ms/sha256`），
+  Review 之后再由只读的 `Cache Collector` 阶段交回最终清单；相邻观测点之间出现新增 / 重写 / 删除 ⇒
+  `BYTECODE_CACHE_CHANGED_ACROSS_RUN`（"两个验证阶段各自前后不变"只是必要条件，见 `tests` 里的离线场景
+  "Verifier 与 Review 各自前后不变、但阶段之间缓存变化"）；单阶段自己前后变了 ⇒ `BYTECODE_CACHE_WRITTEN`；
+  未设变量 ⇒ `BYTECODE_ENV_NOT_APPLIED`；未测量 / 清单重复 / 越界 ⇒ `BYTECODE_SCOPE_UNMEASURED`。
+  四者都在 `REVIEW_NOT_APPROVED` 之前判不通过，且**已存在缓存全程逐字段一致不得被误拒**；
 - 变量是否真的到达子进程**不靠退出码判断**（PowerShell 会把非零退出码折叠成 1）：子进程把 `os.environ` 写进文件，
   父进程再读回比对；`.gitignore` 忽略 `__pycache__/` 不等于允许写入，故检查的是字节/mtime/哈希而不是 `git status`。
 
@@ -177,8 +181,10 @@ python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z `
   --allow-scope tests/workflow-harness.mjs --allow-scope workflows/three-agent-mvp.js  # 逐条列出，不静默跳过
 python tests/review-run-evidence.py --self-test
 
-# 一次跑完全部复核项并把原始输出写进运行记录（UTF-8 / LF，附 suite-results.json）
-python tests/run-review-suite.py --run-id v0.2-run1-20261017T121445Z
+# 一次跑完全部复核项，原始输出与 JSON 全部写进**你指定的唯一目录**（UTF-8 / LF，附 suite-results.json）
+python tests/run-review-suite.py --run-id v0.2-run1-20261017T121445Z `
+  --out-dir docs/run-records/v0.2-run1-20261017T121445Z/review-package `
+  --parent-session <sessionId> --workflow-name tla-v02-run1 --since 2026-10-17T12:00:00Z
 
 # 宿主原生事件（白名单字段，不导出消息正文）：5 次调用、父会话、深度、脚本指纹、产物归因
 node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v02-run1 `
@@ -191,7 +197,13 @@ node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v0
   **空验收集合、重复指纹、三报告冲突字段、37 条到 AC/BC 的映射完整性**都有对应用例，不能靠"全部通过"自证；
 - `--allow-scope` 用于"运行结束后被人**工授权**改动的工作树路径"：每一条都以 `workspace.allow_scope_exclusions*`
   检查项原样打印并写入 JSON，**不允许静默跳过**；
-- `run-review-suite.py` 只写 `docs/run-records/<runId>/review-package/`，不改任何被跟踪文件。
+- `run-review-suite.py` 的写入范围是**你给的 `--out-dir`**（拒绝覆盖已存在的非空目录，exit 2），加上被测工具自己
+  按契约产生的临时目录（`tests/.scratch/`、`examples/text-stats/.test-scratch/`）；它不会改写任何被跟踪的仓库文件，
+  也不会把输出写回上一轮的归档目录。`--out-dir` 会**原样传给每个会写文件的子工具**（review/probe/mutation 的
+  `--json-out`、native 提取的 `--out`），不是只换文本输出目录；`--timeout` 超时记为失败（exit 124）并继续跑完其余命令，
+  `suite-results.json` 里同时记录 `timedOut`、`failed` 与每个子进程的 `PYTHONDONTWRITEBYTECODE=1`；
+- 这套管线自身的离线测试在 `tests/test_run_review_suite.py`（10 个用例：拒绝覆盖、参数真正传下去、
+  超时不丢结果且收尾返回 1、归档目录返回 2、子进程环境变量）。
 
 ### 4. 工作流执行证据（比测试结果更重要的部分）
 

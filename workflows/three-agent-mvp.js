@@ -375,20 +375,21 @@ function normalizeCacheEntries(raw, cachePrefix, label) {
 function judgeBytecodeScope(scope, cachePrefix, label) {
   const boundary = label + ' 的运行期写入边界（' + cachePrefix + '）';
   if (!isObject(scope)) {
-    return { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED',
+    return { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED', before: null, after: null,
       reasons: [boundary + '：未返回 bytecode_scope，无法证明测试进程没有写缓存（证据不完整）'] };
   }
   const before = normalizeCacheEntries(scope.entries_before, cachePrefix, boundary);
   const after = normalizeCacheEntries(scope.entries_after, cachePrefix, boundary);
   if (!before.ok || !after.ok) {
-    return { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED', reasons: [before.ok ? after.reason : before.reason] };
+    return { ok: false, status: 'BYTECODE_SCOPE_UNMEASURED', before: null, after: null,
+      reasons: [before.ok ? after.reason : before.reason] };
   }
   if (scope.env_applied !== true) {
-    return { ok: false, status: 'BYTECODE_ENV_NOT_APPLIED',
+    return { ok: false, status: 'BYTECODE_ENV_NOT_APPLIED', before: before.entries, after: after.entries,
       reasons: [boundary + '：测试进程没有获得 ' + TEST_ENV_VAR + '=' + TEST_ENV_VALUE + '（env_applied != true）'] };
   }
   if (asString(scope.env_variable).toUpperCase() !== TEST_ENV_VAR) {
-    return { ok: false, status: 'BYTECODE_ENV_NOT_APPLIED',
+    return { ok: false, status: 'BYTECODE_ENV_NOT_APPLIED', before: before.entries, after: after.entries,
       reasons: [boundary + '：报告的受控环境变量不是 ' + TEST_ENV_VAR + '：' + JSON.stringify(scope.env_variable)] };
   }
   const beforeMap = {};
@@ -407,33 +408,123 @@ function judgeBytecodeScope(scope, cachePrefix, label) {
   if (created.length > 0) { reasons.push(boundary + '：测试执行后新增了缓存文件：' + created.join(', ')); }
   if (rewritten.length > 0) { reasons.push(boundary + '：测试执行后缓存文件被重写：' + rewritten.join(', ')); }
   if (reasons.length > 0) {
-    return { ok: false, status: 'BYTECODE_CACHE_WRITTEN', reasons: reasons, created: created, rewritten: rewritten };
+    return { ok: false, status: 'BYTECODE_CACHE_WRITTEN', reasons: reasons, created: created, rewritten: rewritten,
+      before: before.entries, after: after.entries };
   }
-  return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [] };
+  return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [], before: before.entries, after: after.entries };
 }
 
-/** Verifier 与 Review 两个阶段都必须成立：任一证伪即拒绝，任一未测量即判证据不完整。 */
-function judgeBytecodeScopePair(verification, review, cachePrefix) {
-  const verdicts = [
-    judgeBytecodeScope(isObject(verification) ? verification.bytecode_scope : null, cachePrefix, 'Verifier'),
-    judgeBytecodeScope(isObject(review) ? review.bytecode_scope : null, cachePrefix, 'Review')
-  ];
-  const failures = verdicts.filter(function (v) { return !v.ok; });
-  if (failures.length === 0) { return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [] }; }
-  const priority = ['BYTECODE_CACHE_WRITTEN', 'BYTECODE_ENV_NOT_APPLIED', 'BYTECODE_SCOPE_UNMEASURED'];
-  let status = priority[priority.length - 1];
-  for (let i = 0; i < priority.length; i += 1) {
-    if (failures.some(function (f) { return f.status === priority[i]; })) { status = priority[i]; break; }
+/** 相邻两个观测点的缓存清单必须完全一致；任何新增 / 重写 / 删除都算这一轮在写缓存。 */
+function compareCachePoints(earlier, later) {
+  const changes = [];
+  const earlierMap = {};
+  for (let i = 0; i < earlier.entries.length; i += 1) { earlierMap[earlier.entries[i].path] = earlier.entries[i]; }
+  const laterMap = {};
+  for (let j = 0; j < later.entries.length; j += 1) { laterMap[later.entries[j].path] = later.entries[j]; }
+  for (let i = 0; i < earlier.entries.length; i += 1) {
+    const path = earlier.entries[i].path;
+    const now = laterMap[path];
+    if (now === undefined) {
+      changes.push({ path: path, kind: 'deleted' });
+    } else if (now.bytes !== earlier.entries[i].bytes || now.mtimeMs !== earlier.entries[i].mtimeMs ||
+      now.sha256 !== earlier.entries[i].sha256) {
+      changes.push({ path: path, kind: 'rewritten' });
+    }
   }
+  for (let j = 0; j < later.entries.length; j += 1) {
+    if (earlierMap[later.entries[j].path] === undefined) { changes.push({ path: later.entries[j].path, kind: 'created' }); }
+  }
+  return changes;
+}
+
+/**
+ * 全运行缓存基线判定：Coding / Verifier / Review 各自的前后不变**只是必要条件**。
+ * 阶段之间的间隙同样必须不变，否则"两个验证阶段各自看起来没事，但编码阶段或间隙里写过缓存"
+ * 会被误判通过（v0.2-run1 的 AC-24 正是这种情形）。因此把所有观测点按时间顺序串起来，
+ * 逐对比较：运行前基线 → Coding 前/后 → Verifier 前/后 → Review 前/后 → 最终采集。
+ */
+function judgeBytecodeRun(parts, cachePrefix) {
+  const failures = [];
+  const points = [];
+  // 基线在参数校验时已经归一化过一遍（entries 用 mtimeMs 字段），这里不要再按原始字段名解析一次。
+  const baselineAlreadyNormalized = Array.isArray(parts.baseline) && parts.baseline.every(function (e) {
+    return isObject(e) && typeof e.path === 'string' && typeof e.mtimeMs === 'number';
+  });
+  const baseline = baselineAlreadyNormalized
+    ? { ok: true, entries: parts.baseline, reason: '' }
+    : normalizeCacheEntries(parts.baseline, cachePrefix, '运行前基线（编排层采集）');
+  if (!baseline.ok) {
+    failures.push({ status: 'BYTECODE_SCOPE_UNMEASURED', reasons: [baseline.reason],
+      created: [], rewritten: [], removed: [] });
+  } else {
+    points.push({ label: '运行前基线（编排层采集）', entries: baseline.entries });
+  }
+
+  const stageScopes = [
+    { label: 'Coding', scope: isObject(parts.coding) ? parts.coding.bytecode_scope : null },
+    { label: 'Verifier', scope: isObject(parts.verification) ? parts.verification.bytecode_scope : null },
+    { label: 'Review', scope: isObject(parts.review) ? parts.review.bytecode_scope : null }
+  ];
+  for (let i = 0; i < stageScopes.length; i += 1) {
+    const stage = stageScopes[i];
+    const verdict = judgeBytecodeScope(stage.scope, cachePrefix, stage.label);
+    if (!verdict.ok) { failures.push(verdict); }
+    if (Array.isArray(verdict.before) && Array.isArray(verdict.after)) {
+      points.push({ label: stage.label + ' 执行前', entries: verdict.before });
+      points.push({ label: stage.label + ' 执行后', entries: verdict.after });
+    }
+  }
+
+  const finalEntries = normalizeCacheEntries(parts.final, cachePrefix, '最终采集（Review 结束后）');
+  if (!finalEntries.ok) {
+    failures.push({ status: 'BYTECODE_SCOPE_UNMEASURED', reasons: [finalEntries.reason],
+      created: [], rewritten: [], removed: [] });
+  } else {
+    points.push({ label: '最终采集（Review 结束后）', entries: finalEntries.entries });
+  }
+
+  const changes = [];
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const found = compareCachePoints(points[i], points[i + 1]);
+    for (let j = 0; j < found.length; j += 1) {
+      changes.push({ from: points[i].label, to: points[i + 1].label, path: found[j].path, kind: found[j].kind });
+    }
+  }
+  if (changes.length > 0) {
+    const described = changes.map(function (c) {
+      const verb = c.kind === 'deleted' ? '被删除' : (c.kind === 'created' ? '被新增' : '被重写');
+      return c.path + ' 在「' + c.from + '」与「' + c.to + '」之间' + verb;
+    });
+    failures.push({ status: 'BYTECODE_CACHE_CHANGED_ACROSS_RUN',
+      reasons: ['运行期写入边界（' + cachePrefix + '）：' + described.join('；')],
+      created: changes.filter(function (c) { return c.kind === 'created'; }).map(function (c) { return c.path; }),
+      rewritten: changes.filter(function (c) { return c.kind === 'rewritten'; }).map(function (c) { return c.path; }),
+      removed: changes.filter(function (c) { return c.kind === 'deleted'; }).map(function (c) { return c.path; }) });
+  }
+
+  // 优先级：阶段内写入（最具体）> 阶段间隙变化 > 环境未生效 > 证据不完整。
+  const priority = ['BYTECODE_CACHE_WRITTEN', 'BYTECODE_CACHE_CHANGED_ACROSS_RUN',
+    'BYTECODE_ENV_NOT_APPLIED', 'BYTECODE_SCOPE_UNMEASURED'];
   const reasons = [];
   const created = [];
   const rewritten = [];
+  const removed = [];
   failures.forEach(function (f) {
     f.reasons.forEach(function (r) { if (reasons.indexOf(r) === -1) { reasons.push(r); } });
     (f.created || []).forEach(function (p) { if (created.indexOf(p) === -1) { created.push(p); } });
     (f.rewritten || []).forEach(function (p) { if (rewritten.indexOf(p) === -1) { rewritten.push(p); } });
+    (f.removed || []).forEach(function (p) { if (removed.indexOf(p) === -1) { removed.push(p); } });
   });
-  return { ok: false, status: status, reasons: reasons, created: created, rewritten: rewritten };
+  if (failures.length === 0) {
+    return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [], removed: [],
+      points: points.map(function (p) { return { label: p.label, count: p.entries.length }; }), changes: [] };
+  }
+  let status = priority[priority.length - 1];
+  for (let i = 0; i < priority.length; i += 1) {
+    if (failures.some(function (f) { return f.status === priority[i]; })) { status = priority[i]; break; }
+  }
+  return { ok: false, status: status, reasons: reasons, created: created, rewritten: rewritten, removed: removed,
+    points: points.map(function (p) { return { label: p.label, count: p.entries.length }; }), changes: changes };
 }
 
 /**
@@ -624,6 +715,24 @@ function validateRunConfig(rawArgs, startupNowMs) {
     }
   }
 
+  // 全运行缓存基线：必须在任何子代理启动前由编排层实际采集并作为参数传入。
+  // 缺失它不是"省一步"，而是让"本轮没有写缓存"永远无法被证明（fail-closed）。
+  let cacheBaseline = null;
+  const cachePrefixForArgs = targetDir === null ? CACHE_DIR_NAME : targetDir + '/' + CACHE_DIR_NAME;
+  if (task.cacheBaseline === undefined) {
+    errors.push('缺少 cacheBaseline：启动前必须实际采集 ' + cachePrefixForArgs +
+      ' 的清单（path/bytes/mtime_ms/sha256），否则无法证明本轮没有新增、重写或删除缓存');
+  } else if (!Array.isArray(task.cacheBaseline)) {
+    errors.push('cacheBaseline 非法（必须是数组）：' + JSON.stringify(task.cacheBaseline));
+  } else {
+    const normalizedBaseline = normalizeCacheEntries(task.cacheBaseline, cachePrefixForArgs, 'cacheBaseline 参数');
+    if (!normalizedBaseline.ok) {
+      errors.push(normalizedBaseline.reason);
+    } else {
+      cacheBaseline = normalizedBaseline.entries;
+    }
+  }
+
   let requirementInput = null;
   if (task.requirement !== undefined) {
     if (typeof task.requirement !== 'string' || task.requirement.trim() === '') {
@@ -645,6 +754,7 @@ function validateRunConfig(rawArgs, startupNowMs) {
     sampleFile: sampleFile,
     testCommand: canonicalCommand,
     maxCodingAttempts: maxCodingAttempts,
+    cacheBaseline: cacheBaseline,
     runStartedAt: runStartedAt
   };
 
@@ -1114,6 +1224,28 @@ const REQUIREMENT_SCHEMA = {
   }
 };
 
+// 运行期写入边界：Coding、Verifier、Review 都必须交回"执行测试前后"的缓存目录指纹。
+// 字段名与命令行取值分开记录：环境变量名/值不是"命令"的一部分。
+const BYTECODE_SCOPE_REQUIRED = ['env_applied', 'env_variable', 'cache_dir', 'entries_before', 'entries_after'];
+const BYTECODE_ENTRY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['path', 'bytes', 'mtime_ms', 'sha256'],
+  properties: {
+    path: { type: 'string' },
+    bytes: { type: 'integer' },
+    mtime_ms: { type: 'number' },
+    sha256: { type: 'string' }
+  }
+};
+const BYTECODE_SCOPE_PROPERTIES = {
+  env_applied: { type: 'boolean' },
+  env_variable: { type: 'string' },
+  cache_dir: { type: 'string' },
+  entries_before: { type: 'array', items: BYTECODE_ENTRY_SCHEMA },
+  entries_after: { type: 'array', items: BYTECODE_ENTRY_SCHEMA }
+};
+
 const CODING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1145,44 +1277,9 @@ const CODING_SCHEMA = {
       }
     },
     report_file: { type: 'string' },
+    bytecode_scope: { type: 'object', additionalProperties: false, required: BYTECODE_SCOPE_REQUIRED,
+      properties: BYTECODE_SCOPE_PROPERTIES },
     generated_at: { type: 'string' }
-  }
-};
-
-// 运行期写入边界：Verifier 与 Review 都必须交回"执行测试前后"的缓存目录指纹。
-// 字段名与命令行取值分开记录：环境变量名/值不是"命令"的一部分。
-const BYTECODE_SCOPE_REQUIRED = ['env_applied', 'env_variable', 'cache_dir', 'entries_before', 'entries_after'];
-const BYTECODE_SCOPE_PROPERTIES = {
-  env_applied: { type: 'boolean' },
-  env_variable: { type: 'string' },
-  cache_dir: { type: 'string' },
-  entries_before: {
-    type: 'array',
-    items: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['path', 'bytes', 'mtime_ms', 'sha256'],
-      properties: {
-        path: { type: 'string' },
-        bytes: { type: 'integer' },
-        mtime_ms: { type: 'number' },
-        sha256: { type: 'string' }
-      }
-    }
-  },
-  entries_after: {
-    type: 'array',
-    items: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['path', 'bytes', 'mtime_ms', 'sha256'],
-      properties: {
-        path: { type: 'string' },
-        bytes: { type: 'integer' },
-        mtime_ms: { type: 'number' },
-        sha256: { type: 'string' }
-      }
-    }
   }
 };
 
@@ -1284,6 +1381,18 @@ const REVIEW_SCHEMA = {
     summary: { type: 'string' },
     report_file: { type: 'string' },
     generated_at: { type: 'string' }
+  }
+};
+
+// 最终采集（Review 结束后、其他复核启动前）：只读取缓存清单，用来证明整轮运行没有写缓存。
+const FINAL_CACHE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['entries', 'collected_at'],
+  properties: {
+    entries: { type: 'array', items: BYTECODE_ENTRY_SCHEMA },
+    collected_at: { type: 'string' },
+    note: { type: 'string' }
   }
 };
 
@@ -1425,6 +1534,8 @@ function codingPrompt(attempt, previousReview) {
     '- `test_command` 字段仍然只填上面那条规范化命令本身（不含环境前缀）：环境与命令分开记录；',
     '- 依赖边界: ' + depsBoundary,
     '',
+    bytecodeScopeNote(C.targetDir + '/' + CACHE_DIR_NAME),
+    '',
     '### Requirement Agent 的结构化产出（JSON，原样传递）',
     '```json',
     JSON.stringify(requirement, null, 2),
@@ -1553,6 +1664,38 @@ function reviewPrompt(attempt, codingReport, verification, artifactPath) {
     '',
     '【第三步】以你亲眼读到的文件内容与你亲自运行的命令输出为唯一依据，',
     '写入产物文件并返回结构化结果。只返回结构化结果。',
+    '',
+    envelopeNote(artifactPath)
+  ].join('\n');
+}
+
+/**
+ * 最终缓存采集：Review 结束后、任何复核启动之前，独立再读一次缓存清单。
+ *
+ * 为什么需要它：Verifier 与 Review 各自的"前后不变"只能证明这两个阶段内部没写；
+ * 编码阶段与阶段之间的间隙不在它们的观测范围内。全运行判定把所有观测点串起来比较，
+ * 但最后一个观测点不能由本次运行内的角色提供（那是被检查对象），必须由独立采集补齐。
+ */
+function cacheFinalPrompt(artifactPath) {
+  const cacheDir = C.targetDir + '/' + CACHE_DIR_NAME;
+  return [
+    '你是 TLA 流水线中的 **独立采集角色**，本次只做一件事：读取指定缓存目录的清单并原样回报。',
+    '',
+    '【任务】',
+    '- 目标目录（仓库内相对路径）: ' + cacheDir,
+    '- 只读：**不得创建、修改、删除任何文件**，不得运行测试，不得运行会生成字节码的命令；',
+    '- 该目录可能不存在：不存在时 `entries` 写空数组 `[]`，不要为了"有内容"去创建它；',
+    '',
+    '【采集方法】',
+    '- 用一次只读命令列出该目录（不存在则跳过），对每个文件记录：',
+    '  `path`（仓库内相对路径，正斜杠，例如 ' + cacheDir + '/text_stats.cpython-313.pyc）、',
+    '  `bytes`（字节数）、`mtime_ms`（最后写入时间的 Unix 毫秒整数）、`sha256`（文件原始字节的 sha256）；',
+    '- 采集**两次**（先一次，再立刻一次），两次结果必须一致；若两次不同，如实说明（`note` 写清差异）。',
+    '',
+    '【返回】',
+    '- `entries`：本次采集的清单（上面四个字段，逐项）；',
+    '- `collected_at`：采集完成时间（带时区的 ISO-8601）；',
+    '- `note`：可选说明（例如"目录不存在"、"两次采集一致"）。',
     '',
     envelopeNote(artifactPath)
   ].join('\n');
@@ -1907,8 +2050,23 @@ while (attempt <= C.maxCodingAttempts) {
     }
   }
 
+  // Review 结束后、任何复核启动之前：独立再采集一次缓存清单（不运行测试、只读）。
+  phaseStatic('cache' + (attempt > 1 ? '-revision-' + attempt : ''));
+  log('step 6: 独立采集缓存清单（Review 结束后）-> ' + artifact(attempt, 'cache-final'));
+  const cacheFinal = await agent(cacheFinalPrompt(artifact(attempt, 'cache-final')), {
+    label: 'Cache Collector' + revTag,
+    phase: 'cache' + (attempt > 1 ? '-revision-' + attempt : ''),
+    schema: FINAL_CACHE_SCHEMA
+  });
+
   const cachePrefix = C.targetDir === null ? CACHE_DIR_NAME : C.targetDir + '/' + CACHE_DIR_NAME;
-  const bytecodeVerdict = judgeBytecodeScopePair(verification, review, cachePrefix);
+  const bytecodeVerdict = judgeBytecodeRun({
+    baseline: C.cacheBaseline,
+    coding: codingReport,
+    verification: verification,
+    review: review,
+    final: isObject(cacheFinal) ? cacheFinal.entries : null
+  }, cachePrefix);
   if (!bytecodeVerdict.ok) {
     log('第 ' + attempt + ' 轮运行期写入边界：' + bytecodeVerdict.status + '（' + bytecodeVerdict.reasons.join('；') + '）');
   }
@@ -1922,6 +2080,7 @@ while (attempt <= C.maxCodingAttempts) {
     codingReport: codingReport,
     verification: verification,
     review: review,
+    cacheFinal: cacheFinal,
     decision: decision
   });
   lastDecision = decision;
@@ -1979,9 +2138,12 @@ return {
   evidenceDir: C.evidenceDir,
   ownerMarkerPath: ownerMarkerPath,
   runStartedAt: C.runStartedAt,
-  pipeline: ['Verifier(preflight)', 'Requirement Agent', 'Coding Agent', 'Verifier(verify)', 'Review Agent'],
+  pipeline: ['Verifier(preflight)', 'Requirement Agent', 'Coding Agent', 'Verifier(verify)', 'Review Agent',
+    'Cache Collector (after review)'],
   targetDir: C.targetDir,
   testCommand: C.testCommand,
+  cacheBaseline: C.cacheBaseline,
+  cacheDirPrefix: C.targetDir === null ? CACHE_DIR_NAME : C.targetDir + '/' + CACHE_DIR_NAME,
   // 命令与执行环境分开记录：环境不改变规范化命令本身，也不放开任意 shell。
   testEnvironment: testEnvironment(),
   testExecutionCommand: executionTestCommand(C.testCommand),
@@ -1991,7 +2153,8 @@ return {
     return list.concat([
       artifact(d.attempt, 'coding-report'),
       artifact(d.attempt, 'verify'),
-      artifact(d.attempt, 'review')
+      artifact(d.attempt, 'review'),
+      artifact(d.attempt, 'cache-final')
     ]);
   }, [ownerMarkerPath, artifact(1, 'preflight'), artifact(1, 'requirement')]),
   attempts: attemptsDetail.length,
@@ -2005,6 +2168,7 @@ return {
       codingReport: d.codingReport,
       verification: d.verification,
       review: d.review,
+      cacheFinal: d.cacheFinal,
       decision: { ok: d.decision.ok, status: d.decision.status, reasons: d.decision.reasons },
       selfReportVsVerified: d.decision.selfReportVsVerified,
       bytecodeScope: d.decision.bytecode
@@ -2031,6 +2195,10 @@ return {
       ? finalAttempt.decision.bytecode.status : 'BYTECODE_SCOPE_UNMEASURED',
     bytecodeScopeReasons: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
       ? finalAttempt.decision.bytecode.reasons : ['无有效轮次'],
+    cachePoints: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
+      ? (finalAttempt.decision.bytecode.points || []) : [],
+    cacheChanges: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
+      ? (finalAttempt.decision.bytecode.changes || []) : [],
     stageReportedRequirementConflicts: finalStageConflicts,
     criteriaIds: expectedCriteriaIds
   }

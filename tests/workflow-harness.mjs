@@ -151,6 +151,7 @@ export function codingOk(over) {
     deviations_from_requirement: [],
     requirement_conflicts: [],
     report_file: EVIDENCE_DIR + '/coding-report.json',
+    bytecode_scope: bytecodeScope(),
     generated_at: NOW
   };
   return Object.assign(base, over || {});
@@ -223,6 +224,12 @@ export function reviewOk(over) {
   return Object.assign(base, over || {});
 }
 
+/** 最终缓存采集夹具：默认"缓存目录不存在"（空清单），与空基线一致。 */
+export function cacheFinalOk(over) {
+  const base = { entries: [], collected_at: NOW, note: '目录不存在' };
+  return Object.assign(base, over || {});
+}
+
 export function baseArgs(over) {
   const o = over || {};
   const task = Object.assign({
@@ -230,7 +237,8 @@ export function baseArgs(over) {
     moduleFile: 'text_stats.py',
     testFile: 'test_text_stats.py',
     sampleFile: 'sample_input.txt',
-    maxCodingAttempts: 2
+    maxCodingAttempts: 2,
+    cacheBaseline: []
   }, o.task || {});
   const args = { runId: RUN_ID, evidenceDir: EVIDENCE_DIR, promptDir: 'agents', task: task };
   ['runId', 'evidenceDir', 'promptDir', 'runStartedAt'].forEach(function (key) {
@@ -247,6 +255,7 @@ function pickKey(label) {
   if (label.indexOf('Coding Agent') === 0) { return 'coding'; }
   if (label.indexOf('Verifier (verify)') === 0) { return 'verify'; }
   if (label.indexOf('Review Agent') === 0) { return 'review'; }
+  if (label.indexOf('Cache Collector') === 0) { return 'cacheFinal'; }
   return 'unknown';
 }
 
@@ -286,7 +295,8 @@ export function happyPlan(over) {
     requirement: function () { return requirementOk(3); },
     coding: function () { return codingOk(); },
     verify: function () { return verifyOk(); },
-    review: function () { return reviewOk(); }
+    review: function () { return reviewOk(); },
+    cacheFinal: function () { return cacheFinalOk(); }
   }, over || {});
 }
 

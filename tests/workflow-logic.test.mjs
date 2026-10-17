@@ -14,7 +14,7 @@ import path from 'node:path';
 import {
   NOW, TARGET_DIR, REPO_ROOT, TEST_SHA, CANONICAL, FAILED_OUTPUT, criteria, preflightOk, requirementOk,
   codingOk, verifyOk, verifyFailed, reviewOk, baseArgs, happyPlan, advanceClock, clockIso, clockNowMs,
-  makeRunner, EXEC_COMMAND, cacheEntry, bytecodeScope
+  makeRunner, EXEC_COMMAND, cacheEntry, bytecodeScope, cacheFinalOk
 } from './workflow-harness.mjs';
 
 const runner = makeRunner();
@@ -26,7 +26,7 @@ const scenario = runner.scenario;
 await scenario('正常成功 → OK（必须同时满足外部验证与全部验收条件）',
   happyPlan(),
   baseArgs(),
-  { status: 'OK', ok: true, attempts: 1, calls: 5, finalFlag: 'testsIndependentlyVerified', finalFlagValue: true });
+  { status: 'OK', ok: true, attempts: 1, calls: 6, finalFlag: 'testsIndependentlyVerified', finalFlagValue: true });
 
 // 2. Coding 自述失败 + 外部验证失败，即使 Review 判 APPROVED 也不得 ok（第一类漏洞）
 await scenario('测试失败但 Review APPROVED → TEST_NOT_VERIFIED（不得 ok）',
@@ -36,7 +36,7 @@ await scenario('测试失败但 Review APPROVED → TEST_NOT_VERIFIED（不得 o
     review: function () { return reviewOk({ independent_test_exit_code: '1', independent_test_output: FAILED_OUTPUT }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'TEST_NOT_VERIFIED', ok: false, attempts: 1, calls: 5 });
+  { status: 'TEST_NOT_VERIFIED', ok: false, attempts: 1, calls: 6 });
 
 // 3. 自述"测试通过"但外部独立验证输出为 FAILED → 自述与证据矛盾（第一类漏洞之核心）
 await scenario('自述成功但独立验证失败 → INCONSISTENT_EVIDENCE（不得 ok）',
@@ -46,7 +46,7 @@ await scenario('自述成功但独立验证失败 → INCONSISTENT_EVIDENCE（�
     review: function () { return reviewOk({ independent_test_exit_code: '1', independent_test_output: FAILED_OUTPUT }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5 });
+  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 6 });
 
 // 4. 某条验收条件未满足但 Review 仍判 APPROVED → 不得 ok
 await scenario('有验收条件未满足但 APPROVED → CRITERIA_NOT_SATISFIED',
@@ -58,13 +58,13 @@ await scenario('有验收条件未满足但 APPROVED → CRITERIA_NOT_SATISFIED'
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CRITERIA_NOT_SATISFIED', ok: false, calls: 5 });
+  { status: 'CRITERIA_NOT_SATISFIED', ok: false, calls: 6 });
 
 // 5. criteria_check 覆盖面不足
 await scenario('criteria_check 未覆盖全部验收条件 → CRITERIA_CHECK_INCOMPLETE',
   happyPlan({ review: function () { return reviewOk({ criteria_check: criteria(2) }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CRITERIA_CHECK_INCOMPLETE', ok: false, calls: 5 });
+  { status: 'CRITERIA_CHECK_INCOMPLETE', ok: false, calls: 6 });
 
 // 6. Review 自述退出码 0 但原始输出含 FAILED → 审核自述与证据矛盾
 await scenario('Review 自述 exit 0 但原始输出含 FAILED → INCONSISTENT_REVIEW',
@@ -74,7 +74,7 @@ await scenario('Review 自述 exit 0 但原始输出含 FAILED → INCONSISTENT_
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5 });
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 6 });
 
 // 7. 审核不通过 → 自动修订 → 第二轮通过
 await scenario('审核不通过后自动修订 → 第二轮 APPROVED 且 ok',
@@ -93,7 +93,7 @@ await scenario('审核不通过后自动修订 → 第二轮 APPROVED 且 ok',
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 3 } }),
-  { status: 'OK', ok: true, attempts: 2, calls: 8 });
+  { status: 'OK', ok: true, attempts: 2, calls: 10 });
 
 // 8. 达到最大修订次数仍不通过
 await scenario('达到最大轮次仍不通过 → MAX_ATTEMPTS_REVIEW_NOT_APPROVED',
@@ -103,7 +103,7 @@ await scenario('达到最大轮次仍不通过 → MAX_ATTEMPTS_REVIEW_NOT_APPRO
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 2 } }),
-  { status: 'MAX_ATTEMPTS_REVIEW_NOT_APPROVED', ok: false, attempts: 2, calls: 8 });
+  { status: 'MAX_ATTEMPTS_REVIEW_NOT_APPROVED', ok: false, attempts: 2, calls: 10 });
 
 // 9. 重复 runId：证据目录已存在 → 拒绝覆盖，且不启动任何角色子代理
 await scenario('证据目录已存在 → EVIDENCE_EXISTS 且不覆盖（仅预检被调用）',
@@ -190,7 +190,7 @@ await scenario('任意 shell 测试命令 → INVALID_ARGS（只接受规范化�
 
 await scenario('testCommand 带 -v → 允许（等价于规范化命令）', happyPlan(),
   baseArgs({ task: { testCommand: CANONICAL + ' -v' } }),
-  { status: 'OK', ok: true, calls: 5 });
+  { status: 'OK', ok: true, calls: 6 });
 
 // 14. 提示词文件缺失
 await scenario('角色提示词文件缺失 → PROMPT_MISSING',
@@ -244,7 +244,7 @@ await scenario('需求缺少验收条件 → REQUIREMENT_OUTPUT_INVALID',
 await scenario('Coding 未返回实现报告 → CODING_OUTPUT_INVALID（仍走完验证与审核）',
   happyPlan({ coding: function () { return {}; } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_OUTPUT_INVALID', ok: false, calls: 5 });
+  { status: 'CODING_OUTPUT_INVALID', ok: false, calls: 6 });
 
 // 19. 参数整体缺失时不得抛异常，也不得默认去跑已归档的 v0.1-first-run
 await scenario('args 缺失 → INVALID_ARGS（不得默认使用已归档 runId）', happyPlan(), undefined,
@@ -279,7 +279,7 @@ await scenario('Review 报告需求冲突却仍 APPROVED → STAGE_REPORTS_REQUI
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 5, errorIncludes: '需求冲突' });
+  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 6, errorIncludes: '需求冲突' });
 
 // 22b. Verifier 报告未解决需求冲突 → 同样不得成功
 await scenario('Verifier 报告需求冲突 → STAGE_REPORTS_REQUIREMENT_CONFLICT（不得 ok）',
@@ -289,7 +289,7 @@ await scenario('Verifier 报告需求冲突 → STAGE_REPORTS_REQUIREMENT_CONFLI
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 5 });
+  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 6 });
 
 // 22c. Coding 报告未解决需求冲突 → 同样不得成功
 await scenario('Coding 报告需求冲突 → STAGE_REPORTS_REQUIREMENT_CONFLICT（不得 ok）',
@@ -299,7 +299,7 @@ await scenario('Coding 报告需求冲突 → STAGE_REPORTS_REQUIREMENT_CONFLICT
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 5 });
+  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 6 });
 
 // 22d. 冲突优先于次要原因：Coding 报告不可用 + Verifier 报告冲突 → 必须报冲突状态
 await scenario('Coding 未返回报告且 Verifier 报告冲突 → STAGE_REPORTS_REQUIREMENT_CONFLICT（冲突优先）',
@@ -310,7 +310,7 @@ await scenario('Coding 未返回报告且 Verifier 报告冲突 → STAGE_REPORT
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 5, errorIncludes: '需求冲突' });
+  { status: 'STAGE_REPORTS_REQUIREMENT_CONFLICT', ok: false, attempts: 1, calls: 6, errorIncludes: '需求冲突' });
 
 // 23. 验收条件 ID 逐项核对：缺失 / 重复
 await scenario('验收条件缺少 ID → REQUIREMENT_IDS_INVALID',
@@ -345,7 +345,7 @@ await scenario('Review 的 criteria_check 出现未知 ID → CRITERIA_CHECK_UNK
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CRITERIA_CHECK_UNKNOWN_IDS', ok: false, calls: 5 });
+  { status: 'CRITERIA_CHECK_UNKNOWN_IDS', ok: false, calls: 6 });
 
 await scenario('Review 的 criteria_check 出现重复 ID → CRITERIA_CHECK_DUPLICATE_IDS',
   happyPlan({
@@ -356,12 +356,12 @@ await scenario('Review 的 criteria_check 出现重复 ID → CRITERIA_CHECK_DUP
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CRITERIA_CHECK_DUPLICATE_IDS', ok: false, calls: 5 });
+  { status: 'CRITERIA_CHECK_DUPLICATE_IDS', ok: false, calls: 6 });
 
 await scenario('Review 的 criteria_check 少一条 ID → CRITERIA_CHECK_INCOMPLETE（按 ID 逐项核对）',
   happyPlan({ review: function () { return reviewOk({ criteria_check: criteria(2) }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CRITERIA_CHECK_INCOMPLETE', ok: false, calls: 5 });
+  { status: 'CRITERIA_CHECK_INCOMPLETE', ok: false, calls: 6 });
 
 // 25. 验证前后文件指纹必须一致
 await scenario('验证前后文件指纹不一致 → ARTIFACT_FINGERPRINT_MISMATCH',
@@ -376,24 +376,24 @@ await scenario('验证前后文件指纹不一致 → ARTIFACT_FINGERPRINT_MISMA
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 6 });
 
 await scenario('Review 未回传 artifacts_after → ARTIFACT_FINGERPRINT_MISMATCH',
   happyPlan({ review: function () { return reviewOk({ artifacts_after: [] }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 6 });
 
 // 26. Review 必须原样执行规范化命令（否则"独立复跑"不算数）
 await scenario('Review 的独立复跑命令被换掉 → INCONSISTENT_REVIEW（不得 ok）',
   happyPlan({ review: function () { return reviewOk({ independent_test_command: 'python -m pytest -q' }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5 });
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 6 });
 
 // 27. Verifier 的时间窗门禁必须生效（曾因判定被重算而成为死代码）
 await scenario('Verifier 证据时间戳越出运行窗口 → INVALID_TIMESTAMP（不得 ok）',
   happyPlan({ verify: function () { return verifyOk({ generated_at: '2024-01-01T00:00:00Z' }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INVALID_TIMESTAMP', ok: false, calls: 5 });
+  { status: 'INVALID_TIMESTAMP', ok: false, calls: 6 });
 
 // ---------------------------------------------------------------- 场景（复审 7 项加固）：应当拒绝的路径
 
@@ -408,7 +408,7 @@ await scenario('指纹清单多列了配置之外的文件（两侧一致也不�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 6 });
 
 await scenario('指纹清单缺少配置的测试文件（两侧一致也不算通过）→ ARTIFACT_FINGERPRINT_MISMATCH',
   happyPlan({
@@ -416,7 +416,7 @@ await scenario('指纹清单缺少配置的测试文件（两侧一致也不算�
     review: function () { return reviewOk({ artifacts_after: reviewOk().artifacts_after.slice(0, 1) }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 6 });
 
 await scenario('指纹清单出现重复路径（两侧一致也不算通过）→ ARTIFACT_FINGERPRINT_MISMATCH',
   happyPlan({
@@ -430,7 +430,7 @@ await scenario('指纹清单出现重复路径（两侧一致也不算通过）�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 5 });
+  { status: 'ARTIFACT_FINGERPRINT_MISMATCH', ok: false, calls: 6 });
 
 // 29. 预检 problems 非空必须失败（任何"可能有问题"的观察都要先由人处理）。
 await scenario('预检报告 problems 非空 → PREFLIGHT_PROBLEMS（不启动任何角色）',
@@ -477,7 +477,7 @@ await scenario('Review 独立复跑执行 0 个用例 → INCONSISTENT_REVIEW（
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5 });
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 6 });
 
 await scenario('Review 用例数与 Verifier 对同一命令的用例数不一致 → INCONSISTENT_REVIEW',
   happyPlan({
@@ -486,7 +486,7 @@ await scenario('Review 用例数与 Verifier 对同一命令的用例数不一�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5, errorIncludes: '不一致' });
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 6, errorIncludes: '不一致' });
 
 // 31a. `OK (skipped=44)` 意味着一个用例都没真正执行，不是"测试通过"（本轮离线审查发现的可绕过路径）。
 await scenario('Verifier 原始输出为 OK (skipped=44)（全部用例被跳过）→ INCONSISTENT_EVIDENCE（不得 ok）',
@@ -496,7 +496,7 @@ await scenario('Verifier 原始输出为 OK (skipped=44)（全部用例被跳过
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5, errorIncludes: '全部用例被跳过' });
+  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 6, errorIncludes: '全部用例被跳过' });
 
 await scenario('Verifier 原始输出部分跳过（skipped=2 / Ran 44）仍是真实执行 → OK（不得误拒）',
   happyPlan({
@@ -505,7 +505,7 @@ await scenario('Verifier 原始输出部分跳过（skipped=2 / Ran 44）仍是�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'OK', ok: true, calls: 5 });
+  { status: 'OK', ok: true, calls: 6 });
 
 await scenario('Review 独立复跑 OK (skipped=44)（全部跳过）→ INCONSISTENT_REVIEW（不得 ok）',
   happyPlan({
@@ -514,7 +514,7 @@ await scenario('Review 独立复跑 OK (skipped=44)（全部跳过）→ INCONSI
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 5, errorIncludes: '全部用例被跳过' });
+  { status: 'INCONSISTENT_REVIEW', ok: false, calls: 6, errorIncludes: '全部用例被跳过' });
 
 await scenario('Coding 输出摘录 OK (skipped=44)（全部跳过）→ CODING_REPORT_INCONSISTENT（不得 ok）',
   happyPlan({
@@ -523,7 +523,7 @@ await scenario('Coding 输出摘录 OK (skipped=44)（全部跳过）→ CODING_
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '全部用例被跳过' });
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 6, errorIncludes: '全部用例被跳过' });
 
 // 32. Coding 自述必须内部自洽：test_succeeded / 退出码 / 命令 / 输出摘录四者互相印证。
 await scenario('Coding 自述 test_succeeded=true 但退出码 1 → CODING_REPORT_INCONSISTENT（不得 ok）',
@@ -531,35 +531,35 @@ await scenario('Coding 自述 test_succeeded=true 但退出码 1 → CODING_REPO
     coding: function () { return codingOk({ test_succeeded: true, test_exit_code: '1' }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '自述内部矛盾' });
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 6, errorIncludes: '自述内部矛盾' });
 
 await scenario('Coding 自述 test_succeeded=false 但退出码 0 → CODING_REPORT_INCONSISTENT',
   happyPlan({
     coding: function () { return codingOk({ test_succeeded: false, test_exit_code: '0' }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5 });
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 6 });
 
 await scenario('Coding 报告的测试命令被换掉 → CODING_REPORT_INCONSISTENT',
   happyPlan({
     coding: function () { return codingOk({ test_command: 'python -m pytest -q' }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '规范化命令' });
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 6, errorIncludes: '规范化命令' });
 
 await scenario('Coding 报告的退出码不是非负整数 → CODING_REPORT_INCONSISTENT',
   happyPlan({
     coding: function () { return codingOk({ test_exit_code: 'ok' }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5 });
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 6 });
 
 await scenario('Coding 自述通过但输出摘录含 FAILED → CODING_REPORT_INCONSISTENT',
   happyPlan({
     coding: function () { return codingOk({ test_succeeded: true, test_exit_code: '0', test_output_excerpt: FAILED_OUTPUT }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 5, errorIncludes: '失败标记' });
+  { status: 'CODING_REPORT_INCONSISTENT', ok: false, calls: 6, errorIncludes: '失败标记' });
 
 // 33. 无效日期解析必须失败（正则匹配不等于真实时间）。
 await scenario('需求阶段时间戳日历非法（2026-02-30）→ INVALID_TIMESTAMP',
@@ -576,7 +576,7 @@ await scenario('需求阶段时间戳日历非法（2026-02-30）→ INVALID_TIM
 await scenario('Verifier 证据时间戳为未来时间 → INVALID_TIMESTAMP（不得 ok）',
   happyPlan({ verify: function () { return verifyOk({ generated_at: '2026-10-16T06:00:00Z' }); } }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INVALID_TIMESTAMP', ok: false, calls: 5 });
+  { status: 'INVALID_TIMESTAMP', ok: false, calls: 6 });
 
 // 34. 运行起点必须落在编排层实际时间附近：把 runId 与 runStartedAt 一起伪造成旧时间也必须被拦下。
 await scenario('runStartedAt 不是合法日历时间 → INVALID_ARGS',
@@ -639,7 +639,7 @@ await scenario('阶段时钟分离：模拟时钟推进 120 秒的跨阶段成�
   }),
   baseArgs(),
   {
-    status: 'OK', ok: true, attempts: 1, calls: 5,
+    status: 'OK', ok: true, attempts: 1, calls: 6,
     extra: function (result, outcome, expectCheck) {
       expectCheck('认领时间与阶段时间戳都随模拟时钟前进（+120 秒 × 5）',
         result.finalDecision && result.finalDecision.testsIndependentlyVerified === true,
@@ -693,7 +693,7 @@ await scenario('认领前状态为 empty 的空目录可被排他认领 → OK',
     }
   }),
   baseArgs(),
-  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+  { status: 'OK', ok: true, attempts: 1, calls: 6 });
 
 // 42. 运行期写入边界：Verifier 执行测试时新生成了缓存文件 → 不得 ok（git 看不见，但文件指纹看得见）
 await scenario('Verifier 阶段新写 __pycache__ → BYTECODE_CACHE_WRITTEN（不得 ok）',
@@ -703,7 +703,7 @@ await scenario('Verifier 阶段新写 __pycache__ → BYTECODE_CACHE_WRITTEN（�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 5, errorIncludes: '运行期写入边界' });
+  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 6, errorIncludes: '运行期写入边界' });
 
 // 43. 已有缓存文件被重写（mtime 与哈希都变了）→ 同样算运行期写入
 await scenario('已有缓存文件被重写 → BYTECODE_CACHE_WRITTEN（不得 ok）',
@@ -718,7 +718,7 @@ await scenario('已有缓存文件被重写 → BYTECODE_CACHE_WRITTEN（不得 
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 5, errorIncludes: '重写' });
+  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 6, errorIncludes: '重写' });
 
 // 44. 报告自述"没有设置环境"→ 环境没有真正到达测试进程，运行期写入边界不成立
 await scenario('Verifier 报告 env_applied=false → BYTECODE_ENV_NOT_APPLIED（不得 ok）',
@@ -728,7 +728,7 @@ await scenario('Verifier 报告 env_applied=false → BYTECODE_ENV_NOT_APPLIED�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'BYTECODE_ENV_NOT_APPLIED', ok: false, calls: 5, errorIncludes: 'PYTHONDONTWRITEBYTECODE' });
+  { status: 'BYTECODE_ENV_NOT_APPLIED', ok: false, calls: 6, errorIncludes: 'PYTHONDONTWRITEBYTECODE' });
 
 // 45. Review 阶段没有交回 bytecode_scope → 证据不完整，不得当作"没有写入"
 await scenario('Review 未记录 bytecode_scope → BYTECODE_SCOPE_UNMEASURED（不得 ok）',
@@ -736,7 +736,7 @@ await scenario('Review 未记录 bytecode_scope → BYTECODE_SCOPE_UNMEASURED（
     review: function () { const r = reviewOk(); delete r.bytecode_scope; return r; }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, calls: 5, errorIncludes: '证据不完整' });
+  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, calls: 6, errorIncludes: '证据不完整' });
 
 // 46. 缓存清单里出现重复路径 → 清单不可信（字典覆盖会吞掉一次写入）
 await scenario('缓存清单含重复路径 → BYTECODE_SCOPE_UNMEASURED（不得 ok）',
@@ -746,20 +746,24 @@ await scenario('缓存清单含重复路径 → BYTECODE_SCOPE_UNMEASURED（不�
     }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, calls: 5, errorIncludes: '重复' });
+  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, calls: 6, errorIncludes: '重复' });
 
 // 47. 缓存目录里本来就有文件、执行前后完全一致 → 不得误判为写入
 await scenario('已存在缓存且执行前后一致 → OK（不得误拒）',
   happyPlan({
+    coding: function () {
+      return codingOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
     verify: function () {
       return verifyOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
     },
     review: function () {
       return reviewOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
-    }
+    },
+    cacheFinal: function () { return cacheFinalOk({ entries: [cacheEntry()], note: '' }); }
   }),
-  baseArgs(),
-  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+  baseArgs({ task: { cacheBaseline: [cacheEntry()] } }),
+  { status: 'OK', ok: true, attempts: 1, calls: 6 });
 
 // 48. 实际执行命令带固定环境前缀（同一命令上下文）→ 接受
 await scenario('实际执行命令带固定环境前缀 → OK',
@@ -769,7 +773,7 @@ await scenario('实际执行命令带固定环境前缀 → OK',
     review: function () { return reviewOk({ independent_test_command: EXEC_COMMAND }); }
   }),
   baseArgs(),
-  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+  { status: 'OK', ok: true, attempts: 1, calls: 6 });
 
 // 49. 命令前缀换成任意别的环境变量 → 等于放开任意 shell，拒绝
 await scenario('命令前缀是任意别的环境变量 → INCONSISTENT_EVIDENCE（不得 ok）',
@@ -777,18 +781,59 @@ await scenario('命令前缀是任意别的环境变量 → INCONSISTENT_EVIDENC
     verify: function () { return verifyOk({ command: "$env:PYTHONPATH = 'x'; " + CANONICAL }); }
   }),
   baseArgs({ task: { maxCodingAttempts: 1 } }),
-  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5 });
+  { status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 6 });
 
 // 50. 参数级 testCommand 允许固定前缀形式，但拒绝别的环境变量前缀
 await scenario('任务参数 testCommand 带固定环境前缀 → 接受（OK）',
   happyPlan(),
   baseArgs({ task: { testCommand: EXEC_COMMAND } }),
-  { status: 'OK', ok: true, attempts: 1, calls: 5 });
+  { status: 'OK', ok: true, attempts: 1, calls: 6 });
 
 await scenario('任务参数 testCommand 带任意环境变量前缀 → INVALID_ARGS',
   happyPlan(),
   baseArgs({ task: { testCommand: "$env:PYTHONPATH = 'x'; " + CANONICAL } }),
   { status: 'INVALID_ARGS', ok: false, calls: 0 });
+
+// 51. 全运行缓存检查：两个验证阶段各自前后不变，但阶段之间缓存变了 → 必须拒绝。
+await scenario('Verifier 与 Review 各自前后不变、但阶段之间缓存变化 → BYTECODE_CACHE_CHANGED_ACROSS_RUN（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ bytecode_scope: bytecodeScope({ entries_before: [], entries_after: [] }) });
+    },
+    review: function () {
+      return reviewOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
+    cacheFinal: function () { return cacheFinalOk({ entries: [cacheEntry()], note: '' }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_CACHE_CHANGED_ACROSS_RUN', ok: false, calls: 6, errorIncludes: 'Verifier 执行后' });
+
+// 52. Coding 阶段自己写出缓存（它不跑测试也要如实记录）→ 新写入，不得 ok。
+await scenario('Coding 阶段执行前后新增缓存 → BYTECODE_CACHE_WRITTEN（不得 ok）',
+  happyPlan({
+    coding: function () {
+      return codingOk({ bytecode_scope: bytecodeScope({ entries_before: [], entries_after: [cacheEntry()] }) });
+    },
+    verify: function () {
+      return verifyOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
+    review: function () {
+      return reviewOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
+    cacheFinal: function () { return cacheFinalOk({ entries: [cacheEntry()], note: '' }); }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 6, errorIncludes: 'Coding' });
+
+// 53. 运行前基线是必填参数：缺失时不能默认"没有缓存"。
+await scenario('任务参数缺 cacheBaseline → INVALID_ARGS（不得默认空基线）',
+  happyPlan(),
+  (function () {
+    const args = baseArgs();
+    delete args.task.cacheBaseline;
+    return args;
+  })(),
+  { status: 'INVALID_ARGS', ok: false, calls: 0, errorIncludes: 'cacheBaseline' });
 
 // ---------------------------------------------------------------- 结果
 

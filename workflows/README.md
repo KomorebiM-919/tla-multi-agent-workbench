@@ -15,8 +15,11 @@
 **执行顺序与结果传递由脚本的编排逻辑保证**（`phase()` 仅用于进度展示，不产生执行依赖）：
 
 ```
-preflight → requirement → [ coding → verify → review ] × (最多 maxCodingAttempts 轮)
+preflight → requirement → [ coding → verify → review ] × (最多 maxCodingAttempts 轮) → cacheFinal
 ```
+
+`cacheFinal`（`Cache Collector (after review)`）是**只读采集**阶段：它不跑测试、不改文件，只把 `<targetDir>/__pycache__`
+在 Review 结束后的清单交回来。它存在的理由见下条"运行期写入边界"：只看两个验证阶段各自的前后不变，证明不了编码阶段和阶段间隙里没有写过缓存。
 
 审核不通过时，脚本把该轮问题清单与编排层的判定原因**回注**给新的 Coding Agent 实例（`coding-report-revision-2.json` 等），再验证、再复审。
 
@@ -39,9 +42,17 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 - Verifier 的 `artifacts` 与 Review 复核后重算的 `artifacts_after` 的**文件集合与 `sha256` 完全一致**，且该集合**恰好等于**
   本次配置的交付文件（`task.targetDir` 下的 `moduleFile` 与 `testFile` 两项）：缺项、多列无关文件（README、`.gitignore`、样例输入等）、
   同一路径重复出现，或验证前后不一致 ⇒ `ARTIFACT_FINGERPRINT_MISMATCH`（两份清单互相一致但都漏掉测试文件同样不通过）；
-- 预检自身报告的问题清单必须为空（`problems` 非空 ⇒ `PREFLIGHT_PROBLEMS`，先由人处理再重跑）。
+- 预检自身报告的问题清单必须为空（`problems` 非空 ⇒ `PREFLIGHT_PROBLEMS`，先由人处理再重跑）；
+- **运行期写入边界（全运行账本）**：编排层在启动任何子代理**之前**采集的 `task.cacheBaseline` 是必填参数（缺 ⇒ `INVALID_ARGS`），
+  Coding 报告、Verifier 与 Review 的 `bytecode_scope` 各自交回执行前/后清单，`cacheFinal` 交回 Review 结束后的清单；
+  相邻两个观测点之间出现新增 / 重写 / 删除 ⇒ `BYTECODE_CACHE_CHANGED_ACROSS_RUN`（"两个验证阶段各自前后不变"只是必要条件）；
+  单个阶段自己前后变了 ⇒ `BYTECODE_CACHE_WRITTEN`；`env_applied` 不为 `true` ⇒ `BYTECODE_ENV_NOT_APPLIED`；
+  清单缺失、类型不对、路径不在缓存目录下、重复路径 ⇒ `BYTECODE_SCOPE_UNMEASURED`。四者都在 `REVIEW_NOT_APPROVED` 之前判不通过；
+  优先级：`BYTECODE_CACHE_WRITTEN` > `BYTECODE_CACHE_CHANGED_ACROSS_RUN` > `BYTECODE_ENV_NOT_APPLIED` > `BYTECODE_SCOPE_UNMEASURED`；
+  **已存在缓存且全程前后逐字段一致不得被误拒**。
 
 其他失败状态码：`TEST_NOT_VERIFIED`、`INCONSISTENT_REVIEW`、`CODING_REPORT_INCONSISTENT`、`CRITERIA_NOT_SATISFIED`、`REVIEW_NOT_APPROVED`、
+`BYTECODE_CACHE_CHANGED_ACROSS_RUN`、`BYTECODE_CACHE_WRITTEN`、`BYTECODE_ENV_NOT_APPLIED`、`BYTECODE_SCOPE_UNMEASURED`、
 `REQUIREMENT_CONFLICT`、`PREFLIGHT_PROBLEMS`、`PATH_NOT_NORMALIZED`、`PATH_TARGET_MISMATCH`、`TARGET_DIR_OUTSIDE_REPO`、`LINK_ESCAPE`、
 `EVIDENCE_NOT_CLAIMED`、`EVIDENCE_EXISTS`、`PREFLIGHT_FAILED`、`NO_ATTEMPT`、`INVALID_ARGS`、
 `INVALID_TIMESTAMP`、`PROMPT_MISSING`、`REQUIREMENT_OUTPUT_INVALID`、`REQUIREMENT_IDS_INVALID`；轮次用尽时前缀 `MAX_ATTEMPTS_`。
@@ -61,10 +72,15 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
     "testFile": "test_text_stats.py",
     "sampleFile": "sample_input.txt",
     "testCommand": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
-    "maxCodingAttempts": 2
+    "maxCodingAttempts": 2,
+    "cacheBaseline": []
   }
 }
 ```
+
+`task.cacheBaseline`：**必填**数组，内容是启动前实际采集的 `<targetDir>/__pycache__` 清单（每项 `path`/`bytes`/`mtime_ms`/`sha256`，
+`path` 为仓库内相对路径且必须在缓存目录下）；缓存目录不存在就传空数组 `[]`。它是全运行写入边界比较的起点——
+不传、不是数组、条目字段不合法、路径越界或重复 ⇒ `INVALID_ARGS`（**不允许**用"默认空数组"代替实测）。
 
 参数校验（**校验失败即 `INVALID_ARGS`，不启动任何子代理**）：
 
@@ -75,8 +91,9 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 | `promptDir` | 提示词目录（默认 `agents`），其中的角色文件必须存在，否则 `PROMPT_MISSING` |
 | `task.targetDir` | 仓库内相对路径；拒绝绝对路径、盘符、`..` 穿越、反斜杠 |
 | `task.moduleFile` / `testFile` / `sampleFile` | 仅文件名（无目录成分） |
-| `task.testCommand` | 默认由 `targetDir` 推导为 `python -m unittest discover -s <targetDir> -p "test_*.py"`；显式传入时**只接受该规范命令（可加 `-v`）**，任意 shell 命令一律拒绝 |
+| `task.testCommand` | 默认由 `targetDir` 推导为 `python -m unittest discover -s <targetDir> -p "test_*.py"`；显式传入时**只接受该规范命令（可加 `-v`）或带固定环境前缀的同一命令**（`$env:PYTHONDONTWRITEBYTECODE = '1'; ` + 规范命令），任意其他 shell 命令一律拒绝 |
 | `task.maxCodingAttempts` | 1–5 的整数；0、小数、字符串、超大值一律 `INVALID_ARGS` |
+| `task.cacheBaseline` | **必填**数组：启动前实测的 `<targetDir>/__pycache__` 清单（`path`/`bytes`/`mtime_ms`/`sha256`）；目录不存在传 `[]`；缺失或条目不合法 ⇒ `INVALID_ARGS` |
 | `runStartedAt` | 可选；必须是**合法的、带时区的 ISO-8601 日历时间**（`2026-02-30`、`25:00`、`+25:00` 一律非法 ⇒ `INVALID_ARGS`），且必须与 `runId` 的时间戳同秒；**省略时由 `runId` 的 UTC 时间戳还原**（时间窗门禁不会因为省略该参数而失效）。它还必须是**这次真实运行的起点**：与编排层实际时间相差超过 1 小时即 `INVALID_ARGS`（把 `runId` 与 `runStartedAt` 一起改成旧时间也会被拦下）。子代理产物（preflight / requirement / coding-report / verify / review）的时间戳必须落在运行窗口（默认 6 小时，含 60 秒时钟偏差容差）内且**不得晚于编排层当前时间**，否则 `INVALID_TIMESTAMP`（防止用占位时间或未来时间冒充真实记录） |
 
 **路径与认领校验**（预检阶段，任一不满足即 fail-closed，不进入需求阶段）：交付目录与证据目录必须回报 `realpath`，且两者的真实路径都必须位于仓库根之内（⇒ `TARGET_DIR_OUTSIDE_REPO`）；
@@ -98,7 +115,7 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 
 ### 输出
 
-结构化运行结果：`{ ok, status, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, maxCodingAttempts, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
+结构化运行结果：`{ ok, status, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, cacheBaseline, cacheDirPrefix, maxCodingAttempts, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
 每一轮的 `codingReport` / `verification` / `review` 与编排层判定都挂在该轮的 `attemptsDetail[n]` 下（没有 `codingReports` 之类的顶层键）。
 
 `finalDecision` 逐项列出成功判定的依据（`testsIndependentlyVerified`、`reviewApproved`、`allCriteriaSatisfied`、`criteriaCheckCoversAll`、`reviewIndependentTestsPassed`、`fingerprintsMatch`、`stageReportedRequirementConflicts`），便于人工核查而不必信任一句 `ok`；
