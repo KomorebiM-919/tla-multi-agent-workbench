@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * tools/approval-rejection-evidence.mjs 的离线回归。
  *
@@ -29,12 +29,14 @@ import {
   pathKeyOf,
   readHumanObservation,
   splitZstdFrames,
+  writeBindingCommand,
   zstdFrameLength,
 } from '../tools/approval-rejection-evidence.mjs'
 
 const TOOL_PATH = 'tools/approval-rejection-evidence.mjs'
 const MARKER = '[tla-approval-rejection:11111111-2222-3333-4444-555555555555]'
-const JUSTIFICATION = `写入一个测试文件，用来验证人工拒绝会真的拦住操作 ${MARKER}`
+const TARGET_PATH = 'C:\\tmp\\tla-approval-rejection-test.txt'
+const JUSTIFICATION = `测试用无害写入：向 ${TARGET_PATH} 写入一个标记文件，用来验证人工拒绝会真的拦住操作 ${MARKER}`
 const REASON = `escalate sandbox to danger-full-access: ${JUSTIFICATION}`
 const CALL_ID = 'call_00_SYNTHETIC_0001'
 const ASK_ID = 'ask-id-0001'
@@ -124,7 +126,7 @@ function baseEvents() {
         callId: CALL_ID,
         name: 'pwsh',
         arguments: JSON.stringify({
-          command: 'write the marker file',
+          command: writeBindingCommand(TARGET_PATH, MARKER),
           sandbox_permissions: 'danger-full-access',
           justification: JUSTIFICATION,
         }),
@@ -174,20 +176,24 @@ function deepMerge(base, patch) {
 }
 
 function stateFixture(phase, patch = {}) {
+  const capturedAt = phase === 'before' ? '2026-10-17T05:00:00.000Z' : '2026-10-17T05:01:00.000Z'
   const base = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     tool: TOOL_PATH,
     phase,
     runId: 'run-1',
     marker: MARKER,
-    capturedAt: phase === 'before' ? '2026-10-17T05:00:00.000Z' : '2026-10-17T05:01:00.000Z',
-    capturedAtMs: phase === 'before' ? 1000 : 2000,
+    capturedAt,
+    capturedAtMs: Date.parse(capturedAt),
     target: {
-      path: 'C:\\tmp\\tla-approval-rejection-test.txt',
+      path: TARGET_PATH,
       pathKey: 'c:\\tmp\\tla-approval-rejection-test.txt',
       exists: false,
       parent: 'C:\\tmp',
+      parentMeasured: true,
       siblingMatches: [],
+      insideRepo: false,
+      nameMatchesContract: true,
     },
     repo: {
       root: 'C:\\repo',
@@ -581,8 +587,10 @@ function testStateComparison() {
   check('state: identity mismatch', has(compareStates(before, stateFixture('after', {
     identity: { sessionId: 'session-other' },
   })).failures, 'SNAPSHOT_IDENTITY_MISMATCH'))
-  check('state: order invalid', has(compareStates(stateFixture('before', { capturedAtMs: 5000 }), after).failures,
-    'SNAPSHOT_ORDER_INVALID'))
+  check('state: order invalid', has(compareStates(before, stateFixture('after', {
+    capturedAt: '2026-10-17T04:59:59.999Z',
+    capturedAtMs: Date.parse('2026-10-17T04:59:59.999Z'),
+  })).failures, 'SNAPSHOT_ORDER_INVALID'))
   check('state: marker mismatch', has(compareStates(before, stateFixture('after', { marker: '[other]' })).failures,
     'SNAPSHOT_MARKER_MISMATCH'))
   check('state: schema mismatch => INCOMPLETE', has(compareStates(before, stateFixture('after', { schemaVersion: 1 })).incompletes,
@@ -599,6 +607,125 @@ function testStateComparison() {
   check('state: sibling created', has(compareStates(before, stateFixture('after', {
     target: { siblingMatches: ['tla-approval-rejection-old.txt'] },
   })).failures, 'TARGET_SIBLING_CREATED'))
+}
+
+/* ---------------------------------------------------------------------------
+ * C2. 复审点一：缺失/身份错配的指纹不得 PASS
+ * ------------------------------------------------------------------------ */
+
+function testStrictSnapshotValidation() {
+  const baseline = judge()
+  check('strict: baseline is PASS', baseline.machine.verdict === 'PASS' && baseline.final.verdict === 'PASS',
+    JSON.stringify(baseline.machine))
+
+  // 1) target 两边都是 null：绝不能因为"相等"就当作前后未变
+  const noTarget = judge({ beforePatch: { target: null }, afterPatch: { target: null } })
+  check('strict: target null => INCOMPLETE', noTarget.machine.verdict === 'INCOMPLETE',
+    JSON.stringify(noTarget.machine))
+  check('strict: target null => TARGET_UNMEASURED', has(noTarget.machine.incompletes, 'TARGET_UNMEASURED'))
+
+  // 2) exists 两边都是 null
+  const noExists = judge({ beforePatch: { target: { exists: null } }, afterPatch: { target: { exists: null } } })
+  check('strict: exists null => TARGET_EXISTS_UNMEASURED', has(noExists.machine.incompletes, 'TARGET_EXISTS_UNMEASURED'))
+  check('strict: exists null => not PASS', noExists.machine.verdict !== 'PASS')
+
+  // 3) sessionId 两边都是 null
+  const noId = judge({
+    beforePatch: { identity: { sessionId: null } },
+    afterPatch: { identity: { sessionId: null } },
+  })
+  check('strict: sessionId null => SNAPSHOT_IDENTITY_UNMEASURED',
+    has(noId.machine.incompletes, 'SNAPSHOT_IDENTITY_UNMEASURED'))
+  check('strict: sessionId null => not PASS', noId.machine.verdict !== 'PASS')
+
+  // 4) 两份快照 sessionId 相同，但不是日志里那个会话
+  const wrongSession = judge({
+    beforePatch: { identity: { sessionId: 'session-other' } },
+    afterPatch: { identity: { sessionId: 'session-other' } },
+  })
+  check('strict: foreign session => SNAPSHOT_SESSION_MISMATCH', has(wrongSession.machine.failures, 'SNAPSHOT_SESSION_MISMATCH'))
+  check('strict: foreign session => FAIL', wrongSession.machine.verdict === 'FAIL')
+
+  // 5) repo.root 两边都是 null
+  const noRoot = judge({ beforePatch: { repo: { root: null } }, afterPatch: { repo: { root: null } } })
+  check('strict: repo root null => REPO_ROOT_UNMEASURED', has(noRoot.machine.incompletes, 'REPO_ROOT_UNMEASURED'))
+  check('strict: repo root null => not PASS', noRoot.machine.verdict !== 'PASS')
+
+  // 6) 执行前目标已存在：前提不成立（不是"未变"）
+  const existedBefore = judge({ beforePatch: { target: { exists: true } } })
+  check('strict: target existed before => TARGET_EXISTED_BEFORE', has(existedBefore.machine.failures, 'TARGET_EXISTED_BEFORE'))
+  check('strict: target existed before => FAIL', existedBefore.machine.verdict === 'FAIL')
+
+  // 7) 仓库根与会话工作区不一致
+  const wrongRepo = judge({ beforePatch: { repo: { root: 'C:\\other' } } })
+  check('strict: repo != session cwd => REPO_NOT_SESSION_WORKSPACE', has(wrongRepo.machine.failures, 'REPO_NOT_SESSION_WORKSPACE'))
+
+  // 8) 目标落在被测工作区内 / 名字不符合契约
+  const inside = judge({ beforePatch: { target: { insideRepo: true } } })
+  check('strict: target inside workspace => TARGET_INSIDE_WORKSPACE', has(inside.machine.failures, 'TARGET_INSIDE_WORKSPACE'))
+  const badName = judge({ beforePatch: { target: { nameMatchesContract: false } } })
+  check('strict: target name off-contract => TARGET_NAME_NOT_IN_CONTRACT',
+    has(badName.machine.failures, 'TARGET_NAME_NOT_IN_CONTRACT'))
+
+  // 9) 目标范围本身没测到
+  const noScope = judge({ beforePatch: { target: { insideRepo: null } }, afterPatch: { target: { insideRepo: null } } })
+  check('strict: target scope unmeasured => TARGET_SCOPE_UNMEASURED', has(noScope.machine.incompletes, 'TARGET_SCOPE_UNMEASURED'))
+
+  // 10) 前后快照时间倒序
+  const reversed = judge({ afterPatch: { capturedAtMs: 500, capturedAt: '2026-10-17T05:00:01.000Z' } })
+  check('strict: reversed time => not PASS', reversed.machine.verdict !== 'PASS')
+}
+
+/* ---------------------------------------------------------------------------
+ * C3. 复审点二：审批操作必须绑定到被观察的目标
+ * ------------------------------------------------------------------------ */
+
+function withCommand(command) {
+  const events = baseEvents()
+  const call = findEvent(events, 'tool/call')
+  const args = JSON.parse(call.data.arguments)
+  call.data.arguments = JSON.stringify({ ...args, command })
+  return events
+}
+
+function testCommandBinding() {
+  const bound = judge({ events: withCommand(writeBindingCommand(TARGET_PATH, MARKER)) })
+  check('bind: canonical command passes', bound.machine.verdict === 'PASS', JSON.stringify(bound.machine))
+
+  // 审批指向 A、快照检查 B：命令里写的是另一个文件
+  const otherTarget = 'C:\\tmp\\tla-approval-rejection-other.txt'
+  const mismatch = judge({ events: withCommand(writeBindingCommand(otherTarget, MARKER)) })
+  check('bind: command targets another file => APPROVAL_COMMAND_UNBOUND',
+    has(mismatch.machine.failures, 'APPROVAL_COMMAND_UNBOUND'))
+  check('bind: command mismatch => FAIL', mismatch.machine.verdict === 'FAIL')
+
+  // 同一个 marker、操作内容不同（追加了别的动作）
+  const padded = judge({
+    events: withCommand(`${writeBindingCommand(TARGET_PATH, MARKER)}; Remove-Item -LiteralPath 'C:\\tmp\\x.txt'`),
+  })
+  check('bind: extra operation => APPROVAL_COMMAND_UNBOUND', has(padded.machine.failures, 'APPROVAL_COMMAND_UNBOUND'))
+
+  // 缺命令字段：信息不足，只能 INCOMPLETE
+  const noCommandEvents = baseEvents()
+  const call = findEvent(noCommandEvents, 'tool/call')
+  const args = JSON.parse(call.data.arguments)
+  delete args.command
+  call.data.arguments = JSON.stringify(args)
+  const noCommand = judge({ events: noCommandEvents })
+  check('bind: command missing => APPROVAL_COMMAND_UNMEASURED', has(noCommand.machine.incompletes, 'APPROVAL_COMMAND_UNMEASURED'))
+  check('bind: command missing => INCOMPLETE not PASS', noCommand.machine.verdict === 'INCOMPLETE')
+
+  // justification 里没有目标路径：人工在弹窗里看到的不是被检查的那个文件
+  const noTargetInJustification = baseEvents()
+  const call2 = findEvent(noTargetInJustification, 'tool/call')
+  const args2 = JSON.parse(call2.data.arguments)
+  args2.justification = `只写了 marker，没有写目标路径 ${MARKER}`
+  call2.data.arguments = JSON.stringify(args2)
+  const ask2 = findEvent(noTargetInJustification, 'approval/asked')
+  ask2.data.reason = `escalate sandbox to danger-full-access: ${args2.justification}`
+  const unstated = judge({ events: noTargetInJustification })
+  check('bind: target absent from justification => TARGET_NOT_IN_JUSTIFICATION',
+    has(unstated.machine.failures, 'TARGET_NOT_IN_JUSTIFICATION'))
 }
 
 /* ---------------------------------------------------------------------------
@@ -632,10 +759,15 @@ function testFilesystemSnapshot() {
   const repo = makeScratch('repo')
   writeFileSync(join(repo, 'a.txt'), 'base\n', 'utf8')
   writeFileSync(join(repo, '.gitignore'), '.git-capture.txt\n', 'utf8')
-  runGit(repo, ['init', '-q'])
+  const init = runGit(repo, ['init', '-q'])
+  // 前置失败要单独报清楚：否则后面的 HEAD/内容范围断言会级联成看不懂的失败。
+  check('fs: git init exit 0', init.status === 0, `status=${init.status} stderr=${init.text}`)
+  if (init.status !== 0) return
   runGit(repo, ['add', 'a.txt', '.gitignore'])
   const commit = runGit(repo, ['commit', '-q', '-m', 'base'])
-  check('fs: temp git repo usable', commit.status === 0, commit.text)
+  check('fs: temp git repo usable', commit.status === 0, `status=${commit.status} ${commit.text}`)
+  if (commit.status !== 0) return
+  const sessionArgs = ['--session-id', 'session-fs']
 
   const evidenceDir = join(repo, '.evidence')
   const target = join(makeScratch('target'), 'tla-approval-rejection-x.txt')
@@ -643,7 +775,7 @@ function testFilesystemSnapshot() {
   // status 文本在两次快照里相同（都是 " M a.txt"），但字节不同
   writeFileSync(join(repo, 'a.txt'), 'variant-one\n', 'utf8')
   const before = callMain(['snapshot', '--target', target, '--dir', evidenceDir, '--run-id', 'run-fs',
-    '--marker', MARKER, '--phase', 'before', '--repo', repo])
+    '--marker', MARKER, '--phase', 'before', '--repo', repo, ...sessionArgs])
   check('fs: snapshot before exit 0', before === 0, `exit=${before}`)
 
   // 取证目录排除
@@ -660,12 +792,12 @@ function testFilesystemSnapshot() {
 
   // 排他写入：同一个 phase 再写一次必须被拒绝
   const duplicateSnapshot = callMain(['snapshot', '--target', target, '--dir', evidenceDir, '--run-id', 'run-fs',
-    '--marker', MARKER, '--phase', 'before', '--repo', repo])
+    '--marker', MARKER, '--phase', 'before', '--repo', repo, ...sessionArgs])
   check('fs: snapshot refuses overwrite', duplicateSnapshot === 4, `exit=${duplicateSnapshot}`)
 
   writeFileSync(join(repo, 'a.txt'), 'variant-two\n', 'utf8')
   const after = callMain(['snapshot', '--target', target, '--dir', evidenceDir, '--run-id', 'run-fs',
-    '--marker', MARKER, '--phase', 'after', '--repo', repo])
+    '--marker', MARKER, '--phase', 'after', '--repo', repo, ...sessionArgs])
   check('fs: snapshot after exit 0', after === 0, `exit=${after}`)
 
   const beforeState2 = JSON.parse(readFileSync(join(evidenceDir, 'state-before.json'), 'utf8'))
@@ -698,7 +830,7 @@ function writeEvidenceDir({ outcome = 'rejected', isError = true, human = 'yes' 
   findEvent(events, 'tool/result').data.message.isError = isError
   const correlation = correlateApproval(events, { marker: MARKER })
   writeFileSync(join(dir, 'approval-evidence.json'), `${JSON.stringify({
-    schemaVersion: 2,
+    schemaVersion: 3,
     sessionFile: '(synthetic)',
     decode: { frames: 1, badFrames: 0, badLines: 0 },
     correlation,
@@ -774,6 +906,8 @@ testJudgeToolResultVariants()
 testJudgeOrdering()
 testJudgePolicyScope()
 testStateComparison()
+testStrictSnapshotValidation()
+testCommandBinding()
 testFilesystemSnapshot()
 testCliVerify()
 

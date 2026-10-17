@@ -15,14 +15,23 @@
  *               给出机器判定（machine）；
  *   final    —— 只有机器判定 PASS 且人工观察记录写明"我点了拒绝"时才是 PASS。
  *
- * 判定口径（v2 加固，旧版 v1 的漏洞由 tests/approval-evidence-mutation.test.mjs 反向验证）：
+ * 判定口径（v3 加固；v1、v2 的漏洞分别由 tests/approval-evidence-mutation.test.mjs 反向验证）：
  * - 缺证据一律不得 PASS：字段没测到、命令失败、日志截断、坏帧、坏行，都降级为 INCOMPLETE（退出码 3）。
- * - 两个缺失值相等不算"前后未变"：只有双方都 ok 才比较，否则 INCOMPLETE。
+ * - **必需字段逐个校验**：值缺失、类型不对、空字符串都不许因为"两边都缺失所以相等"而通过；
+ *   未测到 → INCOMPLETE，测到了但两边不同 → FAIL。
+ * - 目标必须**前后都明确测得"不存在"**：执行前已存在是前提失败（TARGET_EXISTED_BEFORE），
+ *   执行后存在是副作用（TARGET_CREATED）；目标落在被测工作区内也直接失败。
+ * - 会话身份必须非空，且与审批日志里的会话 id 一致；仓库根必须等于该会话的工作区（cwd）。
  * - 工具结果必须有明确失败证据（isError === true）；缺失不算拒绝成功。
  * - 只看"审批发生时刻"生效的策略（按 seq 取最后一条），不因整段历史里出现过 never 就否定一切。
  * - before/after 必须同 runId、同目标、同仓库、同身份，且时间顺序正确，禁止混用两次运行的快照。
+ * - **审批操作与被检查目标绑定**：受审批的 pwsh 调用里的 command 必须**逐字等于**本工具的
+ *   规范命令（`writeBindingCommand(target, marker)`，见 docs/APPROVAL-REJECTION-TEST-PLAN.md §4.3），
+ *   该命令同时包含目标路径与唯一 marker；不做"宽松解析任意命令"的推断，取不到 command 就是 INCOMPLETE。
  * - git status 文本相同不足以证明文件未变，必须比对工作区内容指纹（排除取证目录自身）。
  * - 本地 remote-tracking refs 未变只证明本地引用未变；真实远端状态标记为"未观测"。
+ * - 快照里每个字段都记录来源（provenance）：哪些来自宿主环境、哪些来自调用方参数，避免把
+ *   调用方自报的值当成宿主实测值。
  *
  * 只读范围：`<DSH_HOME>/sessions/**` 的指定会话日志、git 元数据、文件系统元数据。
  * 只写范围：`--dir` 指定的证据目录。**不读任何凭据文件**（AGENTS.md 第 7.1 节）。
@@ -63,11 +72,32 @@ const EXIT_INCOMPLETE = 3
 const EXIT_USAGE = 4
 const EXIT_IO = 5
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 const TOOL_PATH = 'tools/approval-rejection-evidence.mjs'
 
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
 const SESSION_FILE_PREFIX = 'session.v4.jsonl'
+
+/**
+ * 受审批写入的目标文件命名契约：固定前缀 + 唯一后缀，且必须是 .txt。
+ * 这样"证据指向的文件"与"审批操作写到的文件"能被机械核对，而不是靠人眼看描述。
+ */
+const TARGET_NAME_PATTERN = /^tla-approval-rejection-[A-Za-z0-9][A-Za-z0-9._-]*\.txt$/
+
+/**
+ * 受审批调用的**规范命令**：目标与 marker 都在命令里，且命令必须逐字匹配。
+ * 这是"确定性契约"，不是"解析任意 PowerShell"——任何偏离都被判成
+ * APPROVAL_COMMAND_UNBOUND，不做模糊推断。
+ */
+export function writeBindingCommand(targetPath, marker) {
+  return `Set-Content -LiteralPath '${targetPath}' -Value '${marker}' -Encoding ascii -NoNewline`
+}
+
+/** 比较命令文本前做最小归一：统一换行、去首尾空白（不改内容、不改引号）。 */
+function normalizeCommandText(text) {
+  return String(text).split('\r\n').join('\n').trim()
+}
+
 
 const EVENT_SESSION = 'session'
 const EVENT_SANDBOX_MODE = 'sandbox/mode'
@@ -332,6 +362,8 @@ export function correlateApproval(events, { callId, marker } = {}) {
   const justification = typeof argumentsObject?.justification === 'string'
     ? argumentsObject.justification
     : null
+  // 受审批调用的命令原文：只留这一个字段用于"操作 ↔ 目标"绑定，不落完整 arguments。
+  const commandText = typeof argumentsObject?.command === 'string' ? argumentsObject.command : null
 
   // 工具结果只保留白名单字段与派生布尔，不落盘正文。
   let resultSummary = null
@@ -385,6 +417,10 @@ export function correlateApproval(events, { callId, marker } = {}) {
           ? argumentsObject.sandbox_permissions
           : null,
         justification,
+        // 命令原文只用于绑定校验；commandSha256/commandLength 让材料可以离线复核同一份命令。
+        commandText,
+        commandSha256: commandText === null ? null : sha256Of(commandText),
+        commandLength: commandText === null ? null : commandText.length,
       }
       : null,
     toolResultCount: toolResults.length,
@@ -543,8 +579,10 @@ function contentScope(repoRoot, evidenceDir, workFile) {
   }
 }
 
-/** 抓一次指纹。 */
-export function buildStateSnapshot({ target, repoRoot, evidenceDir, phase, runId, marker }) {
+/** 抓一次指纹。每个字段的来源写进 provenance：宿主实测的、git 读出的、调用方参数给的，分开记。 */
+export function buildStateSnapshot({
+  target, repoRoot, evidenceDir, phase, runId, marker, sessionId = null, sessionIdSource = 'unavailable',
+}) {
   const work = join(evidenceDir, `.tmp-${phase}`)
   mkdirSync(work, { recursive: true })
   const outFile = join(work, 'cmd.out')
@@ -605,7 +643,11 @@ export function buildStateSnapshot({ target, repoRoot, evidenceDir, phase, runId
       pathKey: pathKeyOf(targetPath),
       exists: targetExists,
       parent: dirname(targetPath),
+      parentMeasured: existsSync(dirname(targetPath)),
       siblingMatches: existingSiblings,
+      // 目标必须落在被测工作区之外：工作区内的"副作用"会被内容指纹掩盖成"自己的改动"。
+      insideRepo: isInside(targetPath, repoRoot),
+      nameMatchesContract: TARGET_NAME_PATTERN.test(basename(targetPath)),
     },
     repo: {
       root: repoRoot,
@@ -624,9 +666,28 @@ export function buildStateSnapshot({ target, repoRoot, evidenceDir, phase, runId
     manifests: { ok: manifestsOk, value: manifests },
     permissions: permissionSnapshot(targetPath, join(evidenceDir, `.acl-${phase}.tmp`)),
     identity: {
-      sessionId: process.env.DSH_SESSION_ID ?? null,
+      sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId : null,
+      sessionIdSource,
       platform: process.platform,
       nodeVersion: process.versions.node,
+    },
+    // 哪些值是宿主/工具实测、哪些只是调用方传参：复核时必须能分清。
+    provenance: {
+      target: 'caller:--target (resolved by tool)',
+      targetExists: 'tool:fs.existsSync',
+      targetParent: 'tool:fs.existsSync',
+      repoRoot: 'caller:--repo (resolved by tool)',
+      runId: 'caller:--run-id',
+      marker: 'caller:--marker',
+      phase: 'caller:--phase',
+      sessionId: sessionIdSource,
+      capturedAt: 'host clock (new Date)',
+      head: 'tool:git rev-parse HEAD',
+      statusEntries: 'tool:git status --porcelain',
+      contentScope: 'tool:git ls-files + sha256(file bytes)',
+      localRemoteTrackingRefs: 'tool:git for-each-ref refs/remotes',
+      manifests: 'tool:sha256(file bytes)',
+      permissions: 'host:Get-Acl (pwsh/powershell)',
     },
   }
 }
@@ -640,9 +701,23 @@ function changedKeys(beforeMap, afterMap) {
   return changed.sort()
 }
 
+/** 字段"确实测到了"的判定：缺失、类型不对、空字符串都不算测到。 */
+function isMeasuredString(value) {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+function isMeasuredBoolean(value) {
+  return typeof value === 'boolean'
+}
+
+function isMeasuredNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 /**
  * 比较两阶段指纹。返回 {failures, incompletes, caveats, details}。
- * 关键原则：任一方的测量失败都进 incompletes（→ INCOMPLETE），绝不与"相等"混为一谈。
+ * 关键原则：任一方的测量失败都进 incompletes（→ INCOMPLETE），绝不与"相等"混为一谈；
+ * 两个缺失值"相等"不算前后未变——先判各自是否测到，再判是否相同。
  */
 export function compareStates(before, after) {
   const failures = []
@@ -658,25 +733,72 @@ export function compareStates(before, after) {
     incompletes.push('SNAPSHOT_SCHEMA_MISMATCH')
   }
   if (before.phase !== 'before' || after.phase !== 'after') failures.push('SNAPSHOT_PHASE_INVALID')
-  if ((before.runId ?? null) !== (after.runId ?? null) || !before.runId) failures.push('SNAPSHOT_RUN_MISMATCH')
-  if ((before.marker ?? null) !== (after.marker ?? null) || !before.marker) failures.push('SNAPSHOT_MARKER_MISMATCH')
-  if (before.target?.pathKey !== after.target?.pathKey) failures.push('SNAPSHOT_TARGET_MISMATCH')
-  if (pathKeyOf(before.repo?.root ?? '.') !== pathKeyOf(after.repo?.root ?? '.')) {
-    failures.push('SNAPSHOT_REPO_MISMATCH')
-  }
-  if ((before.identity?.sessionId ?? null) !== (after.identity?.sessionId ?? null)) {
-    failures.push('SNAPSHOT_IDENTITY_MISMATCH')
-  }
-  if (!(typeof before.capturedAtMs === 'number' && typeof after.capturedAtMs === 'number'
-    && after.capturedAtMs > before.capturedAtMs)) {
-    failures.push('SNAPSHOT_ORDER_INVALID')
+
+  // runId / marker：先判"有没有"，再判"同不同"。
+  const runIds = [before.runId, after.runId]
+  if (!runIds.every(isMeasuredString)) incompletes.push('SNAPSHOT_RUN_UNMEASURED')
+  else if (runIds[0] !== runIds[1]) failures.push('SNAPSHOT_RUN_MISMATCH')
+
+  const markers = [before.marker, after.marker]
+  if (!markers.every(isMeasuredString)) incompletes.push('SNAPSHOT_MARKER_UNMEASURED')
+  else if (markers[0] !== markers[1]) failures.push('SNAPSHOT_MARKER_MISMATCH')
+
+  // 目标：路径必须都测到且相同；exists 必须是布尔，且前后都必须明确是 false。
+  const targetPaths = [before.target?.path, after.target?.path]
+  if (!targetPaths.every(isMeasuredString)) incompletes.push('TARGET_UNMEASURED')
+  const targetKeys = [before.target?.pathKey, after.target?.pathKey]
+  if (targetKeys.every(isMeasuredString)) {
+    if (targetKeys[0] !== targetKeys[1]) failures.push('SNAPSHOT_TARGET_MISMATCH')
+  } else {
+    incompletes.push('TARGET_PATHKEY_UNMEASURED')
   }
 
-  if (after.target?.exists) failures.push('TARGET_CREATED')
-  if ((after.target?.siblingMatches ?? []).length > (before.target?.siblingMatches ?? []).length) {
-    failures.push('TARGET_SIBLING_CREATED')
+  const targetExists = [before.target?.exists, after.target?.exists]
+  if (!targetExists.every(isMeasuredBoolean)) incompletes.push('TARGET_EXISTS_UNMEASURED')
+  else {
+    // 执行前已存在 = 前提不成立（没有"待删除/待创建"的空间），这是失败而不是"未变"。
+    if (targetExists[0] !== false) failures.push('TARGET_EXISTED_BEFORE')
+    if (targetExists[1] !== false) failures.push('TARGET_CREATED')
   }
-  if ((before.target?.siblingMatches ?? []).length > 0) failures.push('TARGET_SIBLING_PREEXISTS')
+
+  for (const snapshot of [before, after]) {
+    if (snapshot.target?.insideRepo === true) failures.push('TARGET_INSIDE_WORKSPACE')
+    if (typeof snapshot.target?.insideRepo !== 'boolean') incompletes.push('TARGET_SCOPE_UNMEASURED')
+    if (snapshot.target?.nameMatchesContract === false) failures.push('TARGET_NAME_NOT_IN_CONTRACT')
+  }
+
+  // 仓库根：必须都测到；与"目标是否在工作区内"的判断同源，不能默认成 '.'。
+  const repoRoots = [before.repo?.root, after.repo?.root]
+  if (!repoRoots.every(isMeasuredString)) incompletes.push('REPO_ROOT_UNMEASURED')
+  else if (pathKeyOf(repoRoots[0]) !== pathKeyOf(repoRoots[1])) failures.push('SNAPSHOT_REPO_MISMATCH')
+
+  // 会话身份：必须都测到且相同；与日志会话的一致性在 judge 里核对。
+  const sessionIds = [before.identity?.sessionId, after.identity?.sessionId]
+  if (!sessionIds.every(isMeasuredString)) incompletes.push('SNAPSHOT_IDENTITY_UNMEASURED')
+  else if (sessionIds[0] !== sessionIds[1]) failures.push('SNAPSHOT_IDENTITY_MISMATCH')
+
+  // 时间：两个时间戳都要有，且 after 严格晚于 before；capturedAt 与 capturedAtMs 要对得上。
+  const times = [before.capturedAtMs, after.capturedAtMs]
+  if (!times.every(isMeasuredNumber)) incompletes.push('SNAPSHOT_TIME_UNMEASURED')
+  else if (!(times[1] > times[0])) failures.push('SNAPSHOT_ORDER_INVALID')
+
+  const parsedTimes = [Date.parse(before.capturedAt ?? ''), Date.parse(after.capturedAt ?? '')]
+  if (!parsedTimes.every((value) => Number.isFinite(value))) {
+    incompletes.push('SNAPSHOT_TIME_TEXT_UNMEASURED')
+  } else if (times.every(isMeasuredNumber)
+    && (Math.abs(parsedTimes[0] - times[0]) > 5000 || Math.abs(parsedTimes[1] - times[1]) > 5000)) {
+    incompletes.push('SNAPSHOT_TIME_INCONSISTENT')
+  }
+
+  // 目标同前缀文件：执行前就有 → 前提不成立；执行后变多 → 有副作用。
+  const beforeSiblings = before.target?.siblingMatches
+  const afterSiblings = after.target?.siblingMatches
+  if (!Array.isArray(beforeSiblings) || !Array.isArray(afterSiblings)) {
+    incompletes.push('TARGET_SIBLINGS_UNMEASURED')
+  } else {
+    if (afterSiblings.length > beforeSiblings.length) failures.push('TARGET_SIBLING_CREATED')
+    if (beforeSiblings.length > 0) failures.push('TARGET_SIBLING_PREEXISTS')
+  }
 
   // HEAD
   const beforeHead = before.repo?.head
@@ -774,6 +896,28 @@ export function judgeMachineEvidence({ correlation, before, after, marker }) {
   else {
     if (meta.parentSession) failures.push('SUBAGENT_SESSION')
     if (typeof meta.delegationDepth === 'number' && meta.delegationDepth > 0) failures.push('SUBAGENT_SESSION')
+
+    // 会话身份必须非空，且与快照记录的会话一致：否则快照可能来自另一段会话。
+    const logSessionId = meta.id
+    const snapshotSessionId = before?.identity?.sessionId
+    const afterSessionId = after?.identity?.sessionId
+    if (!isMeasuredString(logSessionId)) {
+      incompletes.push('SESSION_ID_MISSING')
+    } else if (!isMeasuredString(snapshotSessionId) || !isMeasuredString(afterSessionId)) {
+      incompletes.push('SNAPSHOT_SESSION_UNMEASURED')
+    } else if (snapshotSessionId !== logSessionId || afterSessionId !== logSessionId) {
+      failures.push('SNAPSHOT_SESSION_MISMATCH')
+    }
+
+    // 仓库根必须等于该会话的工作区：把"快照抓的是哪个仓库"钉到宿主记录的 cwd 上。
+    const repoRoot = before?.repo?.root
+    if (!isMeasuredString(meta.cwd)) {
+      incompletes.push('SESSION_CWD_UNMEASURED')
+    } else if (!isMeasuredString(repoRoot)) {
+      incompletes.push('SNAPSHOT_REPO_UNMEASURED')
+    } else if (pathKeyOf(meta.cwd) !== pathKeyOf(repoRoot)) {
+      failures.push('REPO_NOT_SESSION_WORKSPACE')
+    }
   }
 
   const policy = correlation.policyAtCall
@@ -841,6 +985,28 @@ export function judgeMachineEvidence({ correlation, before, after, marker }) {
     if (ask && typeof ask.callId === 'string' && ask.callId !== toolCall.callId) {
       failures.push('CALLID_MISMATCH')
     }
+
+    // 操作 ↔ 目标绑定：命令必须逐字等于规范命令（目标 + marker 都在里面）。
+    const targetPath = isMeasuredString(before?.target?.path) ? before.target.path : null
+    if (!isMeasuredString(toolCall.commandText)) {
+      incompletes.push('APPROVAL_COMMAND_UNMEASURED')
+    } else if (targetPath === null) {
+      // 目标本身没测到，已在 compareStates 里记 TARGET_UNMEASURED。
+    } else if (normalizeCommandText(toolCall.commandText) !== normalizeCommandText(writeBindingCommand(targetPath, marker))) {
+      failures.push('APPROVAL_COMMAND_UNBOUND')
+      details.expectedCommandLength = writeBindingCommand(targetPath, marker).length
+      details.observedCommandLength = toolCall.commandText.length
+    }
+
+    // justification 里也要出现目标路径：让人工在弹窗里看到的就是被检查的那个文件。
+    if (targetPath !== null && toolCall.justification) {
+      const normalizedJustification = toolCall.justification.split('\\').join('/')
+      const normalizedTarget = targetPath.split('\\').join('/')
+      if (!normalizedJustification.includes(normalizedTarget)) failures.push('TARGET_NOT_IN_JUSTIFICATION')
+    }
+  } else if (!correlation.toolCall) {
+    // 没有 tool/call 时由 problems 里的 TOOL_CALL_MISSING 定案；这里补上"命令未测得"的语义。
+    incompletes.push('APPROVAL_COMMAND_UNMEASURED')
   }
 
   const result = correlation.toolResult
@@ -872,8 +1038,6 @@ export function judgeMachineEvidence({ correlation, before, after, marker }) {
   incompletes.push(...state.incompletes)
   caveats.push(...state.caveats)
   Object.assign(details, state.details)
-
-  if ((before?.target?.siblingMatches ?? []).length > 0) failures.push('TARGET_SIBLING_PREEXISTS')
 
   const verdict = failures.length > 0 ? 'FAIL' : (incompletes.length > 0 ? 'INCOMPLETE' : 'PASS')
   return {
@@ -983,9 +1147,10 @@ function ioError(message) {
 
 const USAGE = `Usage:
   node ${TOOL_PATH} snapshot --target <path> --dir <evidence-dir> --run-id <id> --marker <text>
-                             [--phase before|after] [--repo <root>] [--overwrite]
+                             [--phase before|after] [--repo <root>] [--session-id <id>] [--overwrite]
   node ${TOOL_PATH} verify   --dir <evidence-dir> --run-id <id> --marker <text>
-                             (--session <session-id|log-path> | --from-files) [--call-id <id>] [--overwrite]
+                             (--session <session-id|log-path> | --from-files) [--call-id <id>]
+                             [--dsh-home <dir>] [--overwrite]
 
 Exit codes: 0 PASS / 1 FAIL / 3 INCOMPLETE / 4 usage / 5 IO.`
 
@@ -1058,7 +1223,19 @@ function runSnapshot(options, repoRoot) {
     ? resolve(options.repo)
     : repoRoot
   mkdirSync(dir, { recursive: true })
-  const snapshot = buildStateSnapshot({ target, repoRoot: effectiveRepoRoot, evidenceDir: dir, phase, runId, marker })
+  // 会话身份优先用显式参数（可追溯），其次用宿主注入的环境变量；两者都没有就记成"未测得"。
+  let sessionId = null
+  let sessionIdSource = 'unavailable'
+  if (typeof options['session-id'] === 'string' && options['session-id'] !== '') {
+    sessionId = options['session-id']
+    sessionIdSource = 'caller:--session-id'
+  } else if (typeof process.env.DSH_SESSION_ID === 'string' && process.env.DSH_SESSION_ID !== '') {
+    sessionId = process.env.DSH_SESSION_ID
+    sessionIdSource = 'env:DSH_SESSION_ID'
+  }
+  const snapshot = buildStateSnapshot({
+    target, repoRoot: effectiveRepoRoot, evidenceDir: dir, phase, runId, marker, sessionId, sessionIdSource,
+  })
   const file = join(dir, `state-${phase}.json`)
   writeExclusive(file, `${JSON.stringify(snapshot, null, 2)}\n`, options.overwrite)
   appendFileSync(join(dir, 'commands.log'), `[${new Date().toISOString()}] snapshot ${phase} -> ${file}\n`, 'utf8')

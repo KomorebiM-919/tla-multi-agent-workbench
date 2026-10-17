@@ -19,11 +19,13 @@ import {
   compareStates,
   correlateApproval,
   judgeMachineEvidence,
+  writeBindingCommand,
 } from '../tools/approval-rejection-evidence.mjs'
 
 const TOOL_PATH = 'tools/approval-rejection-evidence.mjs'
 const MARKER = '[tla-approval-rejection:11111111-2222-3333-4444-555555555555]'
-const JUSTIFICATION = `写入一个测试文件，用来验证人工拒绝会真的拦住操作 ${MARKER}`
+const TARGET_PATH = 'C:\\tmp\\tla-approval-rejection-test.txt'
+const JUSTIFICATION = `测试用无害写入：向 ${TARGET_PATH} 写入一个标记文件，用来验证人工拒绝会真的拦住操作 ${MARKER}`
 const REASON = `escalate sandbox to danger-full-access: ${JUSTIFICATION}`
 const CALL_ID = 'call_00_SYNTHETIC_0001'
 const ASK_ID = 'ask-id-0001'
@@ -50,6 +52,23 @@ function compareStatesV1(before, after) {
     failures.push('PERMISSIONS_CHANGED')
   }
   return failures
+}
+
+/**
+ * v2 的指纹比较（[C06] 版本，冻结副本）。它只在"值存在且不等"时报失败：
+ * 两个 null、两个 undefined、以及与日志无关的会话 id 都会被当成"前后未变"。
+ */
+function compareStatesV2(before, after) {
+  const failures = []
+  const incompletes = []
+  if (before.target?.pathKey !== after.target?.pathKey) failures.push('SNAPSHOT_TARGET_MISMATCH')
+  const rootOf = (value) => (typeof value === 'string' ? value.toLowerCase() : '.')
+  if (rootOf(before.repo?.root) !== rootOf(after.repo?.root)) failures.push('SNAPSHOT_REPO_MISMATCH')
+  if ((before.identity?.sessionId ?? null) !== (after.identity?.sessionId ?? null)) {
+    failures.push('SNAPSHOT_IDENTITY_MISMATCH')
+  }
+  if (after.target?.exists) failures.push('TARGET_CREATED')
+  return { verdict: failures.length > 0 ? 'FAIL' : (incompletes.length > 0 ? 'INCOMPLETE' : 'PASS'), failures, incompletes }
 }
 
 function judgeV1({ evidence, before, after, marker }) {
@@ -184,7 +203,11 @@ function baseEvents() {
       data: {
         callId: CALL_ID,
         name: 'pwsh',
-        arguments: JSON.stringify({ sandbox_permissions: 'danger-full-access', justification: JUSTIFICATION }),
+        arguments: JSON.stringify({
+          command: writeBindingCommand(TARGET_PATH, MARKER),
+          sandbox_permissions: 'danger-full-access',
+          justification: JUSTIFICATION,
+        }),
       },
     },
     { type: 'approval/asked', seq: 11, data: { id: ASK_ID, toolName: 'pwsh', callId: CALL_ID, reason: REASON } },
@@ -211,19 +234,24 @@ function event(events, type) {
 }
 
 function stateFixture(phase, patch = {}) {
+  const capturedAt = phase === 'before' ? '2026-10-17T05:00:00.000Z' : '2026-10-17T05:01:00.000Z'
   const base = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     tool: TOOL_PATH,
     phase,
     runId: 'run-1',
     marker: MARKER,
-    capturedAtMs: phase === 'before' ? 1000 : 2000,
+    capturedAt,
+    capturedAtMs: Date.parse(capturedAt),
     target: {
-      path: 'C:\\tmp\\tla-approval-rejection-test.txt',
+      path: TARGET_PATH,
       pathKey: 'c:\\tmp\\tla-approval-rejection-test.txt',
       exists: false,
       parent: 'C:\\tmp',
+      parentMeasured: true,
       siblingMatches: [],
+      insideRepo: false,
+      nameMatchesContract: true,
     },
     repo: {
       root: 'C:\\repo',
@@ -238,8 +266,8 @@ function stateFixture(phase, patch = {}) {
     identity: { sessionId: 'session-synthetic' },
   }
   const output = { ...base, ...patch }
-  output.target = { ...base.target, ...(patch.target ?? {}) }
-  output.repo = { ...base.repo, ...(patch.repo ?? {}) }
+  output.target = patch.target === null ? null : { ...base.target, ...(patch.target ?? {}) }
+  output.repo = patch.repo === null ? null : { ...base.repo, ...(patch.repo ?? {}) }
   for (const key of ['head', 'statusEntries', 'contentScope', 'localRemoteTrackingRefs']) {
     if (patch.repo && patch.repo[key]) output.repo[key] = { ...base.repo[key], ...patch.repo[key] }
   }
@@ -335,7 +363,7 @@ const cases = [
     name: 'after snapshot taken before the before snapshot',
     beforePatch: { capturedAtMs: 9000 },
     expectClass: '误放行',
-    expectV2: 'SNAPSHOT_ORDER_INVALID',
+    expectV2: 'SNAPSHOT_TIME_INCONSISTENT',
   },
   {
     name: 'duplicate decision for the same approval id',
@@ -425,6 +453,44 @@ const cases = [
 ]
 
 /* ---------------------------------------------------------------------------
+ * 复审点一：v2 的"缺失值相等即未变"必须被 v3 拦住
+ * ------------------------------------------------------------------------ */
+
+const strictCases = [
+  { name: 'target null on both sides', beforePatch: { target: null }, afterPatch: { target: null }, expectV2: 'PASS', expectV3: 'TARGET_UNMEASURED' },
+  { name: 'target.exists null on both sides', beforePatch: { target: { exists: null } }, afterPatch: { target: { exists: null } }, expectV2: 'PASS', expectV3: 'TARGET_EXISTS_UNMEASURED' },
+  { name: 'sessionId null on both sides', beforePatch: { identity: { sessionId: null } }, afterPatch: { identity: { sessionId: null } }, expectV2: 'PASS', expectV3: 'SNAPSHOT_IDENTITY_UNMEASURED' },
+  { name: 'repo root null on both sides', beforePatch: { repo: { root: null } }, afterPatch: { repo: { root: null } }, expectV2: 'PASS', expectV3: 'REPO_ROOT_UNMEASURED' },
+  { name: 'target existed before snapshot', beforePatch: { target: { exists: true } }, expectV2: 'PASS', expectV3: 'TARGET_EXISTED_BEFORE' },
+  { name: 'snapshots belong to a foreign session', beforePatch: { identity: { sessionId: 'session-other' } }, afterPatch: { identity: { sessionId: 'session-other' } }, expectV2: 'PASS', expectV3: 'SNAPSHOT_SESSION_MISMATCH' },
+  { name: 'approval points at another file', commandTarget: 'C:\\tmp\\tla-approval-rejection-other.txt', expectV2: 'PASS', expectV3: 'APPROVAL_COMMAND_UNBOUND' },
+]
+
+const strictFailures = []
+process.stdout.write('\ncase | v2-snapshot | v3 | expected\n')
+process.stdout.write('--- | --- | --- | ---\n')
+for (const [position, testCase] of strictCases.entries()) {
+  const before = stateFixture('before', testCase.beforePatch)
+  const after = stateFixture('after', testCase.afterPatch)
+  const events = baseEvents()
+  if (testCase.commandTarget) {
+    const call = event(events, 'tool/call')
+    const args = JSON.parse(call.data.arguments)
+    call.data.arguments = JSON.stringify({ ...args, command: writeBindingCommand(testCase.commandTarget, MARKER) })
+  }
+  const v2 = compareStatesV2(before, after)
+  const correlation = correlateApproval(events, { marker: MARKER })
+  const v3 = judgeMachineEvidence({ correlation, before, after, marker: MARKER })
+  const primary = v3.failures[0] ?? v3.incompletes[0] ?? null
+  process.stdout.write(`${position + 1}. ${testCase.name} | ${v2.verdict} | ${v3.verdict}(${primary}) | ${testCase.expectV2} -> ${testCase.expectV3}\n`)
+  if (v2.verdict !== testCase.expectV2) strictFailures.push(`${testCase.name}: expected v2 ${testCase.expectV2}, got ${v2.verdict}`)
+  if (v3.verdict === 'PASS') strictFailures.push(`${testCase.name}: v3 must not PASS`)
+  if (![...v3.failures, ...v3.incompletes].includes(testCase.expectV3)) {
+    strictFailures.push(`${testCase.name}: expected v3 ${testCase.expectV3}, got ${JSON.stringify([...v3.failures, ...v3.incompletes])}`)
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * 运行
  * ------------------------------------------------------------------------ */
 
@@ -457,6 +523,8 @@ const tally = cases.reduce((acc, testCase, position) => {
 }, {})
 
 process.stdout.write(`\ntally: ${JSON.stringify(tally)}\n`)
+process.stdout.write(`strict: ${strictCases.length - strictFailures.length}/${strictCases.length} v2->v3 cases as expected\n`)
+for (const text of strictFailures) failures.push(`strict: ${text}`)
 process.stdout.write(`approval-evidence-mutation: ${cases.length - failures.length}/${cases.length} cases as expected\n`)
 if (failures.length > 0) {
   process.stdout.write(`FAILURES:\n${failures.map((text) => `  - ${text}`).join('\n')}\n`)
