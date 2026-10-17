@@ -107,7 +107,7 @@ PR #2 原版本停在 `029bdcc`（三 Agent MVP 的早期形态）。这 42 个�
 feat: five-stage agent pipeline with verifiable run evidence (demo function accepted)
 ```
 
-### 3.4 建议的正文
+### 3.4 建议的正文（**已过期**：以 `docs/PUBLICATION-REDACTION-PLAN-v0.1.md` §6 为准，修正了 owner-marker 门禁、schema 自检与全文本一致性、本机标识披露三处）
 
 ```markdown
 ## 这个 PR 做了什么
@@ -197,28 +197,30 @@ feat: five-stage agent pipeline with verifiable run evidence (demo function acce
 | 敏感文件名（`.env`、`credentials*`、`*.pem`/`*.key`/`*.pfx`、`id_rsa*`、`.npmrc` 等） | **0** |
 | `git config --local` 的 `credential.*` / `http.*` 键 | **无** |
 | 远端 URL 内嵌凭据 | **无**（`https://github.com/…`，无 `@`、无 token 前缀） |
-| 邮箱类命中 | 仅 `example.com`（夹具）、`users.noreply.github.com`，以及 `@contextmanager`、`1.1.0.patch` 两处正则误报——**无真实个人信息** |
+| 邮箱类命中 | 仅 `example.com`（夹具）、`users.noreply.github.com`，以及 `@contextmanager`、`1.1.0.patch` 两处正则误报——**未发现真实邮箱**；本机账户名与本地绝对路径不属此列，见 §4.1 |
 | 范围内提交作者 | 唯一：`KomorebiM-919 <329656981+KomorebiM-919@users.noreply.github.com>`（GitHub noreply 地址） |
 | 本地原始审批快照 | **未入库**：HEAD 只含 `redacted/*.redacted.json`（3 个）+ 日志与清单；`approval-evidence.json` / `state-before.json` / `state-after.json` / `.acl-*.tmp` 仍是未跟踪文件，不会进入推送对象 |
 | 临时材料 | HEAD 树**无** `__pycache__` / `.pyc` / `node_modules` / `.scratch` / `.venv` / `.bak` / `.orig`；唯一的 `.log` 是证据 `commands.log`；`docs/review/` 不在跟踪树中 |
 | `docs/review/` 旧路径 | HEAD 中无 `docs/review/`、无 `run5-offline-acceptance` 旧路径 |
 
-### 4.1 需要所有者知悉的本地信息暴露（非凭据）
+### 4.1 本地标识暴露（非凭据；处理方案见 `docs/PUBLICATION-REDACTION-PLAN-v0.1.md`）
 
-1. **本机账户名出现在 3 个 HEAD 文件**（本机 Windows 用户名，不是密码/令牌）：
-   - `docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/08-preflight-claim.txt`
-   - `docs/run-records/v0.4-run5-20261017T161034Z/review-package/MAINTENANCE.md`
-   - `docs/run-records/v0.4-run5-20261017T161034Z/usage/extraction-metadata.json`
-   另有 1 个**仅存在于历史对象**的文件 `docs/review/[C17]/test-output/06-preflight-claim.txt`（该包后来被取消跟踪，但 blob 已在那 42 个提交里，push 会带上）。
-2. **本地项目绝对路径**（`<repo-parent>\…`）出现在 **17 个既有 HEAD 文件**（加上本文件自身引用该路径，全树计为 18 个），主要是证据里的 `resolved_paths`、`commands.log`、`preflight.json`——这是"预检必须回报真实路径"这一设计要求的固有产物，不包含账户名以外的个人信息。
-3. **历史中的临时审查包**：`docs/review/[C17]/…`（`[C20]` 取消跟踪）与 `docs/review/run5-offline-acceptance/…`（`[C40]` 提交、`[C41]` 移走）仍作为历史对象存在于待推送提交中。内容是审查材料与工具输出，**不是密钥**，但含上述本地路径。
+用 `tests/.scratch/release/exposure.py` 对推送树与 HEAD 逐文件扫描（固定字符串 + 反斜杠转义/正斜杠变体）：
 
-**处理建议（未执行，等待授权）**：
-- 方案 A（不改历史）：接受上述暴露后直接 push——这些是路径与机器用户名，不含凭据；风险低。
-- 方案 B（不改历史，只改 HEAD）：追加一个提交，把 3 个 HEAD 文件里的账户名替换为占位符（如 `<local-user>`），历史对象里的 1 个文件与 `<repo-parent>\…` 路径保持原样。
-- 方案 C（改写历史）：`filter-repo`/`rebase` 清掉全部路径——**会改写这 42 个提交的 SHA**，与"不改写已推送历史"的规范冲突，除非所有者明确要求。
+| 标识 | 推送树 `029bdcc` | HEAD `[C43]` |
+| --- | --- | --- |
+| 本机账户名（5 位数字） | **0** | 3 处 / 3 文件 |
+| 本机用户主目录（两种写法） | **0** | 2 处 / 2 文件 |
+| 工作区绝对路径（三种写法合计） | **0** | 125 处 / 22 文件 |
+| DSH 安装目录绝对路径 | **0** | 1 处 / 1 文件（`docs/ARCHITECTURE.md:21`） |
 
-按 `AGENTS.md` §7.1 与 §9，本文件**不做**上述任何改动。
+**三个要点**：
+
+1. 推送树（`029bdcc`，即远端当前 head）里这些值出现 **0 次**，只有 `C:\Users\<用户名>`、`C:\Users\<user>` 这类占位符；所以暴露**完全落在未推送的 43 个提交内**。
+2. 因此"追加一个 HEAD 级占位符提交"**不能**清除它们：那 43 个提交仍各自保存原值，推送后 `git log -S` 可直接翻出，等于没脱敏。
+3. 但重写**未推送**的 43 个提交不需要 force push，也不触碰远端历史（`029bdcc` 及其祖先不变）——因为发布分支以 `029bdcc` 为基线，push 是 fast-forward。
+
+处理方案（推荐"无标识重放 + 快进发布"）、对证据哈希/固定提交引用/复核工具/PR 更新的影响、以及需批准的动作清单，见 `docs/PUBLICATION-REDACTION-PLAN-v0.1.md`。本文件**不做**任何改写。
 
 ---
 
@@ -256,7 +258,7 @@ feat: five-stage agent pipeline with verifiable run evidence (demo function acce
 
 1. **一次普通 `git push origin feat/v0.1-three-agent-mvp`**（43 个提交、206 个文件）；
 2. **更新草稿 PR #2 的标题/正文**（不改变 base/head，不合并）；
-3. （可选，若选方案 B）**追加一个本地提交**替换 HEAD 文件里的本机账户名。
+3. （脱敏发布，替代上面的单项假设）**按脱敏方案重建发布分支并快进推送**，见 `docs/PUBLICATION-REDACTION-PLAN-v0.1.md` §8 的 A1/A2/A3。
 
 **不包含**：合并 `main`、创建新 PR、改写已推送历史、清理历史残留、删除未跟踪现场、调用模型或安装依赖。
 
