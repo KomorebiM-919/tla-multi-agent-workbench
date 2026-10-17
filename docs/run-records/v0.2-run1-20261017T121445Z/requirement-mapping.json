@@ -1,0 +1,922 @@
+{
+  "runId": "v0.2-run1-20261017T121445Z",
+  "requirementVersion": "v0.2-demo-input-3",
+  "requirementSha256": "6307a7f0ca0a84ccf0b8036ad202d7acaa56e8664d5761b22c10a915a86f71d7",
+  "requirementClauses": 37,
+  "acceptanceCriteria": 27,
+  "boundaryConditions": 27,
+  "method": "逐条人工建立条款→验收项映射，再由工具把交付用例名、独立探针项、Review 结论汇总进来；工具只校验完整性（37 条各一次、ID 都存在、每个验收项至少被一条条款引用），不据此判定\"已满足\"。",
+  "notProven": {
+    "AC-24": {
+      "status": "not-proven",
+      "reason": "Verifier 阶段运行时未设置 PYTHONDONTWRITEBYTECODE=1，examples/text-stats/__pycache__ 内两个 .pyc 的 mtime 被重写为 20:27:08（Verifier 阶段）；gitignore 与被跟踪文件未变不能替代运行期写入边界检查。",
+      "record": "docs/evidence/v0.2-run1-20261017T121445Z/human-review-ac24.md"
+    },
+    "BC-25": {
+      "status": "partially-proven",
+      "reason": "四个交付文件的改动范围与 .test-scratch/ 用法有证据；但\"不新增 __pycache__\"这一句与 AC-24 同源，未获得证明。",
+      "record": "docs/evidence/v0.2-run1-20261017T121445Z/human-review-ac24.md"
+    }
+  },
+  "clauses": [
+    {
+      "requirement": "R-01",
+      "title": "程序化注入调用的作用域",
+      "criteria": [
+        "AC-01",
+        "AC-02",
+        "AC-12",
+        "BC-15"
+      ],
+      "rationale": "显式注入 stdin_text 时只返回退出码，成功/--help/受控错误都静默，且不读进程 stdin。",
+      "evidence": [
+        {
+          "criterion": "AC-01",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-01",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-02",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-02",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-12",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-12",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-15",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-15",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-02",
+      "title": "命令行无 PATH 且 stdin 为空",
+      "criteria": [
+        "AC-03"
+      ],
+      "rationale": "成功路径：四行全 0、退出码 0、不阻塞。",
+      "evidence": [
+        {
+          "criterion": "AC-03",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-03",
+          "reviewSatisfied": true
+        }
+      ]
+    },
+    {
+      "requirement": "R-03",
+      "title": "count_text 纯函数",
+      "criteria": [
+        "AC-04",
+        "BC-23"
+      ],
+      "rationale": "只接收已解码文本，返回恰好四个整数键。",
+      "evidence": [
+        {
+          "criterion": "AC-04",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-04",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-23",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-23",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-04",
+      "title": "main 签名与模块入口",
+      "criteria": [
+        "AC-06",
+        "AC-13",
+        "BC-18",
+        "BC-19"
+      ],
+      "rationale": "argv=None 等价 sys.argv[1:]、不含程序名；main 返回整数；只有模块入口调用 sys.exit。",
+      "evidence": [
+        {
+          "criterion": "AC-06",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-06",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-13",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-13",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-18",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-18",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-19",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-19",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-05",
+      "title": "两类调用分别适用、不合并",
+      "criteria": [
+        "BC-15",
+        "BC-16"
+      ],
+      "rationale": "命令行写四行、程序化静默，两条作用域互不交叉。",
+      "evidence": [
+        {
+          "criterion": "BC-15",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-15",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-16",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-16",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-06",
+      "title": "命令行成功输出格式",
+      "criteria": [
+        "AC-07",
+        "BC-22"
+      ],
+      "rationale": "逻辑四行、固定顺序与十进制字面量；CRLF 属宿主换行转换。",
+      "evidence": [
+        {
+          "criterion": "AC-07",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-07",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-22",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-22",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-07",
+      "title": "输入来源不改变统计口径",
+      "criteria": [
+        "AC-08",
+        "BC-24"
+      ],
+      "rationale": "同一份已解码文本，PATH 与 stdin 两条路径数值相同。",
+      "evidence": [
+        {
+          "criterion": "AC-08",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-08",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-24",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-24",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-08",
+      "title": "读文件保留原始换行",
+      "criteria": [
+        "BC-02",
+        "BC-24"
+      ],
+      "rationale": "归一化只在 count_text 里做一次。",
+      "evidence": [
+        {
+          "criterion": "BC-02",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-02",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-24",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-24",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-09",
+      "title": "输出作用域按调用方式固定",
+      "criteria": [
+        "AC-09",
+        "AC-10",
+        "AC-12",
+        "BC-16"
+      ],
+      "rationale": "六种情形的作用域表；程序化静默优先于错误写 stderr。",
+      "evidence": [
+        {
+          "criterion": "AC-09",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-09",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-10",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-10",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-12",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-12",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-16",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-16",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-10",
+      "title": "五类受控错误一律退出码 1",
+      "criteria": [
+        "AC-10",
+        "AC-11",
+        "BC-20",
+        "BC-21"
+      ],
+      "rationale": "缺失文件、目录、解码失败、非法编码名、多余位置参数；不得用 2。",
+      "evidence": [
+        {
+          "criterion": "AC-10",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-10",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-11",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-11",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-20",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-20",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-21",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-21",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-11",
+      "title": "--help 退出码 0",
+      "criteria": [
+        "AC-09",
+        "BC-16"
+      ],
+      "rationale": "命令行给出用法；程序化静默返回 0。",
+      "evidence": [
+        {
+          "criterion": "AC-09",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-09",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-16",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-16",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-12",
+      "title": "错误文本要求",
+      "criteria": [
+        "BC-21"
+      ],
+      "rationale": "命令行恰一行以 \"error: \" 开头、无 traceback；程序化无输出。",
+      "evidence": [
+        {
+          "criterion": "BC-21",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-21",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-13",
+      "title": "程序化调用的错误路径",
+      "criteria": [
+        "AC-12",
+        "BC-17",
+        "BC-20"
+      ],
+      "rationale": "非法 PATH 或非法 --encoding 仍返回 1 且静默；编码校验先于输入选择。",
+      "evidence": [
+        {
+          "criterion": "AC-12",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-12",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-17",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-17",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-20",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-20",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-14",
+      "title": "退出码只有 0 与 1",
+      "criteria": [
+        "AC-13",
+        "BC-18"
+      ],
+      "rationale": "成功与 --help 为 0，受控错误为 1；main 返回 int。",
+      "evidence": [
+        {
+          "criterion": "AC-13",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-13",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-18",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-18",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-15",
+      "title": "归一化顺序",
+      "criteria": [
+        "AC-14",
+        "BC-02"
+      ],
+      "rationale": "先剥一个 BOM，再 CRLF→LF，再剩余 CR→LF，最后按 LF 切分。",
+      "evidence": [
+        {
+          "criterion": "AC-14",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-14",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-02",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-02",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-16",
+      "title": "换行边界与 U+2028",
+      "criteria": [
+        "BC-01"
+      ],
+      "rationale": "U+2028/U+2029 不是换行；line_count 不等于 str.splitlines()。",
+      "evidence": [
+        {
+          "criterion": "BC-01",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-01",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-17",
+      "title": "BOM 只剥一个",
+      "criteria": [
+        "AC-14",
+        "BC-03"
+      ],
+      "rationale": "第二个 U+FEFF 计入 char_count，且既非空白也非单词字符。",
+      "evidence": [
+        {
+          "criterion": "AC-14",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-14",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-03",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-03",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-18",
+      "title": "不重写正文",
+      "criteria": [
+        "BC-27"
+      ],
+      "rationale": "不做 NFC/NFD，不折叠、不去尾。",
+      "evidence": [
+        {
+          "criterion": "BC-27",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-27",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-19",
+      "title": "不做 Unicode 归一化",
+      "criteria": [
+        "AC-17",
+        "BC-27"
+      ],
+      "rationale": "cafe+U+0301 的 char_count 为 5；NBSP 与全角空格原样保留。",
+      "evidence": [
+        {
+          "criterion": "AC-17",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-17",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-27",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-27",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-20",
+      "title": "char_count 按码点",
+      "criteria": [
+        "AC-05",
+        "AC-17",
+        "BC-08",
+        "BC-12"
+      ],
+      "rationale": "归一化后 Unicode 码点数。",
+      "evidence": [
+        {
+          "criterion": "AC-05",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-05",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-17",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-17",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-08",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-08",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-12",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-12",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-21",
+      "title": "line_count 口径",
+      "criteria": [
+        "AC-05",
+        "AC-15",
+        "BC-04",
+        "BC-05"
+      ],
+      "rationale": "按 LF 切分；以 LF 结尾不额外计行。",
+      "evidence": [
+        {
+          "criterion": "AC-05",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-05",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-15",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-15",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-04",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-04",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-05",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-05",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-22",
+      "title": "non_empty_line_count",
+      "criteria": [
+        "AC-16",
+        "BC-06"
+      ],
+      "rationale": "与 line_count 出自同一次切分，按 str.strip() 判空。",
+      "evidence": [
+        {
+          "criterion": "AC-16",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-16",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-06",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-06",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-23",
+      "title": "空白集合",
+      "criteria": [
+        "BC-07"
+      ],
+      "rationale": "等于 Python str.strip() 默认集合，不扩展不缩减。",
+      "evidence": [
+        {
+          "criterion": "BC-07",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-07",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-24",
+      "title": "cafe+U+0301 的期望唯一",
+      "criteria": [
+        "AC-20",
+        "BC-11",
+        "BC-12"
+      ],
+      "rationale": "word_count 1、char_count 5；断言成 2 属错误。",
+      "evidence": [
+        {
+          "criterion": "AC-20",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-20",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-11",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-11",
+          "reviewSatisfied": null
+        },
+        {
+          "criterion": "BC-12",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-12",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-25",
+      "title": "word_count 正则",
+      "criteria": [
+        "AC-18",
+        "BC-09"
+      ],
+      "rationale": "求正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 的匹配个数。",
+      "evidence": [
+        {
+          "criterion": "AC-18",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-18",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-09",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-09",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-26",
+      "title": "数字与下划线",
+      "criteria": [
+        "AC-19",
+        "BC-10"
+      ],
+      "rationale": "不是单词字符，会切开字母片段。",
+      "evidence": [
+        {
+          "criterion": "AC-19",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-19",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-10",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-10",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-27",
+      "title": "非 ASCII 字母",
+      "criteria": [
+        "AC-20",
+        "BC-11"
+      ],
+      "rationale": "非 ASCII 字母与组合记号既非单词字符也非连接符。",
+      "evidence": [
+        {
+          "criterion": "AC-20",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-20",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-11",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-11",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-28",
+      "title": "连接符相邻性",
+      "criteria": [
+        "AC-21",
+        "BC-09"
+      ],
+      "rationale": "连接符两侧必须紧邻 ASCII 字母。",
+      "evidence": [
+        {
+          "criterion": "AC-21",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-21",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-09",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-09",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-29",
+      "title": "编码作用范围",
+      "criteria": [
+        "AC-22",
+        "BC-13"
+      ],
+      "rationale": "--encoding 只作用于文件；stdin 由宿主文本流解码。",
+      "evidence": [
+        {
+          "criterion": "AC-22",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-22",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-13",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-13",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-30",
+      "title": "编码名校验",
+      "criteria": [
+        "BC-14"
+      ],
+      "rationale": "codecs.lookup，且在输入选择之前执行。",
+      "evidence": [
+        {
+          "criterion": "BC-14",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-14",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-31",
+      "title": "依赖边界",
+      "criteria": [
+        "AC-23",
+        "AC-27"
+      ],
+      "rationale": "仅标准库、无依赖清单；测试套件本身也只依赖标准库。",
+      "evidence": [
+        {
+          "criterion": "AC-23",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-23",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "AC-27",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-27",
+          "reviewSatisfied": true
+        }
+      ]
+    },
+    {
+      "requirement": "R-32",
+      "title": "交付目录与文件范围",
+      "criteria": [
+        "AC-24",
+        "BC-25"
+      ],
+      "rationale": "只允许改 examples/text-stats 下四个文件。",
+      "evidence": [
+        {
+          "criterion": "AC-24",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-24",
+          "reviewSatisfied": true,
+          "status": "not-proven",
+          "statusReason": "Verifier 阶段运行时未设置 PYTHONDONTWRITEBYTECODE=1，examples/text-stats/__pycache__ 内两个 .pyc 的 mtime 被重写为 20:27:08（Verifier 阶段）；gitignore 与被跟踪文件未变不能替代运行期写入边界检查。"
+        },
+        {
+          "criterion": "BC-25",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-25",
+          "reviewSatisfied": null,
+          "status": "partially-proven",
+          "statusReason": "四个交付文件的改动范围与 .test-scratch/ 用法有证据；但\"不新增 __pycache__\"这一句与 AC-24 同源，未获得证明。"
+        }
+      ]
+    },
+    {
+      "requirement": "R-33",
+      "title": "运行期写入边界",
+      "criteria": [
+        "AC-24",
+        "BC-25"
+      ],
+      "rationale": "临时文件只写 .test-scratch/；不得新增 __pycache__；不写交付目录之外。",
+      "evidence": [
+        {
+          "criterion": "AC-24",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-24",
+          "reviewSatisfied": true,
+          "status": "not-proven",
+          "statusReason": "Verifier 阶段运行时未设置 PYTHONDONTWRITEBYTECODE=1，examples/text-stats/__pycache__ 内两个 .pyc 的 mtime 被重写为 20:27:08（Verifier 阶段）；gitignore 与被跟踪文件未变不能替代运行期写入边界检查。"
+        },
+        {
+          "criterion": "BC-25",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-25",
+          "reviewSatisfied": null,
+          "status": "partially-proven",
+          "statusReason": "四个交付文件的改动范围与 .test-scratch/ 用法有证据；但\"不新增 __pycache__\"这一句与 AC-24 同源，未获得证明。"
+        }
+      ]
+    },
+    {
+      "requirement": "R-34",
+      "title": "样例文件固定",
+      "criteria": [
+        "AC-25",
+        "BC-26"
+      ],
+      "rationale": "sample_input.txt 为 \"hello world\\nfoo bar\\n\" 共 20 字节。",
+      "evidence": [
+        {
+          "criterion": "AC-25",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-25",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-26",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-26",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-35",
+      "title": "README 与规则自洽",
+      "criteria": [
+        "AC-25",
+        "BC-26"
+      ],
+      "rationale": "每条可复制示例的数值与规则一致，不留矛盾的历史数值。",
+      "evidence": [
+        {
+          "criterion": "AC-25",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-25",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-26",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-26",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-36",
+      "title": "不出现裸 U+2019",
+      "criteria": [
+        "AC-26",
+        "BC-26"
+      ],
+      "rationale": "连接符必须写作 \\u2019 转义或标注码点。",
+      "evidence": [
+        {
+          "criterion": "AC-26",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:AC-26",
+          "reviewSatisfied": true
+        },
+        {
+          "criterion": "BC-26",
+          "deliveredSuite": [],
+          "independentProbe": "tests/probe-text-stats-requirement.py:BC-26",
+          "reviewSatisfied": null
+        }
+      ]
+    },
+    {
+      "requirement": "R-37",
+      "title": "冲突处理",
+      "criteria": [],
+      "rationale": "同一调用方式同一输入只允许一个期望值；出现互斥期望必须报冲突并停止——这条约束的是编排门禁与阶段报告，不是统计行为，因此没有对应的 AC/BC 编号。",
+      "evidence": []
+    }
+  ]
+}

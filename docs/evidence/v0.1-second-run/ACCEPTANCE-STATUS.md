@@ -506,8 +506,9 @@ V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改
 > 本节追加记录此后完成的一次真实运行，不改写历史。
 
 **结论（限定表述）**：需求 `v0.2-demo-input-3`（R-01 – R-37，经 Q1 批准）已按当前工作流完成**一次**真实流水线运行，
-编排层返回 `ok: true` / `finalVerdict: APPROVED`，并由编排层独立复核通过（52/52 项证据检查，见 §16.1）。
-这**不**等于 V0.1 最终验收通过：仍有未观测范围与一项需求条款在本轮未被严格执行（见下）。
+编排层返回 `ok: true` / `finalVerdict: APPROVED`，并由编排层独立复核通过（§16.1）。
+这**不**等于 V0.1 最终验收通过：**AC-24 在本轮未被满足**（运行期发生了 `__pycache__` 写入，Review 却判 `satisfied`，
+见 §16.2 与 `human-review-ac24.md`），且仍有未观测范围。
 
 | 项 | 值 |
 | --- | --- |
@@ -528,22 +529,41 @@ V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改
 
 | 复核项 | 结果 |
 | --- | --- |
-| `python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z` | **52/52** 通过（认领、ID 唯一性、artifact 与磁盘字节一致、Review 覆盖与独立复跑一致、时间顺序、工作区范围）。工作区检查以运行前 HEAD（`[C16]`）为基准，因此提交前后都能复核：交付源码越界是硬失败，文档状态更新与非本轮源码（本复核工具）单列为可复核项 |
-| 独立行为探针 `tests/.scratch/unattended/probe-independent-v02.py`（按需求原文重算，不用交付测试） | **86/86** 通过（两类调用作用域、五类受控错误、argv、归一化、四项统计表、编码分工、依赖与写入边界、README 自洽） |
-| 变异检查 `tests/.scratch/unattended/mutation-check-v02.py` | 基线 76/76；三个"重放旧缺陷"的变异体分别被 3 / 1 / 2 例抓住 |
-| 仓库回归 | 逻辑 85/85 场景·391 断言；认领 6/6·59 断言；取证 131/131；变异 18/18 + strict 11/11；性质 1217 组；`tests/` 下 11 例；交付 76 例——全部退出码 0 |
+| `python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z --mapping … --allow-scope …`（7 个 `--allow-scope` 为本次收口新增的编排/测试工具，逐条原样打印） | **70/70** 通过（认领、ID 唯一性、artifact 与磁盘字节一致、Review 覆盖与独立复跑一致、时间顺序、工作区范围、三报告冲突字段、映射完整性）。工作区检查以运行前 HEAD（`[C16]`）为基准 |
+| 复核工具自检 `python tests/review-run-evidence.py --self-test` | **10/10** 夹具通过（空验收集合、重复指纹、三报告冲突字段、缺失时区、映射缺条款/未知 ID/孤立项都必须被拒；基线不得误拒） |
+| 独立行为探针 `python tests/probe-text-stats-requirement.py`（正式工具，按需求原文推导，不导入交付测试） | **180/180** 通过（两类调用作用域、五类受控错误、argv、归一化、四项统计表、编码分工、依赖与写入边界、README 自洽） |
+| 变异检查 `python tests/mutation-text-stats.py` | 基线 76/76；三个"重放旧缺陷"的变异体全部被抓（3 / 1 / 5 例失败，命中目标用例 3 / 1 / 3） |
+| 原生事件提取 `node tests/extract-native-events.mjs …` | 10/10 派生检查通过（单次运行、5 次调用、父会话匹配、深度 1、无再派生、脚本指纹一致、产物归因） |
+| 仓库回归 | 逻辑 95/95 场景·439 断言；认领 6/6·59 断言；取证 131/131；变异 18/18 + strict 11/11；性质 1217 组；`tests/` 下 11 例；交付 76 例——全部退出码 0 |
 
 ### 16.2 本轮未严格满足 / 未观测的部分（不得省略）
 
-- **AC-24 的"不新增 `__pycache__`"在本轮未被严格执行**：`examples/text-stats/__pycache__/` 在运行前已存在
-  （目录创建时间 `20:03:12`），但其中两个 `.pyc` 的 mtime 为 `20:27:08`（Verifier 阶段），即规范测试命令
-  在未设 `PYTHONDONTWRITEBYTECODE=1` 的情况下重写了字节码缓存。原因：`isAllowedTestCommand` 只放行规范命令原文
-  （不接受环境变量前缀），而宿主进程环境无法为本会话设置该变量，Coding 侧只能在自己的运行里设置。
-  该目录被根 `.gitignore` 的 `__pycache__/` 忽略，未进入版本库，也未改变任何被跟踪文件。
-  **这是需求条款与编排契约之间的环境冲突，不是本轮编码产物越界**；要彻底满足，需要工作流支持注入环境变量
-  （属于需求/编排变更，须另行批准）。
+- **AC-24 在本轮未被满足（人工复审结论，纠正 Review 的 `satisfied: true`）**：`examples/text-stats/__pycache__/` 内两个 `.pyc`
+  的 mtime 为 `20:27:08`（Verifier 阶段），而该阶段执行规范测试命令时没有 `PYTHONDONTWRITEBYTECODE=1`，
+  即**运行期确实发生了字节码缓存写入**。Review 用"子代理后来设了该变量复跑、`.pyc` 没再变"当作满足证据，
+  这是把"复跑没有再写"当成"本轮没有写"，判定不成立。
+  该目录被根 `.gitignore` 忽略、未进入版本库、被跟踪文件未被改动 —— 这三件事**都不能替代运行期写入边界检查**。
+  **不得**把"需求条款与编排契约的环境冲突"解释成该项已满足：冲突只解释原因，不构成豁免。
+  原件不改，见 `docs/evidence/v0.2-run1-20261017T121445Z/human-review-ac24.md`（逐字引用 Review 原文 + 事实 + 结论），
+  以及 `docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json` 的 `notProven`（AC-24 `not-proven`、BC-25 `partially-proven`）。
 - 交付 README 第 137 行写"运行测试前设置 `PYTHONDONTWRITEBYTECODE=1`（本次报告使用该设置）……不会新增 `__pycache__`"：
-  该表述对**人工按 README 运行**成立，对**验证角色按规范命令运行**不成立。保留原文不改，此处如实标注。
+  该表述对**人工按 README 运行**成立，对**验证角色按当时规范命令运行**不成立。保留原文不改，此处如实标注。
 - 远端仓库状态仍未观测（本轮不 push、不创建/修改 PR、不合并）。
 - 宿主侧只提取了白名单字段（事件序列、退出码、时间戳）；未读取凭据、未导出无关消息正文。
 - 快照/日志整体真伪、其它工具与"允许一次"路径仍不在本轮证据范围内。
+
+### 16.3 针对 §16.2 的收口改动（离线，不调用真实模型）
+
+授权范围：只做**必要的最小编排改动**让测试进程真的拿到 `PYTHONDONTWRITEBYTECODE=1`，并把写入检查做成硬门禁。
+
+| 改动 | 内容 |
+| --- | --- |
+| 环境传递 | `workflows/three-agent-mvp.js` 新增 `testEnvironment()` / `executionTestCommand()`：规范命令前加固定前缀 `$env:PYTHONDONTWRITEBYTECODE = '1'; `，在**同一命令上下文**里生效（不依赖父进程、不放开任意 shell）。Coding 仍只填规范化命令；Verifier 的 `command`、Review 的 `independent_test_command` 必须填**实际执行**命令，`isAllowedTestCommand` 只放行规范命令或"固定前缀 + 规范命令"（可带 `-v`） |
+| 写入边界 | Verifier / Review 证据新增 `bytecode_scope`：`env_applied`、`env_variable`、`cache_dir`、`entries_before`、`entries_after`（每项 `path/bytes/mtime_ms/sha256`）。`judgeBytecodeScopePair` 比对两阶段：新增文件 → `BYTECODE_CACHE_WRITTEN`，未设变量 → `BYTECODE_ENV_NOT_APPLIED`，未测量/清单重复或越界 → `BYTECODE_SCOPE_UNMEASURED`；三种都判不通过（`REVIEW_NOT_APPROVED` 之前的硬门禁），且已存在缓存"前后一致"不得被误拒 |
+| 真实子进程验证 | `node tests/bytecode-integration.test.mjs`：真的起 PowerShell + Python 子进程，验证变量到达（子进程把 `os.environ` 写文件回读，不依赖退出码）、干净目录带前缀后无 `__pycache__`、已存在缓存不被重写、未设变量真实写入时判 `BYTECODE_CACHE_WRITTEN`、`env_applied=false` 判 `BYTECODE_ENV_NOT_APPLIED`、两阶段都缺 `bytecode_scope` 判 `BYTECODE_SCOPE_UNMEASURED` |
+| 可复现材料 | `tests/probe-text-stats-requirement.py`（180 项）、`tests/mutation-text-stats.py`（3 变异体）、`tests/extract-native-events.mjs`（原生日志白名单提取）、`tests/review-run-evidence.py`（70 项 + 10 夹具自检 + `--mapping` / `--allow-scope`） |
+| 原生证据 | `docs/run-records/v0.2-run1-20261017T121445Z/native-events.json` + `native-events-README.md` + `workflow-script-at-run.js`（运行当时的脚本副本） |
+| 需求映射 | `docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json`：37 条 → 54 个 AC/BC，R-37 无对应统计验收项，AC-24 标 `not-proven` |
+
+**这些改动尚未在真实运行中验证**：它们只保证了"门禁会在写入发生时拦下"，本轮不重跑真实流水线，
+因此 AC-24 能否在实际运行中满足，仍待下一次获授权的运行证明。V0.1 最终验收**仍是未通过**。

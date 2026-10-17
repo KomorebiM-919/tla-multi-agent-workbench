@@ -1,0 +1,6 @@
+# 09-approval-evidence
+# command: node tests/approval-rejection-evidence.test.mjs
+# exit code: 0
+# duration: 2.45s
+
+approval-rejection-evidence: 131/131 assertions passed

@@ -12,7 +12,7 @@ V0.1 的验收对象是"这条多 Agent 流水线本身"，因此本目录当前
 node tests/workflow-logic.test.mjs
 ```
 
-- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**85 个场景 / 391 项断言**。
+- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**95 个场景 / 439 项断言**。
 - 时间相关门禁使用**注入的可控时钟**（`FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z')`，与夹具 `runId` 的时间戳同秒；由 `workflow-harness.mjs` 的 `setClock()` / `advanceClock()` 驱动，`runWith()` 每个场景开始时重置）。因此"运行起点与编排层时钟相差过大""阶段时间戳晚于当前时间""时钟推进 120 秒跨多个阶段仍成功"这类判定都能离线、确定性地测出来，不需要真实等待；夹具区有一条护栏断言时钟与夹具时间戳一致，防止两者漂移后测试失去意义。
 - 覆盖的场景包括：正常成功；Coding 自述测试失败但 Review 返回 `APPROVED`（⇒ `TEST_NOT_VERIFIED`）；自述成功但独立验证失败（⇒ `INCONSISTENT_EVIDENCE`）；有验收条件未满足但 Review 返回 `APPROVED`（⇒ `CRITERIA_NOT_SATISFIED`）；`criteria_check` 覆盖不全、含未知 ID、含重复 ID（⇒ `CRITERIA_CHECK_INCOMPLETE` / `CRITERIA_CHECK_UNKNOWN_IDS` / `CRITERIA_CHECK_DUPLICATE_IDS`）；Review 自述退出码与原始输出矛盾（⇒ `INCONSISTENT_REVIEW`）；验证前后文件指纹不一致或 Review 未回传复核指纹（⇒ `ARTIFACT_FINGERPRINT_MISMATCH`）；审核不通过后自动修订；达到最大轮次仍不通过（⇒ `MAX_ATTEMPTS_*`）；非法 `targetDir`（路径穿越）；交付目录/证据目录真实路径落在仓库之外、未回报 `realpath`、链接逃逸、未完成证据目录认领（⇒ `TARGET_DIR_OUTSIDE_REPO` / `LINK_ESCAPE` / `EVIDENCE_NOT_CLAIMED`）；非法 `maxCodingAttempts`；非法 `runId`（含缺少 UTC 时间戳后缀、时间戳与 `runStartedAt` 不同秒）；`evidenceDir` 不在 `docs/evidence/` 下或与 `runId` 不一致；任意 shell 测试命令；重复/已存在的 `runId` 不得覆盖历史证据；需求自检报冲突；需求缺验收条件或缺少/重复 ID；编码未返回报告（⇒ `CODING_OUTPUT_INVALID`）；**任一阶段报告未解决需求冲突时不得成功**（Review / Verifier / Coding 各自报告冲突，以及"Coding 报告不可用 + Verifier 报告冲突"时冲突状态优先）；`args` 缺失或为空；Review 的独立复跑命令与规范命令不一致（⇒ `INCONSISTENT_REVIEW`）；Verifier 证据时间戳越出运行窗口（⇒ `INVALID_TIMESTAMP`）。
 - 复审后的第二轮加固新增场景（都是"应当拒绝"）：
@@ -131,7 +131,30 @@ python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
 - **程序化调用的输出作用域**（2026-10-17 收口新增）：`stdin_text` 显式传入时，成功、`--help`、五类受控错误都必须保持 `stdout`/`stderr` **双流为空**；唯一例外是"非法 `--encoding` 在选输入前就返回 `1`"。命令行侧则保持"成功 4 行 / `--help` 用法 / 错误一行 `error: `"。
 - **新测试确实能抓住旧实现**（2026-10-17 早先那版 86 例套件的对照记录）：把 `git show HEAD:examples/text-stats/text_stats.py` 的旧实现与那版测试放同一目录运行，结果 `Ran 86 tests` / **8 例失败**，全部落在上述静默与编码用例上。
-- **v0.2 套件的变异检查**（`tests/.scratch/unattended/mutation-check-v02.py`，只存本地）：把当前 76 例套件分别对准三个重新引入旧行为的变异体——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 3 例失败；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 2 例失败。基线对未变异实现 76/76 通过，说明这三处假 PASS 仍被回归锁住。
+- **v0.2 套件的变异检查**（正式工具：`python tests/mutation-text-stats.py`）：把当前 76 例套件分别对准三个重新引入旧行为的变异体——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 3 例失败；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 5 例失败（其中 3 例命中目标用例）。基线对未变异实现 76/76 通过，说明这三处假 PASS 仍被回归锁住。
+- **独立行为探针**（正式工具：`python tests/probe-text-stats-requirement.py`）：按需求原文独立推导期望，**不 import 交付测试**、
+  不读交付实现之外的判定逻辑，当前 **180 项**（文本层 46、程序化层、命令行层、交付文件层）。它和交付套件是两条独立证据，
+  任何一条通过都不能替代另一条。
+
+### 1f. 运行期写入边界（`__pycache__`）的真实子进程门禁
+
+AC-24 / R-33 要求"不新增 `__pycache__/`"。历史上的做法是"人工设置 `PYTHONDONTWRITEBYTECODE=1` 后复跑、
+看 `.pyc` 有没有变"——这不是运行期检查（v0.2-run1 因此误判，见 `docs/evidence/v0.2-run1-20261017T121445Z/human-review-ac24.md`）。
+现在改成硬门禁：
+
+```powershell
+node tests/bytecode-integration.test.mjs   # 6 个场景 / 45 项断言，真实起 PowerShell + Python 子进程
+```
+
+- 规范测试命令（`python -m unittest discover -s <targetDir> -p "test_*.py"`）在**执行时**加固定前缀
+  `$env:PYTHONDONTWRITEBYTECODE = '1'; `，前缀由工作流常量生成，`isAllowedTestCommand` 只放行
+  "规范命令"或"固定前缀 + 规范命令"（可带 `-v`），**不接受任意环境变量或任意 shell 命令**；
+- Verifier 与 Review 必须交回 `bytecode_scope`（`env_applied`、`cache_dir`、`entries_before`、`entries_after`，
+  每项含 `path/bytes/mtime_ms/sha256`），编排层 `judgeBytecodeScopePair` 同时看两阶段：
+  新增文件 → `BYTECODE_CACHE_WRITTEN`；未设变量 → `BYTECODE_ENV_NOT_APPLIED`；未测量/清单重复或越界 →
+  `BYTECODE_SCOPE_UNMEASURED`。三者都判不通过，且**已存在缓存前后一致不得被误拒**；
+- 变量是否真的到达子进程**不靠退出码判断**（PowerShell 会把非零退出码折叠成 1）：子进程把 `os.environ` 写进文件，
+  父进程再读回比对；`.gitignore` 忽略 `__pycache__/` 不等于允许写入，故检查的是字节/mtime/哈希而不是 `git status`。
 
 ### 3. 编排层独立复核
 
@@ -144,6 +167,31 @@ python -B docs/evidence/v0.1-run6-20261016T154400Z/orchestrator-verification-run
 
 三次真实运行的复核结果：第一次 45 项检查、第二次 266 项检查、run 6 共 280 项检查（0 失败 / 1 跳过，跳过项与勘误见
 `docs/evidence/v0.1-run6-20261016T154400Z/ERRATUM-BC-07-CITATION.md`）。
+
+v0.2-run1 起，复核不再是一次性脚本，而是可重复运行的正式工具：
+
+```powershell
+# 单次运行的证据复核（70 项检查；--self-test 跑 10 个夹具确认"该拒的拒、不该拒的不误拒"）
+python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z `
+  --mapping docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json `
+  --allow-scope tests/workflow-harness.mjs --allow-scope workflows/three-agent-mvp.js  # 逐条列出，不静默跳过
+python tests/review-run-evidence.py --self-test
+
+# 一次跑完全部复核项并把原始输出写进运行记录（UTF-8 / LF，附 suite-results.json）
+python tests/run-review-suite.py --run-id v0.2-run1-20261017T121445Z
+
+# 宿主原生事件（白名单字段，不导出消息正文）：5 次调用、父会话、深度、脚本指纹、产物归因
+node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v02-run1 `
+  --since 2026-10-17T12:00:00Z --evidence-dir docs/evidence/v0.2-run1-20261017T121445Z `
+  --script-file docs/run-records/v0.2-run1-20261017T121445Z/workflow-script-at-run.js `
+  --out docs/run-records/v0.2-run1-20261017T121445Z/native-events.json
+```
+
+- `review-run-evidence.py` 的判定口径与生产门禁一致（时间窗口 6 小时、缺失时区直接判不完整），
+  **空验收集合、重复指纹、三报告冲突字段、37 条到 AC/BC 的映射完整性**都有对应用例，不能靠"全部通过"自证；
+- `--allow-scope` 用于"运行结束后被人**工授权**改动的工作树路径"：每一条都以 `workspace.allow_scope_exclusions*`
+  检查项原样打印并写入 JSON，**不允许静默跳过**；
+- `run-review-suite.py` 只写 `docs/run-records/<runId>/review-package/`，不改任何被跟踪文件。
 
 ### 4. 工作流执行证据（比测试结果更重要的部分）
 

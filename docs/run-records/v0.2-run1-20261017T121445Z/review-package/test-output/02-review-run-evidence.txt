@@ -1,0 +1,77 @@
+# 02-review-run-evidence
+# command: python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z --mapping docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json --allow-scope tests/workflow-harness.mjs --allow-scope tests/workflow-logic.test.mjs --allow-scope workflows/three-agent-mvp.js --allow-scope tests/bytecode-integration.test.mjs --allow-scope tests/extract-native-events.mjs --allow-scope tests/mutation-text-stats.py --allow-scope tests/probe-text-stats-requirement.py --allow-scope tests/run-review-suite.py
+# exit code: 0
+# duration: 0.34s
+
+PASS owner.runId | v0.2-run1-20261017T121445Z
+PASS owner.claimedAt | 2026-10-17T20:19:14.564772+08:00
+PASS owner.claimedBy | verifier-preflight
+PASS owner.claimMode | exclusive-create (O_EXCL)
+PASS preflight.state_before | missing
+PASS preflight.claim_created
+PASS preflight.claim_exit_code
+PASS requirement.criteria_nonempty | 27
+PASS requirement.boundary_nonempty | 27
+PASS requirement.criteria_ids_present
+PASS requirement.criteria_ids_unique | 27
+PASS requirement.self_checked
+PASS requirement.no_conflicts | []
+PASS coding.files_within_scope
+PASS coding.test_exit_code_zero | 0
+PASS verify.command_is_canonical | python -m unittest discover -s examples/text-stats -p "test_*.py"
+PASS verify.exit_code_zero | 0
+PASS verify.ran_tests | 76
+PASS verify.ok_marker
+PASS verify.no_failed_marker
+PASS verify.not_all_skipped
+PASS verify.artifacts_no_duplicate_paths | ["examples/text-stats/text_stats.py", "examples/text-stats/test_text_stats.py"]
+PASS verify.artifacts_exact_set | ['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']
+PASS verify.artifacts_match_disk | {"recorded": {"examples/text-stats/text_stats.py": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc", "examples/text-stats/test_text_stats.py": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990"}, "disk": {"examples/text-stats/test_text_stats.py": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990", "examples/text-stats/text_stats.py": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc"}}
+PASS review.verdict_approved | APPROVED
+PASS review.criteria_check_nonempty | 27
+PASS review.criteria_ids_present
+PASS review.criteria_cover_all | {"missing": [], "unknown": []}
+PASS review.criteria_no_duplicates
+PASS review.criteria_all_satisfied
+PASS review.independent_command_is_canonical | python -m unittest discover -s examples/text-stats -p "test_*.py"
+PASS review.independent_exit_code_zero | 0
+PASS review.independent_ran_tests | 76
+PASS review.independent_ok_marker
+PASS review.ran_matches_verifier | {"review": 76, "verifier": 76}
+PASS review.artifacts_no_duplicate_paths | ["examples/text-stats/text_stats.py", "examples/text-stats/test_text_stats.py"]
+PASS review.artifacts_exact_set | ['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']
+PASS review.artifacts_equal_verify | {"examples/text-stats/text_stats.py": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc", "examples/text-stats/test_text_stats.py": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990"}
+PASS review.artifacts_match_disk
+PASS coding.conflicts_declared | list
+PASS coding.conflicts_empty | []
+PASS verify.conflicts_declared | list
+PASS verify.conflicts_empty | []
+PASS review.conflicts_declared | list
+PASS review.conflicts_empty | []
+PASS mapping.available
+PASS mapping.clauses_nonempty | 37
+PASS mapping.requirement_ids_unique | ["R-01", "R-02", "R-03", "R-04", "R-05", "R-06", "R-07", "R-08", "R-09", "R-10", "R-11", "R-12", "R-13", "R-14", "R-15", "R-16", "R-17", "R-18", "R-19", "R-20", "R-21", "R-22", "R-23", "R-24", "R-25", "R-26", "R-27", "R-28", "R-29", "R-30", "R-31", "R-32", "R-33", "R-34", "R-35", "R-36", "R-37"]
+PASS mapping.covers_requirement_clauses | {"missing": [], "unknown": []}
+PASS mapping.criteria_ids_known | []
+PASS mapping.covers_all_criteria | []
+PASS time.preflight.valid | 2026-10-17T20:19:28.546819+08:00
+PASS time.requirement.valid | 2026-10-17T20:21:27.2308535+08:00
+PASS time.coding.valid | 2026-10-17T20:26:27.887939+08:00
+PASS time.verify.valid | 2026-10-17T20:28:15.328120+08:00
+PASS time.review.valid | 2026-10-17T20:30:24.5474296+08:00
+PASS time.claim_before_stages | ["2026-10-17T20:19:14.564772+08:00", "2026-10-17T20:19:28.546819+08:00"]
+PASS time.order.requirement_after_preflight | ["2026-10-17T20:19:28.546819+08:00", "2026-10-17T20:21:27.230853+08:00"]
+PASS time.order.coding_after_requirement | ["2026-10-17T20:21:27.230853+08:00", "2026-10-17T20:26:27.887939+08:00"]
+PASS time.order.verify_after_coding | ["2026-10-17T20:26:27.887939+08:00", "2026-10-17T20:28:15.328120+08:00"]
+PASS time.order.review_after_verify | ["2026-10-17T20:28:15.328120+08:00", "2026-10-17T20:30:24.547429+08:00"]
+PASS time.within_window | 656.00061
+PASS workspace.base_head_recorded | [C16]
+PASS workspace.delivery_files_changed | examples/text-stats/README.md, examples/text-stats/test_text_stats.py, examples/text-stats/text_stats.py
+PASS workspace.tracked_sources_within_scope
+PASS workspace.orchestrator_tools | tests/review-run-evidence.py
+PASS workspace.allow_scope_exclusions | tests/workflow-harness.mjs, tests/workflow-logic.test.mjs, workflows/three-agent-mvp.js
+PASS workspace.non_source_changes | .gitattributes, README.md, docs/DEMO-REQUIREMENT-INPUT-v3.md, docs/ROADMAP.md, docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md, docs/evidence/v0.2-run1-20261017T121445Z/.run-owner.json, docs/evidence/v0.2-run1-20261017T121445Z/coding-report.json, docs/evidence/v0.2-run1-20261017T121445Z/preflight.json, docs/evidence/v0.2-run1-20261017T121445Z/requirement.json, docs/evidence/v0.2-run1-20261017T121445Z/review.json, docs/evidence/v0.2-run1-20261017T121445Z/verify.json, docs/review/[C17]/README.md, docs/review/[C17]/SHA256SUMS.txt, docs/review/[C17]/delivery.diff, docs/review/[C17]/native-events.json, docs/review/[C17]/test-output/01-delivery-unit-tests.txt, docs/review/[C17]/test-output/02-review-run-evidence.txt, docs/review/[C17]/test-output/03-independent-probe.txt, docs/review/[C17]/test-output/04-mutation-check.txt, docs/review/[C17]/test-output/05-workflow-logic.txt, docs/review/[C17]/test-output/06-preflight-claim.txt, docs/review/[C17]/test-output/07-approval-evidence.txt, docs/review/[C17]/test-output/08-approval-mutation.txt, docs/review/[C17]/test-output/09-property-text-stats.txt, docs/review/[C17]/test-output/10-tests-unittest.txt, docs/run-records/v0.2-run1-20261017T121445Z/approval.md, docs/run-records/v0.2-run1-20261017T121445Z/precheck.json, docs/run-records/v0.2-run1-20261017T121445Z/requirement-injected.txt, tests/README.md
+PASS workspace.untracked_within_scope
+PASS workspace.allow_scope_exclusions_untracked | tests/bytecode-integration.test.mjs, tests/extract-native-events.mjs, tests/mutation-text-stats.py, tests/probe-text-stats-requirement.py, tests/run-review-suite.py
+
+70/70 ����ͨ��
