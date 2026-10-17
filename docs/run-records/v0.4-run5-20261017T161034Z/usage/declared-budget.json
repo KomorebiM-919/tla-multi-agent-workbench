@@ -1,0 +1,9 @@
+{
+  "callBudgetNote": "所有子代理调用（预检、需求、编码、验证、审核及修订）计入同一本账；不允许子代理再派生其他代理。",
+  "derivedAgentsAllowed": false,
+  "maxAgentCalls": 8,
+  "maxTotalTokens": 8000000,
+  "runId": "v0.4-run5-20261017T161034Z",
+  "source": "m12961（用户批准第五次真实运行的同一条件）：maxAgentCalls=8、maxCodingAttempts=2；声明 maxTotalTokens=8,000,000 仅用于事后观测判定，不是硬限额、不是货币预算",
+  "tokenBudgetNote": "maxTotalTokens=8000000 只是运行前声明的观测阈值：超出即报 OVER_BUDGET，但工作流不能在 8M 处强制停止，编排层只能硬限制调用次数。货币成本未提供价格，不能由 token 换算。"
+}

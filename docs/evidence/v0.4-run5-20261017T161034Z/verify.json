@@ -1,0 +1,63 @@
+{
+    "run_id":  "v0.4-run5-20261017T161034Z",
+    "agent":  "Verifier Agent",
+    "stage":  "verify",
+    "generated_at":  "2026-10-18T00:21:54.2891531+08:00",
+    "result":  {
+                   "command":  "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+                   "exit_code":  "0",
+                   "raw_output":  ".................................................................................................\n----------------------------------------------------------------------\nRan 97 tests in 1.964s\n\nOK",
+                   "ran_tests":  97,
+                   "result_marker":  "OK",
+                   "artifacts":  [
+                                     {
+                                         "path":  "examples/text-stats/text_stats.py",
+                                         "sha256":  "5b6658d93ada861ca34d67623b513a89a64fb06b71bac274575eb1dda761bd64",
+                                         "bytes":  13054
+                                     },
+                                     {
+                                         "path":  "examples/text-stats/test_text_stats.py",
+                                         "sha256":  "b14e17d87e4ccfdf0f359ceabc500c410f7300a37e2fdae11a19803be7e0fbed",
+                                         "bytes":  45484
+                                     }
+                                 ],
+                   "bytecode_scope":  {
+                                          "env_applied":  true,
+                                          "env_variable":  "PYTHONDONTWRITEBYTECODE",
+                                          "cache_dir":  "examples/text-stats/__pycache__",
+                                          "entries_before":  [
+                                                                 {
+                                                                     "path":  "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+                                                                     "bytes":  66316,
+                                                                     "mtime_ms":  1792240028919,
+                                                                     "sha256":  "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+                                                                 },
+                                                                 {
+                                                                     "path":  "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+                                                                     "bytes":  14885,
+                                                                     "mtime_ms":  1792244851273,
+                                                                     "sha256":  "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+                                                                 }
+                                                             ],
+                                          "entries_after":  [
+                                                                {
+                                                                    "path":  "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+                                                                    "bytes":  66316,
+                                                                    "mtime_ms":  1792240028919,
+                                                                    "sha256":  "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+                                                                },
+                                                                {
+                                                                    "path":  "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+                                                                    "bytes":  14885,
+                                                                    "mtime_ms":  1792244851273,
+                                                                    "sha256":  "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+                                                                }
+                                                            ]
+                                      },
+                   "requirement_conflicts":  [
+
+                                             ],
+                   "notes":  "unittest 将测试结果写到 stderr；raw_output 为 stdout 与 stderr 合并后的全文（合并发生在进程层，未改动任何字节内容，行尾 CR 已归一为 LF）。测试命令带受控环境前缀 PYTHONDONTWRITEBYTECODE=1 执行；examples/text-stats/__pycache__ 内既有的两个 .pyc 在本次运行前后 bytes/mtime/sha256 均未变化，未新增文件。artifacts 的两个 sha256 均为本次复跑之后重新按原始字节（二进制读取）计算。未发现需求自相矛盾。",
+                   "generated_at":  "2026-10-18T00:21:54.2891531+08:00"
+               }
+}
