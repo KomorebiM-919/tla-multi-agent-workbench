@@ -60,18 +60,18 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ### 规划中（未开始）
 
-- [x] **V0.2 离线原型：手动多模型分工与预算规划**（分支 `feat/v0.2-component-reuse`，2026-10-18；**未启动任何真实模型调用、未安装任何第三方插件**）：
+- [x] **V0.2 原型：手动多模型分工与预算规划**（分支 `feat/v0.2-component-reuse`，2026-10-18；**真实外部模型调用 0 次**；`dsh-agent-teams@0.1.23` 只装进隔离 profile `stage1`，未触碰现用 Desktop profile）：
 
   - `orchestration/`：配置校验、离线价格快照查询、整数金额估算、按基点分配预算（最大余数法，各项之和恒等于总额）、计划生成与 `create` 入参翻译
   - 价格快照 `orchestration/data/pricing-snapshot.portkey-72e1084.json`：取自 portkey-models@`72e1084` 的 6 条真实条目，由"美分/token"换算为"微-分/百万 token"整数；该仓库无时间戳，**新鲜度未知、未与官网核对**
   - 宿主模型目录 `orchestration/data/host-catalog.dsh-0.2.0-rc.2.json`：从随包 `app.asar` 只读提取的 provider/model/计费渠道/目录价，用 `--host-catalog` 与计划交叉核对。**已发现旧快照与目录价差约 3 倍**（`deepseek-v4-pro` 43.5/87 vs 132/396 微-分/百万），且 `deepseek-v4-flash` 不在宿主目录中——所以不能用旧快照决定运行模型或预算
   - 对 `dsh-agent-teams` 只做兼容性探测与计划翻译，执行恒返回 `unavailable`（`BACKEND_EXECUTION_NOT_IMPLEMENTED`），不伪造集成成功
-  - 边界声明：预算是**计划分配**，不是付款/余额/跨供应商划拨；`agent-teams` 后端**没有**全局模型调用硬上限（`CALL_CAP_PARTIAL`）；计划的就绪状态拆成六个维度（配置/估算/估算可信度/后端兼容/执行实现/预算保护/宿主路由核对），任何一项缺失都 `status: "blocked"`（"插件装了"不等于"能执行"）
+  - 边界声明：预算是**计划分配**，不是付款/余额/跨供应商划拨；`agent-teams` 后端**没有**全局模型调用硬上限（`CALL_CAP_PARTIAL`）；计划的就绪状态拆成七个维度（配置/估算/估算可信度/后端兼容/执行实现/预算保护/宿主路由核对），任何一项缺失都 `status: "blocked"`（"插件装了"不等于"能执行"）
   - 金额一律整数微单位、费用**向上取整**（非零用量不会被算成 0）。缓存读写缺价时**不冒充上界**：金额记未知并进入 blocker，只有配置显式声明 `estimates.assumptions.cachePriceEqualsInput` 才按输入价代入，并标 `assumed`/`low`
-  - 启动前拦截器 `orchestration/interceptors/prelaunch-budget.mjs`：宿主形状的 `agent/request` 监听器，在请求发出前同步预占、超限抛错（零新增发送）。语义来自随包 `dsh-agent-loop` 的只读核对，夹具测试 6 场景 / 20 断言；**真实宿主未安装，`apply()` 仍抛 `INTERCEPTOR_NOT_WIRED`**
+  - 启动前拦截器 `orchestration/interceptors/prelaunch-budget.mjs` + 真实接线插件 `orchestration/interceptor-plugin/`：宿主形状的 `agent/request` 监听器，在请求发出前同步预占、超限抛错（**零新增发送**）。**已在隔离 profile 的真实宿主上验证**：额度耗尽时假服务端零新增请求、重启不重置额度、监听器异常 fail-closed；同时实测到"插件激活失败只警告、不 fail-closed"（无预算跑到 2568 次请求），因此"装上了"永远不等于"预算生效"。夹具测试 7 场景 / 28 断言，真实宿主实验见 [`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)
   - 离线复跑：`node orchestration/cli.mjs plan --config orchestration/examples/plan-agent-teams.json --pricing orchestration/data/pricing-snapshot.portkey-72e1084.json --host-catalog orchestration/data/host-catalog.dsh-0.2.0-rc.2.json --now 2026-10-17T18:00:00Z`（退出码 0 = ready，2 = blocked）
-  - 测试 `tests/v02-orchestration.test.mjs`（12 个场景 / 267 项断言）与 `tests/v02-prelaunch-budget.test.mjs`（6 个场景 / 20 项断言），全部离线；含针对"半上取整""2^53 中间量溢出""缓存写被丢弃""兼容即 ready""缓存缺价被当成上界"五处真实缺陷的回归断言
-  - 结论与清单：[`docs/V0.2-REUSE-DECISIONS.md`](docs/V0.2-REUSE-DECISIONS.md)、[`docs/V0.2-ARCHITECTURE.md`](docs/V0.2-ARCHITECTURE.md)、[`docs/V0.2-MOBILE-CHANNEL.md`](docs/V0.2-MOBILE-CHANNEL.md)、[`docs/V0.2-INTEGRATION-PLAN.md`](docs/V0.2-INTEGRATION-PLAN.md)（三阶段真实集成申请，**尚未授权**）
+  - 测试 `tests/v02-orchestration.test.mjs`（12 个场景 / 267 项断言）与 `tests/v02-prelaunch-budget.test.mjs`（7 个场景 / 28 项断言）；含针对"半上取整""2^53 中间量溢出""缓存写被丢弃""兼容即 ready""缓存缺价被当成上界""重启静默重置额度"六处真实缺陷的回归断言。测试本身不联网、不调模型
+  - 结论与清单：[`docs/V0.2-REUSE-DECISIONS.md`](docs/V0.2-REUSE-DECISIONS.md)、[`docs/V0.2-ARCHITECTURE.md`](docs/V0.2-ARCHITECTURE.md)、[`docs/V0.2-MOBILE-CHANNEL.md`](docs/V0.2-MOBILE-CHANNEL.md)、[`docs/V0.2-INTEGRATION-PLAN.md`](docs/V0.2-INTEGRATION-PLAN.md)（阶段 1/2 已执行，阶段 3 付费协作**未授权**）、[`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)（隔离环境实测记录）
 
 - [x] **人工审批的安全拒绝测试**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试（现场见
   [`docs/evidence/v0.1-approval-rejection-20261017T112518Z/`](docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md)；
@@ -153,7 +153,7 @@ python tests/property_text_stats.py
 # 演示项目的单元测试（97 个用例；v0.4-run5 交付版，含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
-# V0.2 编排原型的离线测试（12 个场景 / 267 项断言 + 6 个场景 / 20 项断言；不联网、不调用模型）
+# V0.2 编排原型的离线测试（12 个场景 / 267 项断言 + 7 个场景 / 28 项断言；不联网、不调用模型）
 node tests/v02-orchestration.test.mjs
 node tests/v02-prelaunch-budget.test.mjs
 
