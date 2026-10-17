@@ -87,6 +87,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - 已核实：六个候选组件的许可证、实际 commit、可用接口与不可用原因，决策见 [`V0.2-REUSE-DECISIONS.md`](V0.2-REUSE-DECISIONS.md)；最小架构与数据契约见 [`V0.2-ARCHITECTURE.md`](V0.2-ARCHITECTURE.md)。
 - `dsh-agent-teams` 只做兼容性探测与 `create` 入参翻译，执行恒返回 `unavailable`；`dsh-model-router` 因会覆盖用户所选模型而暂缓；RouteLLM 仅作研究参考。
 - 手机通道只做审查与准备清单（[`V0.2-MOBILE-CHANNEL.md`](V0.2-MOBILE-CHANNEL.md)），未安装、未开端口。
+- 独立复审轮（2026-10-18，不联网、0 次模型调用）：修复五处真实缺陷——单 token 用量不再被算成 0（`costForTokens(1, 1) === 1`；旧实现返回 `0`）；2^53 附近的中间量溢出改为显式 `MONEY_OVERFLOW`（旧 `divRoundHalfUp(2 ** 52 + 1, 1)` 返回 `4503599627370498`、旧 `divCeil(Number.MAX_SAFE_INTEGER, 2)` 返回 `4503599627370495`，都错 1）；导入器不再丢弃 `cache_write_input_token`，缺价时按输入价取上界并标 `cacheWrite` 未知；计划的"就绪"拆成**配置有效 / 估算可用 / 后端兼容 / 执行已实现 / 调用计数可强制**五维，任何一维缺失都不得 `ready`（即使插件已安装，`BACKEND_NOT_INSTALLED` 消失也不会自动变成可执行）。独立重算脚本 93 项全部通过，针对性测试新增 1 场景（合计 10 场景 / 190 断言）。
 - **验收状态**：条件 1（至少两个不同模型在同一工作流中协作且可复现）**未满足**——本轮没有任何真实模型调用，只具备配置与计划能力；条件 2（跨轮次恢复）未开始。**不得**把本轮离线原型当作 V0.2 验收通过。
 
 ### 功能规划
