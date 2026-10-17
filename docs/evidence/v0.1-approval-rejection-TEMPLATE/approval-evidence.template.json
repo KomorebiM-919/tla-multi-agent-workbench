@@ -36,7 +36,7 @@
       "argumentsParsed": true,
       "sandboxPermission": "danger-full-access",
       "justification": "[tla-approval-rejection:<uuid>] <justification 原文，必须包含目标文件绝对路径>",
-      "commandText": "Set-Content -LiteralPath '<target>' -Value '[tla-approval-rejection:<uuid>]' -Encoding ascii -NoNewline",
+      "commandText": "New-Item -ItemType File -Path '<target>' -Value '[tla-approval-rejection:<uuid>]' -ErrorAction Stop",
       "commandSha256": "<sha256(commandText)>",
       "commandLength": 0
     },

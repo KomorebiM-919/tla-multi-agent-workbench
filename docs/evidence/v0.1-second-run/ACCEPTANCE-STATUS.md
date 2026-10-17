@@ -424,3 +424,52 @@ run 6 需求 AC-10（`docs/evidence/v0.1-run6-20261016T154400Z/requirement.json:
 
 人工审批安全拒绝测试**仍未执行**（验收条件 3 未完成）；新版真实模型流水线**未运行**；远端状态**未观测**；
 V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改 PR、未合并。
+
+## 14. 第二阶段：取证判据的第二次收紧（v4，2026-10-17）
+
+本节记录人工监督模式下按复审意见做的**第二批**确定性修复。第 13 节的 116 / 90 / 7 组等计数属于
+当时的历史记录，**保持原样不改**；本节给出当前计数。
+
+### 14.1 四项收紧（都对应"会不会假 PASS"）
+
+| 复审要求 | 修复 | 回归证据 |
+| --- | --- | --- |
+| 快照 marker 必须与本次审批绑定 | `compareStates(before, after, { marker })` 接收期望 marker；两份快照的 `marker` 都必须**等于**它，否则 `SNAPSHOT_MARKER_NOT_BOUND`（此前只比对两份快照是否相同，两份都写成别的值仍 PASS） | 取证回归第 13 组；反向验证 `strictCases` 第 1 条（v2 PASS → 当前 FAIL） |
+| 目标约束必须重新计算 | 不再信任快照里写好的 `target.insideRepo` / `target.nameMatchesContract`：工具按 `target.pathKey` 与 `repo.root` **重算**，记录值 ≠ 重算值 ⇒ `TARGET_CONSTRAINT_TAMPERED`；记录值不是布尔 ⇒ INCOMPLETE | 取证回归第 11、12 组；反向验证"name claimed on-contract but is not" |
+| 内容指纹有跳过不得宣称完整 | `contentScope.skipped` 非空 ⇒ `CONTENT_SCOPE_INCOMPLETE`（INCOMPLETE，退出码 3），并在 details 里列出被跳过的文件；此前只是一条 caveat，仍可能 PASS | 取证回归第 14 组；反向验证"content scope skipped files" |
+| 快照采集区间必须围住审批事件 | `judgeMachineEvidence` 读取 `approval/asked`、`tool/result` 的宿主毫秒时间，与两份快照的 `capturedAtMs` 比对（允许 5 秒偏差）：`before` 晚于请求 ⇒ `SNAPSHOT_BEFORE_AFTER_APPROVAL`；`after` 早于结果 ⇒ `SNAPSHOT_AFTER_BEFORE_RESULT`；事件缺时间 ⇒ `EVENT_TIME_UNMEASURED`；事件顺序反了 ⇒ `EVENT_ORDER_INVALID` | 取证回归第 15、16、17 组；反向验证"before snapshot taken after the approval request" |
+
+### 14.2 待审批操作改为排他创建
+
+固定无害操作从 `Set-Content -LiteralPath '<target>' -Value '<marker>' -Encoding ascii -NoNewline`
+改为 `New-Item -ItemType File -Path '<target>' -Value '<marker>' -ErrorAction Stop`：
+`New-Item` 在目标已存在时直接失败，因此**即使用户误点"允许一次"，也不会覆盖别人的证据文件**。
+命令契约仍是逐字匹配（不解析任意 PowerShell）：命令对不上 ⇒ `APPROVAL_COMMAND_UNBOUND`，没有命令 ⇒
+`APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE）。
+
+### 14.3 临时 git 仓库改到仓库内
+
+`makeScratch()` 从系统临时目录改到仓库内 `tests/.scratch/`（被 `.gitignore` 忽略），
+`git init` 之后**先断言退出码**，失败即单点前置失败并 `return`。这项改动是为了让"审查环境无法初始化临时仓库"
+表现为一条清楚的错误，而不是级联成五项莫名其妙的断言失败。
+
+### 14.4 当前计数（全部 exit 0）
+
+| 套件 | 结果 |
+| --- | --- |
+| `node tests/approval-rejection-evidence.test.mjs` | **131 断言 / 27 组场景**（v3 的 116 → 131） |
+| `node tests/approval-evidence-mutation.test.mjs` | **18 组 v1→v3 + 11 组 v2→v3**（`strict: 11/11`） |
+| `node tests/workflow-logic.test.mjs` | 85/85 场景、391 断言 |
+| `node tests/preflight-claim-integration.test.mjs` | 6/6 场景、59 断言 |
+| `python tests/property_text_stats.py` | 1217 组检查 |
+| `python -m unittest discover -s examples/text-stats -p "test_*.py"` | `Ran 81 tests` / `OK` |
+| `python -m unittest discover -s tests -p "test_*.py"` | `Ran 11 tests` / `OK` |
+
+### 14.5 证明边界（本轮仍然成立）
+
+- 这些修复只让"缺证据 / 身份错配 / 操作与目标不匹配 / 区间不对"**更难被判成 PASS**，
+  仍然**只覆盖逻辑层**：真实人工拒绝**没有发生**，所以没有任何一条真实审批证据。
+- 快照文件的字段仍由本工具写；工具能识别"记录值与重算值不符"，但**不能**证明快照文件本身未被整体伪造——
+  这一点要靠宿主日志与人工观察，不在工具能力内。
+- 远端仍未观测；内容范围仍可能有被跳过的文件（现在会显式判 INCOMPLETE，而不是当作没变化）。
+- 人工审批安全拒绝测试**仍未执行**；新版真实流水线**未运行**；V0.1 最终验收**仍未通过**。

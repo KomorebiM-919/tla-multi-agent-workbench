@@ -120,7 +120,7 @@ node tests/preflight-claim-integration.test.mjs
 # 证据目录排他认领工具的进程级测试（11 个用例）
 python -m unittest discover -s tests -p "test_*.py"
 
-# 审批拒绝取证工具的离线回归与反向验证（116 断言 + 18 组 v1→v3 + 7 组 v2→v3；不触发任何审批）
+# 审批拒绝取证工具的离线回归与反向验证（131 断言 + 18 组 v1→v3 + 11 组 v2→v3；不触发任何审批）
 node tests/approval-rejection-evidence.test.mjs
 node tests/approval-evidence-mutation.test.mjs
 

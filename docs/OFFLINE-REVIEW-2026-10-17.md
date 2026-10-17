@@ -193,7 +193,7 @@
 
 | 要求 | 实现 | 测试 | 状态 |
 | --- | --- | --- | --- |
-| 判定逻辑（缺证据不得 PASS、事件关联、无副作用边界、日志切帧） | `tools/approval-rejection-evidence.mjs` | 116 断言 / 18 组 v1→v3 + 7 组 v2→v3 反向验证 | 已证明（逻辑层；不含真实审批） |
+| 判定逻辑（缺证据不得 PASS、事件关联、无副作用边界、日志切帧） | `tools/approval-rejection-evidence.mjs` | 131 断言 / 27 组场景 + 18 组 v1→v3 + 11 组 v2→v3 反向验证 | 已证明（逻辑层；不含真实审批） |
 | **真实人工拒绝** | — | — | **未执行**（需用户亲自点"拒绝"） |
 | 远端未被改动 | — | — | **未观测**（本轮不联网） |
 
@@ -219,8 +219,8 @@
 ```powershell
 node tests/workflow-logic.test.mjs                       # 85/85、391 断言
 node tests/preflight-claim-integration.test.mjs          # 6/6、59 断言
-node tests/approval-rejection-evidence.test.mjs          # 116/116
-node tests/approval-evidence-mutation.test.mjs           # 18/18 + strict 7/7
+node tests/approval-rejection-evidence.test.mjs          # 131/131
+node tests/approval-evidence-mutation.test.mjs           # 18/18 + strict 11/11
 python tests/property_text_stats.py                      # 1217 组
 python -m unittest discover -s examples/text-stats -p "test_*.py"   # Ran 81 / OK
 python -m unittest discover -s tests -p "test_*.py"      # Ran 11 / OK
@@ -279,8 +279,8 @@ Set-Content -LiteralPath '<target>' -Value '<marker>' -Encoding ascii -NoNewline
 
 | 套件 | 命令 | 结果 |
 | --- | --- | --- |
-| 取证回归 | `node tests/approval-rejection-evidence.test.mjs` | 116 断言，exit 0 |
-| 反向验证 | `node tests/approval-evidence-mutation.test.mjs` | 18 组 v1→v3 + 7 组 v2→v3，exit 0 |
+| 取证回归 | `node tests/approval-rejection-evidence.test.mjs` | 131 断言，exit 0 |
+| 反向验证 | `node tests/approval-evidence-mutation.test.mjs` | 18 组 v1→v3 + 11 组 v2→v3，exit 0 |
 | 工作流逻辑 | `node tests/workflow-logic.test.mjs` | 85/85、391 断言，exit 0 |
 | 认领集成 | `node tests/preflight-claim-integration.test.mjs` | 6/6、59 断言，exit 0 |
 | 性质测试 | `python tests/property_text_stats.py` | 1217 组，exit 0 |

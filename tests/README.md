@@ -74,8 +74,8 @@ python -m unittest discover -s tests -p "test_*.py"
 下面两个套件只验证**取证与判定逻辑**，全程不触发审批、不访问网络、不读凭据、不跑真实子代理：
 
 ```powershell
-node tests/approval-rejection-evidence.test.mjs   # 116 断言 / 24 组场景
-node tests/approval-evidence-mutation.test.mjs    # 18 组 v1→v3 + 7 组 v2→v3 反向验证
+node tests/approval-rejection-evidence.test.mjs   # 131 断言 / 27 组场景
+node tests/approval-evidence-mutation.test.mjs    # 18 组 v1→v3 + 11 组 v2→v3 反向验证
 ```
 
 - `tests/approval-rejection-evidence.test.mjs`：合成事件流 + 合成指纹 + 临时 git 仓库。
@@ -84,8 +84,9 @@ node tests/approval-evidence-mutation.test.mjs    # 18 组 v1→v3 + 7 组 v2→
   - **无副作用四要件**：`git status` 文本相同但工作区内容变了（⇒ `WORKSPACE_CONTENT_CHANGED`）、目标被创建、本地 remote-tracking refs 变化、依赖清单变化、权限未测得（⇒ INCOMPLETE 而不是 PASS）、两个缺失值不算"相等"、快照 `runId`/目标/仓库/身份/时间顺序/标记不一致、同前缀文件已存在。
   - **缺失值与身份错配（v3 新增 6 项）**：`target` 两边都是 `null`、`target.exists` 两边都是 `null`、`identity.sessionId` 两边都是 `null`、两份快照的会话 id 相同但不是日志里的会话、`repo.root` 两边都是 `null`、执行前目标已存在——六种情形旧版都会 PASS，现在分别判 `TARGET_UNMEASURED` / `TARGET_EXISTS_UNMEASURED` / `SNAPSHOT_IDENTITY_UNMEASURED` / `SNAPSHOT_SESSION_MISMATCH` / `REPO_ROOT_UNMEASURED` / `TARGET_EXISTED_BEFORE`。
   - **审批操作与目标绑定（v3 新增 5 项）**：命令必须逐字等于规范命令（`APPROVAL_COMMAND_UNBOUND`）、缺命令判 `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE）、命令指向另一个文件（同 marker）、命令里追加别的动作、`justification` 没写目标路径（`TARGET_NOT_IN_JUSTIFICATION`）、目标落在工作区内（`TARGET_INSIDE_WORKSPACE`）、目标名不符合契约（`TARGET_NAME_NOT_IN_CONTRACT`）。
+  - **v4 新增的收紧**：快照 marker 必须就是本次审批的 marker（`SNAPSHOT_MARKER_NOT_BOUND`）；`insideRepo` / `nameMatchesContract` 由工具按路径**重算**，改字段即 `TARGET_CONSTRAINT_TAMPERED`；内容指纹有文件被跳过 ⇒ `CONTENT_SCOPE_INCOMPLETE`（INCOMPLETE）；快照采集区间必须围住审批事件（`SNAPSHOT_BEFORE_AFTER_APPROVAL` / `SNAPSHOT_AFTER_BEFORE_RESULT` / 缺事件时间 ⇒ `EVENT_TIME_UNMEASURED`）；规范命令改为排他创建 `New-Item -ItemType File ... -ErrorAction Stop`。
   - **写入与 CLI**：排他创建拒绝覆盖、取证目录被排除在内容指纹之外、`pathKey` 大小写归一、`verify` 的退出码 `0/1/3/4`。
-- `tests/approval-evidence-mutation.test.mjs`：把加固前的判定规则冻结成 `judgeV1` / `compareStatesV1`，同一批 18 个用例同时喂给两版，分类为"误放行 / 误拒绝 / 状态不符 / 无差异"。当前结果：**11 组误放行被 v2 拦下、1 组误拒绝被 v2 修正、3 组理由不符、3 组无差异**（例如权限未测得、HEAD 未测得、`isError` 缺失、空文本、`runId` 不符、时间倒序这些旧版都会 PASS）。
+- `tests/approval-evidence-mutation.test.mjs`：把加固前的判定规则冻结成 `judgeV1` / `compareStatesV1`（以及 v3 之前的 `compareStatesV2`），同一批 18 个用例同时喂给 v1 与当前版，另有一张 11 行的 v2→v3 严格比对表。当前结果：**11 组误放行被拦下、1 组误拒绝被修正、3 组理由不符、3 组无差异**；v2→v3 的 11 组（六类缺失值、身份错配、审批指向另一个文件、marker 未绑定、内容跳过、约束篡改、时间区间）全部 `v2 PASS → v3 非 PASS`。
 
 > 这两个套件同样受环境约束：DSH 文件沙箱下不能捕获子进程管道输出，因此 CLI 用例直接调用
 > 导出的 `main()` 并临时接管 `process.stdout/stderr`；需要真实 git 的用例用 `tests/.scratch/` 下的临时仓库

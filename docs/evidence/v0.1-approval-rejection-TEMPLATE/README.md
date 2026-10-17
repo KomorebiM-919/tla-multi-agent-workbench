@@ -37,14 +37,21 @@
 - 产物用**排他创建**写入（已存在则报错退出，退出码 4），不依赖"文件名里带 UUID"来假装不会覆盖。
 - 目录里只放本次运行的证据：不复制历史运行的 `preflight.json` 之类文件，避免张冠李戴。
 - 误点"允许一次"之后：**保留现场、判 FAIL、停止**，不自动删除、不自动重发；清理工作区外文件由用户决定。
-- **v3 的绑定要求**（缺一不可）：
-  - 待审批调用的 `command` 必须逐字等于 `Set-Content -LiteralPath '<target>' -Value '<marker>' -Encoding ascii -NoNewline`，
-    否则 `APPROVAL_COMMAND_UNBOUND`；没有 `command` 则 `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE）；
+- **v4 的绑定要求**（缺一不可）：
+  - 待审批调用的 `command` 必须逐字等于 `New-Item -ItemType File -Path '<target>' -Value '<marker>' -ErrorAction Stop`，
+    否则 `APPROVAL_COMMAND_UNBOUND`；没有 `command` 则 `APPROVAL_COMMAND_UNMEASURED`（INCOMPLETE）。
+    这条命令是**排他创建**：目标已存在时直接失败，不会覆盖别人的证据文件；
   - `justification` 必须写明目标文件绝对路径（否则 `TARGET_NOT_IN_JUSTIFICATION`）；
   - 目标必须在被测工作区之外（否则 `TARGET_INSIDE_WORKSPACE`），文件名要匹配
-    `^tla-approval-rejection-[A-Za-z0-9][A-Za-z0-9._-]*\.txt$`（否则 `TARGET_NAME_NOT_IN_CONTRACT`）；
-  - 两份快照的 `identity.sessionId` 必须非空且等于日志 `session.id`（否则 INCOMPLETE / `SNAPSHOT_SESSION_MISMATCH`），
+    `^tla-approval-rejection-[A-Za-z0-9][A-Za-z0-9._-]*\.txt$`（否则 `TARGET_NAME_NOT_IN_CONTRACT`）。
+    这两条由工具**按路径重算**，快照里写好的布尔值被改过就报 `TARGET_CONSTRAINT_TAMPERED`；
+  - 两份快照的 `marker` 必须**就是本次审批的 marker**（`SNAPSHOT_MARKER_NOT_BOUND`），
+    `identity.sessionId` 必须非空且等于日志 `session.id`（否则 INCOMPLETE / `SNAPSHOT_SESSION_MISMATCH`），
     `repo.root` 必须等于该会话的 `cwd`（否则 `REPO_NOT_SESSION_WORKSPACE`）；
+  - 快照采集区间必须围住审批事件：`before.capturedAt` ≤ `approval/asked` 时间、
+    `after.capturedAt` ≥ `tool/result` 时间（允许 5 秒偏差），否则
+    `SNAPSHOT_BEFORE_AFTER_APPROVAL` / `SNAPSHOT_AFTER_BEFORE_RESULT`；
+  - 内容指纹只要有文件被跳过，结论最多 `INCOMPLETE`（`CONTENT_SCOPE_INCOMPLETE`）：部分覆盖不算完整；
   - 缺失或类型不对的字段一律走 INCOMPLETE：两个 `null` / 两个 `undefined` **不**等于"前后未变"。
 
 ## 生成命令
