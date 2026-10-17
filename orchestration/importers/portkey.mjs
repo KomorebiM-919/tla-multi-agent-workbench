@@ -186,6 +186,7 @@ export function extractProviderEntries({
   commit,
   currency,
   repoPath,
+  channel,
 }) {
   const parsed = parseJsonStrict(text, filePath);
   const fileCurrency = parsed.default && typeof parsed.default.currency === 'string' ? parsed.default.currency : currency;
@@ -207,6 +208,7 @@ export function extractProviderEntries({
       provider,
       model,
       mode: 'chat',
+      ...(typeof channel === 'string' && channel !== '' ? { channel } : {}),
       inputMicroMinorPerMillion: centsPerTokenToMicroMinorPerMillion(input, label + '.request_token'),
       outputMicroMinorPerMillion: centsPerTokenToMicroMinorPerMillion(output, label + '.response_token'),
       provenance: 'portkey-models@' + commit.slice(0, 7) + ' ' + repoPathLabel + ' pay_as_you_go',
@@ -240,6 +242,7 @@ export function buildSnapshotFromPortkey({
   capturedAt,
   snapshotId,
   currency = 'USD',
+  channel,
   notes = [],
 }) {
   if (!Array.isArray(sources) || sources.length === 0) {
@@ -264,6 +267,7 @@ export function buildSnapshotFromPortkey({
       commit,
       currency,
       repoPath: source.repoPath,
+      channel,
     }));
   }
   const raw = {

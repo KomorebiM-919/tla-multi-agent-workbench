@@ -1,0 +1,103 @@
+{
+  "schema": "tla.host-catalog/v1",
+  "catalogId": "dsh-0.2.0-rc.2-shipped",
+  "capturedAt": "2026-10-18T02:30:00Z",
+  "capturedFrom": {
+    "installation": "DeepSeek Harness 0.2.0-rc.2 (desktop, this machine)",
+    "method": "read-only extraction of the shipped app.asar; no network, no credentials, no model calls",
+    "sources": [
+      "dsh/node_modules/@deepseek-ai/dsh-llm-deepseek/README.md (route names, default catalog, model pass-through)",
+      "dsh/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js (adapter registration)",
+      "dsh/node_modules/@earendil-works/pi-ai/dist/providers/data/deepseek.json (model entries, context window, list prices)"
+    ]
+  },
+  "notes": [
+    "routes deepseek-official and deepseek-account share the same wire transport but bill differently (API key versus account grant); they are different billing channels, not different vendors.",
+    "model ids pass through to the wire: an id absent from the default catalog is still dispatched as a text-only route, so absence here is 'unverified id', not 'impossible'.",
+    "list prices are USD per million tokens converted to micro-minor units (1 USD = 100 cents = 100000000 micro-minor). They are catalog values, not invoices.",
+    "a second vendor provider is only available when its adapter is configured; this catalog does not prove any non-DeepSeek provider is configured or reachable."
+  ],
+  "routes": [
+    {
+      "provider": "deepseek-official",
+      "adapter": "@deepseek-ai/dsh-llm-deepseek",
+      "billingChannel": "deepseek-official-api",
+      "billing": "API key (api.deepseek.com)",
+      "wiredInThisInstall": "unverified: depends on the active profile configuration"
+    },
+    {
+      "provider": "deepseek-account",
+      "adapter": "@deepseek-ai/dsh-llm-deepseek",
+      "billingChannel": "deepseek-account-grant",
+      "billing": "stored account grant (credits), never falls back to the API key route",
+      "wiredInThisInstall": "unverified: depends on the active profile configuration"
+    },
+    {
+      "provider": "deepseek",
+      "adapter": "@deepseek-ai/dsh-llm-pi-ai",
+      "billingChannel": "deepseek-official-api",
+      "billing": "catalog prices for api.deepseek.com (a custom baseURL would make this a different channel)",
+      "wiredInThisInstall": "unverified: depends on the active profile configuration"
+    }
+  ],
+  "models": [
+    {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "listedByDefault": true,
+      "input": ["text", "image"],
+      "contextWindow": 1000000,
+      "maxTokens": 384000,
+      "reasoning": true,
+      "costMicroMinorPerMillion": {
+        "input": 30000000,
+        "output": 120000000,
+        "cacheRead": 600000,
+        "cacheWrite": 0
+      },
+      "channel": "deepseek-official-api",
+      "priceSource": "pi-ai deepseek.json catalog"
+    },
+    {
+      "provider": "deepseek-official",
+      "model": "deepseek-v4-pro",
+      "listedByDefault": true,
+      "input": ["text"],
+      "contextWindow": 1000000,
+      "maxTokens": 384000,
+      "reasoning": true,
+      "costMicroMinorPerMillion": {
+        "input": 132000000,
+        "output": 396000000,
+        "cacheRead": 4400000,
+        "cacheWrite": 0
+      },
+      "channel": "deepseek-official-api",
+      "priceSource": "pi-ai deepseek.json catalog"
+    },
+    {
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "listedByDefault": true,
+      "input": ["text", "image"],
+      "contextWindow": 1000000,
+      "maxTokens": 384000,
+      "reasoning": true,
+      "costMicroMinorPerMillion": null,
+      "channel": "deepseek-account-grant",
+      "priceSource": "none: account grant pricing is not published in the shipped catalog"
+    },
+    {
+      "provider": "deepseek-account",
+      "model": "deepseek-v4-pro",
+      "listedByDefault": true,
+      "input": ["text"],
+      "contextWindow": 1000000,
+      "maxTokens": 384000,
+      "reasoning": true,
+      "costMicroMinorPerMillion": null,
+      "channel": "deepseek-account-grant",
+      "priceSource": "none: account grant pricing is not published in the shipped catalog"
+    }
+  ]
+}

@@ -11,10 +11,16 @@
 //     --out orchestration/data/<name>.json
 //
 // 说明：本工具只是把"人已经核对过的少数真实条目"转成快照，不自动追踪上游变化。
+//
+// --channel 标注这些价格属于哪个**计费渠道**（默认 portkey-pay-as-you-go）。
+// portkey 的价格是第三方网关的 pay-as-you-go 报价，不等于 DeepSeek 官方 API 的
+// 计费，二者不得因为模型同名而共用一条价格。
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { buildSnapshotFromPortkey } from '../orchestration/importers/portkey.mjs';
+
+const DEFAULT_CHANNEL = 'portkey-pay-as-you-go';
 
 const MODELS = {
   deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash', 'deepseek-v4-pro'],
@@ -54,6 +60,7 @@ function main() {
     commit: args.commit,
     license: 'MIT',
     capturedAt: args['captured-at'],
+    channel: args.channel || DEFAULT_CHANNEL,
     snapshotId: args['snapshot-id'] || 'portkey-' + args.commit.slice(0, 7) + '-pinned',
   });
   const outPath = resolve(args.out);

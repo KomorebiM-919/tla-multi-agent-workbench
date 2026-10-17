@@ -5,7 +5,7 @@
 // 不启动代理、不调用模型、不写证据目录、不安装插件。
 //
 // 用法：
-//   node orchestration/cli.mjs plan --config <config.json> --pricing <snapshot.json> [--now <iso>] [--json]
+//   node orchestration/cli.mjs plan --config <config.json> --pricing <snapshot.json> [--host-catalog <catalog.json>] [--now <iso>] [--json]
 //   node orchestration/cli.mjs translate --config <config.json> --pricing <snapshot.json> [--out <file>]
 //   node orchestration/cli.mjs save --config <config.json> --dir <dir>     # 规范化落盘并回读比对
 //
@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { configDigest, loadConfigFromFile, saveConfig, validateConfig } from './config.mjs';
+import { validateHostCatalog } from './host-catalog.mjs';
 import { formatMicro } from './money.mjs';
 import { buildPlan } from './plan.mjs';
 import { loadSnapshotFromFile } from './pricing.mjs';
@@ -67,6 +68,12 @@ function backendFromArgs(args, config) {
   return { kind, status: 'unavailable', reason: 'BACKEND_UNKNOWN', detail: '未知后端' };
 }
 
+function loadHostCatalogFrom(args) {
+  if (args['host-catalog'] === undefined) return undefined;
+  const raw = JSON.parse(readFileSync(path.resolve(args['host-catalog']), 'utf8'));
+  return validateHostCatalog(raw);
+}
+
 function buildPlanFrom(args) {
   const configResult = loadConfigFromFile(requireArg(args, 'config'));
   const snapshot = loadSnapshotFromFile(requireArg(args, 'pricing'));
@@ -77,6 +84,7 @@ function buildPlanFrom(args) {
     snapshot,
     nowMs,
     backend: backendFromArgs(args, configResult.config),
+    hostCatalog: loadHostCatalogFrom(args),
   });
   return { configResult, snapshot, plan };
 }
@@ -99,6 +107,13 @@ function printPlanSummary(plan) {
   lines.push('totals       estimated ' + (plan.totals.estimatedComplete ? formatMicro(plan.currency, plan.totals.estimatedKnownMicroMinor) : 'incomplete') +
     ' / budget ' + (plan.totals.allocationMicroMinor === null ? '-' : formatMicro(plan.currency, plan.totals.allocationMicroMinor)));
   lines.push('backend      ' + plan.backend.kind + ' -> ' + plan.backend.status + (plan.backend.reason ? ' (' + plan.backend.reason + ')' : ''));
+  if (plan.hostCatalog && plan.hostCatalog.provided) {
+    lines.push('hostCatalog  ' + plan.hostCatalog.catalogId + ' | unlisted ' + (plan.hostCatalog.unlistedRoles.join(',') || '-') +
+      ' | channelMismatch ' + (plan.hostCatalog.channelMismatchRoles.join(',') || '-') +
+      ' | priceConflict ' + (plan.hostCatalog.priceConflictRoles.join(',') || '-'));
+  } else {
+    lines.push('hostCatalog  not provided (host model/channel not checked)');
+  }
   lines.push('budgetMode   ' + plan.budgetEnforcement + ' (plan only, not a hard charge)');
   for (const blocker of plan.blockers) lines.push('BLOCKER      ' + blocker.code + (blocker.role ? ' [' + blocker.role + ']' : '') + ': ' + blocker.detail);
   for (const warning of plan.warnings) lines.push('WARNING      ' + warning.code + (warning.role ? ' [' + warning.role + ']' : '') + ': ' + warning.detail);

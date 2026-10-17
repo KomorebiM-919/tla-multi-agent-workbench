@@ -45,6 +45,11 @@ import {
 } from '../orchestration/money.mjs';
 import { buildPlan } from '../orchestration/plan.mjs';
 import { loadSnapshotFromFile, resolvePrice, validateSnapshot } from '../orchestration/pricing.mjs';
+import {
+  compareMemberRoute,
+  findCatalogModels,
+  validateHostCatalog,
+} from '../orchestration/host-catalog.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -151,7 +156,7 @@ function configRaw(overrides = {}) {
       providerAliases: { 'deepseek-official': 'deepseek' },
     },
     estimates: {
-      perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 8000 },
+      perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 0 },
       calls: { lead: 2, worker: 6, reviewer: 2 },
     },
     backend: {
@@ -307,12 +312,43 @@ scenario('unknown and stale prices block the plan instead of guessing');
 
   const plan = makePlan();
   const reviewer = planMember(plan, 'reviewer');
-  check(reviewer.unknownFields.includes('cacheRead'), 'unknown cache price is declared per member', reviewer.unknownFields.join(','));
-  check(reviewer.estimatedMicroMinor.total === 2_720_000, 'missing cache price is estimated at the input price (upper bound)', String(reviewer.estimatedMicroMinor.total));
-  check(plan.warnings.some((entry) => entry.code === 'ESTIMATE_NOTE' && entry.role === 'reviewer'), 'the conservative upper bound is surfaced as a warning');
-  check(planMember(plan, 'lead').estimatedMicroMinor.total === 2_441_800, 'lead estimate matches the offline arithmetic', String(planMember(plan, 'lead').estimatedMicroMinor.total));
-  check(planMember(plan, 'worker').estimatedMicroMinor.total === 2_365_440, 'worker estimate matches the offline arithmetic', String(planMember(plan, 'worker').estimatedMicroMinor.total));
+  check(reviewer.estimateStatus === 'partial', 'a known price with an unknown dimension is partial, not known', reviewer.estimateStatus);
+  check(reviewer.estimateConfidence === 'medium', 'partial estimates carry medium confidence', reviewer.estimateConfidence);
+  check(plan.readiness.estimatesAvailable === true, 'partial estimates still count as available');
+  check(planMember(plan, 'lead').estimatedMicroMinor.total === 2_436_000, 'lead estimate matches the offline arithmetic', String(planMember(plan, 'lead').estimatedMicroMinor.total));
+  check(planMember(plan, 'worker').estimatedMicroMinor.total === 2_352_000, 'worker estimate matches the offline arithmetic', String(planMember(plan, 'worker').estimatedMicroMinor.total));
   check(plan.totals.estimatedComplete === true, 'all roles are estimated');
+
+  // 缺少缓存价时不许拿输入价冒充上界：没有计费依据，金额就是未知。
+  const cacheHeavy = {
+    perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 8000 },
+    calls: { lead: 2, worker: 6, reviewer: 2 },
+  };
+  const cacheUnknown = makePlan({ config: configRaw({ estimates: cacheHeavy }) });
+  const unknownReviewer = planMember(cacheUnknown, 'reviewer');
+  check(unknownReviewer.estimateStatus === 'unknown', 'a missing cache price makes the estimate unknown', unknownReviewer.estimateStatus);
+  check(unknownReviewer.estimatedMicroMinor === null, 'no amount is produced when the cache price is missing');
+  check(unknownReviewer.unknownFields.includes('cacheReadPrice'), 'the missing price is named, not silently substituted', unknownReviewer.unknownFields.join(','));
+  check(hasCode(blockerCodes(cacheUnknown), 'ESTIMATES_INCOMPLETE'), 'a missing price blocks the plan');
+  check(cacheUnknown.readiness.estimatesAvailable === false, 'missing prices leave estimates unavailable');
+  check(cacheUnknown.totals.withinTotalBudget === null, 'no within-budget claim while a price is missing');
+  check(cacheUnknown.warnings.some((entry) => entry.code === 'ESTIMATE_NOTE' && /没有任何供应商计费依据/.test(entry.detail)),
+    'the missing cache price is reported as unknown, not as an upper bound');
+
+  // 显式假设可以把缺口补上，但结果只能是"假设"，不能换来就绪或预算结论。
+  const assumed = makePlan({
+    config: configRaw({ estimates: { ...cacheHeavy, assumptions: { cachePriceEqualsInput: true } } }),
+  });
+  const assumedReviewer = planMember(assumed, 'reviewer');
+  check(assumedReviewer.estimateStatus === 'assumed', 'the declared assumption is labelled assumed', assumedReviewer.estimateStatus);
+  check(assumedReviewer.estimateConfidence === 'low', 'assumption-based estimates carry low confidence', assumedReviewer.estimateConfidence);
+  check(assumedReviewer.estimatedMicroMinor.total === 2_720_000, 'the assumption fills the gap with the input price', String(assumedReviewer.estimatedMicroMinor.total));
+  check(assumedReviewer.assumedFields.includes('cacheReadPrice'), 'the assumed field is recorded per member', assumedReviewer.assumedFields.join(','));
+  check(assumed.status === 'blocked', 'an assumption-based plan stays blocked');
+  check(hasCode(blockerCodes(assumed), 'ESTIMATES_ASSUMED'), 'the assumption itself is a blocker');
+  check(assumed.readiness.estimatesAvailable === false, 'assumptions do not buy readiness');
+  check(assumed.totals.withinTotalBudget === null, 'assumption-based totals cannot claim within budget');
+  check(assumed.totals.assumptionBasedRoles.join(',') === 'reviewer', 'assumption-based roles are named in the totals');
   check(plan.pricing.freshness === 'fresh', 'fresh snapshot is reported as fresh', plan.pricing.freshness);
   check(resolvePrice(validateSnapshot(snapshotRaw()), { provider: 'deepseek', model: 'deepseek-v4-pro' }).status === 'known',
     'alias target provider resolves');
@@ -724,9 +760,22 @@ scenario('review regressions: readiness dimensions, ceiling costs and cache-writ
     perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 0, cacheWriteTokens: 10000 },
     calls: 1,
   });
-  check(writeUnknown.microMinor.cacheWrite === 140_000, 'unknown cache-write price is estimated at the input price (upper bound)', String(writeUnknown.microMinor.cacheWrite));
-  check(writeUnknown.microMinor.total === 532_000, 'cache-write cost is part of the total', String(writeUnknown.microMinor.total));
-  check(writeUnknown.conservative === true && writeUnknown.unknownFields.includes('cacheWrite'), 'the upper bound is declared, not hidden');
+  check(writeUnknown.status === 'unknown', 'an unpriced cache write makes the estimate unknown', writeUnknown.status);
+  check(writeUnknown.microMinor === null, 'no amount is invented for an unpriced cache write');
+  check(writeUnknown.unknownFields.includes('cacheWritePrice'), 'the missing cache-write price is named', writeUnknown.unknownFields.join(','));
+  check(writeUnknown.notes.some((note) => /没有任何供应商计费依据/.test(note)), 'the gap is explained, not papered over');
+
+  const writeAssumed = estimateRoleCost({
+    price: { ...pricedPrice, unknownFields: ['cacheWritePricing'] },
+    perCall: { inputTokens: 20000, outputTokens: 4000, cacheReadTokens: 0, cacheWriteTokens: 10000 },
+    calls: 1,
+    assumptions: { cachePriceEqualsInput: true },
+  });
+  check(writeAssumed.status === 'assumed', 'the declared assumption is labelled assumed', writeAssumed.status);
+  check(writeAssumed.microMinor.cacheWrite === 140_000, 'the assumption prices the cache write at the input price', String(writeAssumed.microMinor.cacheWrite));
+  check(writeAssumed.microMinor.total === 532_000, 'cache-write cost is part of the total under the assumption', String(writeAssumed.microMinor.total));
+  check(writeAssumed.confidence === 'low', 'an assumed amount is low confidence', writeAssumed.confidence);
+  check(writeAssumed.assumedFields.includes('cacheWritePrice'), 'the assumed field is recorded', writeAssumed.assumedFields.join(','));
 
   const writeKnown = estimateRoleCost({
     price: { ...pricedPrice, prices: { ...pricedPrice.prices, cacheWriteMicroMinorPerMillion: 0 } },
@@ -794,7 +843,198 @@ scenario('review regressions: readiness dimensions, ceiling costs and cache-writ
   check([...reordered.values()].reduce((sum, value) => sum + value, 0) === 5, 'reordering never breaks conservation');
 }
 
-// ---------------------------------------------------------------- report
+// ------------------- 11. 计数单位、模型/provider 覆盖与配置不得伪造就绪
+
+scenario('counting units, model/provider coverage and config cannot forge readiness');
+{
+  const plan = makePlan();
+  const units = plan.callAccounting.units;
+  check(units.agentStarts.enforced === true, 'the workflow backend enforces agent-start counting');
+  check(units.agentStarts.limit === 8, 'the enforced unit carries its synchronous limit', String(units.agentStarts.limit));
+  check(units.modelRequests.enforced === false, 'model requests are not synchronously capped');
+  check(units.retries.enforced === false, 'retries are not counted as a separate capped unit');
+  check(units.tokens.enforced === false, 'tokens are observation-only');
+  check(plan.callAccounting.budgetEnforcement === undefined && plan.budgetEnforcement === 'allocation-plan-only',
+    'the plan does not claim payment enforcement');
+
+  check(plan.totals.distinctModels === 3, 'three distinct provider/model pairs are counted', String(plan.totals.distinctModels));
+  check(plan.totals.distinctProviders === 2, 'two distinct providers are counted', String(plan.totals.distinctProviders));
+  check(plan.totals.coverage.multiModel === true, 'different models in one plan are visible as such');
+  check(plan.totals.coverage.multiProvider === true, 'different providers in one plan are visible as such');
+
+  // 同一个 provider 下的两个模型只能算"两个模型"，不能算跨 provider。
+  const singleProvider = makePlan({
+    config: configRaw({
+      roles: {
+        lead: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+        worker: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        reviewer: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      },
+    }),
+  });
+  check(singleProvider.totals.distinctModels === 2, 'two models under one provider are two models');
+  check(singleProvider.totals.coverage.multiModel === true, 'multiModel is satisfiable within one provider');
+  check(singleProvider.totals.distinctProviders === 1, 'one provider stays one provider', String(singleProvider.totals.distinctProviders));
+  check(singleProvider.totals.coverage.multiProvider === false, 'two models on one provider never count as cross-provider');
+
+  // 配置只能描述"要什么"；就绪与预算保护是计划算出来的，写进配置一律拒绝。
+  for (const forgedKey of ['readiness', 'executionImplemented', 'budgetProtection', 'limits']) {
+    const forged = validateConfig({ ...configRaw(), [forgedKey]: { anything: true } });
+    check(forged.ok === false, 'config cannot declare ' + forgedKey, JSON.stringify(forged.problems.map((entry) => entry.code)));
+    check(forged.problems.some((entry) => entry.code === 'CONFIG_UNKNOWN_KEY'),
+      forgedKey + ' is rejected as an unknown key');
+  }
+  const unknownAssumption = validateConfig({
+    ...configRaw(),
+    estimates: { perCall: { inputTokens: 1, outputTokens: 1 }, calls: {}, assumptions: { optimisticDiscount: true } },
+  });
+  check(unknownAssumption.ok === false && unknownAssumption.problems.some((entry) => entry.code === 'ESTIMATES_INVALID'),
+    'an unknown estimation assumption is rejected, not ignored');
+}
+
+// ------------------------------------------------- channel 与宿主目录比对
+
+scenario('billing channels are separate and the host catalog cross-check is honest');
+
+const catalogRaw = () => ({
+  schema: 'tla.host-catalog/v1',
+  catalogId: 'test-host-catalog',
+  capturedAt: '2026-10-18T02:30:00Z',
+  routes: [
+    { provider: 'deepseek-official', adapter: 'dsh-llm-deepseek', billingChannel: 'deepseek-official-api' },
+  ],
+  models: [
+    {
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      channel: 'deepseek-official-api',
+      listedByDefault: true,
+      costMicroMinorPerMillion: { input: 132_000_000, output: 396_000_000, cacheRead: 4_400_000, cacheWrite: 0 },
+    },
+  ],
+});
+
+// role.channel 必须是显式渠道名，空串不能当"未知"悄悄过
+check(hasCode(codes(configRaw({ roles: { lead: { provider: 'p', model: 'm', channel: '' } } })), 'ROUTE_INVALID'),
+  'an empty role channel is rejected instead of silently meaning unknown');
+
+// 同一 provider/model 两个渠道：不声明渠道 → 歧义拒绝；声明错了 → 渠道不匹配
+const twoChannelSnapshot = snapshotRaw({
+  entries: [
+    {
+      provider: 'deepseek', model: 'deepseek-v4-pro', mode: 'chat', channel: 'ch-a',
+      inputMicroMinorPerMillion: 10_000_000, outputMicroMinorPerMillion: 20_000_000,
+      provenance: 'fixture ch-a',
+    },
+    {
+      provider: 'deepseek', model: 'deepseek-v4-pro', mode: 'chat', channel: 'ch-b',
+      inputMicroMinorPerMillion: 30_000_000, outputMicroMinorPerMillion: 60_000_000,
+      provenance: 'fixture ch-b',
+    },
+  ],
+});
+const ambiguous = resolvePrice(validateSnapshot(twoChannelSnapshot), { provider: 'deepseek', model: 'deepseek-v4-pro' });
+check(ambiguous.status === 'unknown' && ambiguous.code === 'PRICE_AMBIGUOUS_CHANNEL',
+  'two channels without a declared channel is ambiguous, not a guess', ambiguous.code);
+check(Array.isArray(ambiguous.availableChannels) && ambiguous.availableChannels.length === 2,
+  'the ambiguity lists the available channels', ambiguous.availableChannels);
+const wrongChannel = resolvePrice(validateSnapshot(twoChannelSnapshot), { provider: 'deepseek', model: 'deepseek-v4-pro', channel: 'ch-c' });
+check(wrongChannel.status === 'unknown' && wrongChannel.code === 'PRICE_CHANNEL_MISMATCH',
+  'an unknown channel is a channel mismatch, never a silent fallback', wrongChannel.code);
+const rightChannel = resolvePrice(validateSnapshot(twoChannelSnapshot), { provider: 'deepseek', model: 'deepseek-v4-pro', channel: 'ch-b' });
+check(rightChannel.status === 'known' && rightChannel.channel === 'ch-b' && rightChannel.channelSpecified === true,
+  'a declared channel resolves to exactly that channel', rightChannel.channel);
+check(rightChannel.prices.inputMicroMinorPerMillion === 30_000_000, 'the price comes from the declared channel, not the first entry');
+
+// 声明渠道时不产生"渠道未声明"警告；别名只改查价 provider，不改执行 provider
+const channelPlan = makePlan({
+  config: configRaw({
+    roles: {
+      lead: { provider: 'deepseek-official', model: 'deepseek-v4-pro', channel: 'ch-b' },
+      worker: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      reviewer: { provider: 'moonshot', model: 'moonshot-v1-8k' },
+    },
+  }),
+  snapshot: twoChannelSnapshot,
+});
+const leadMember = planMember(channelPlan, 'lead');
+check(leadMember.channel === 'ch-b', 'the plan records the declared channel');
+check(leadMember.priceLookup.channel === 'ch-b' && leadMember.priceLookup.provider === 'deepseek',
+  'price lookup uses the alias provider and the declared channel', leadMember.priceLookup);
+check(leadMember.provider === 'deepseek-official' && leadMember.priceLookup.aliased === true,
+  'the execution provider stays deepseek-official: the alias only affects price lookup');
+check(channelPlan.warnings.every((warning) => !(warning.code === 'PRICE_CHANNEL_UNSPECIFIED' && warning.role === 'lead')),
+  'no unspecified-channel warning when the channel is declared');
+const unspecifiedPlan = makePlan();
+check(unspecifiedPlan.warnings.some((warning) => warning.code === 'PRICE_CHANNEL_UNSPECIFIED' && warning.role === 'worker'),
+  'a known price from an undeclared channel is warned, not silently accepted');
+check(unspecifiedPlan.warnings.filter((warning) => warning.code === 'PRICE_CHANNEL_UNSPECIFIED').length === 3,
+  'every role without a declared channel carries that warning');
+
+// 宿主目录校验与比对
+const catalog = validateHostCatalog(catalogRaw());
+check(findCatalogModels(catalog, 'deepseek-official', 'deepseek-v4-pro').length === 1, 'the host catalog finds a listed model');
+check(findCatalogModels(catalog, 'deepseek-official', 'deepseek-v4-flash').length === 0, 'an unlisted model is absent, not invented');
+const listedWithConflict = compareMemberRoute(catalog, {
+  provider: 'deepseek-official', model: 'deepseek-v4-pro', channel: 'deepseek-official-api',
+  price: { status: 'known', channel: 'deepseek-official-api', prices: { inputMicroMinorPerMillion: 43_500_000, outputMicroMinorPerMillion: 87_000_000 } },
+});
+check(listedWithConflict.status === 'listed' && listedWithConflict.priceConflict === true,
+  'a 3x price divergence from the host catalog is flagged', listedWithConflict.detail);
+const listedOtherChannel = compareMemberRoute(catalog, {
+  provider: 'deepseek-official', model: 'deepseek-v4-pro', channel: 'ch-b',
+  price: { status: 'known', channel: 'ch-b', prices: { inputMicroMinorPerMillion: 30_000_000, outputMicroMinorPerMillion: 60_000_000 } },
+});
+check(listedOtherChannel.channelMatches === false, 'a channel that the host does not bill is a mismatch');
+check(listedOtherChannel.detail.includes('deepseek-official-api'), 'the mismatch names the host billing channel');
+const unlisted = compareMemberRoute(catalog, { provider: 'moonshot', model: 'moonshot-v1-8k', channel: null, price: null });
+check(unlisted.status === 'unlisted' && unlisted.channelMatches === null, 'an absent provider is unlisted, not an error');
+
+let duplicateError = null;
+try {
+  validateHostCatalog({ ...catalogRaw(), models: [catalogRaw().models[0], catalogRaw().models[0]] });
+} catch (error) {
+  duplicateError = error;
+}
+check(duplicateError !== null && duplicateError.code === 'HOST_CATALOG_INVALID', 'duplicate catalog entries are rejected');
+let costError = null;
+try {
+  validateHostCatalog({ ...catalogRaw(), models: [{ ...catalogRaw().models[0], costMicroMinorPerMillion: { input: null, output: 1 } }] });
+} catch (error) {
+  costError = error;
+}
+check(costError !== null && costError.code === 'HOST_CATALOG_INVALID', 'a catalog entry without an input price is rejected');
+
+// 计划里带上宿主目录：明确列出未列出/渠道不符/价格分歧，且不声称"因此可执行"
+const withCatalog = buildPlan({
+  configResult: validateConfig(configRaw()),
+  snapshot: validateSnapshot(snapshotRaw()),
+  nowMs: FIXED_NOW,
+  backend: workflowScriptBackendStatus({ maxAgentCalls: 8 }),
+  hostCatalog: catalog,
+});
+check(withCatalog.hostCatalog.provided === true && withCatalog.hostCatalog.catalogId === 'test-host-catalog',
+  'the plan records that the host catalog was actually compared');
+check(withCatalog.hostCatalog.unlistedRoles.includes('worker'), 'worker is reported as not listed by the host catalog');
+check(withCatalog.hostCatalog.unlistedRoles.includes('reviewer'), 'reviewer is reported as not listed by the host catalog');
+check(withCatalog.warnings.some((warning) => warning.code === 'HOST_CATALOG_MODEL_UNLISTED' && warning.role === 'worker'),
+  'the unlisted model becomes a warning with the role attached');
+check(withCatalog.hostCatalog.priceConflictRoles.includes('lead') === false,
+  'a cross-channel price is not reported as a price conflict (channels are not comparable)');
+check(withCatalog.warnings.some((warning) => warning.code === 'HOST_CATALOG_PRICE_CHANNEL_DIFFERS' && warning.role === 'lead'),
+  'the cross-channel price is reported as channel-different instead');
+check(withCatalog.status === 'blocked', 'a host catalog warning never turns a blocked plan into ready');
+check(blockerCodes(withCatalog).includes('HOST_CATALOG_MODEL_UNLISTED'),
+  'models absent from the host catalog block the plan instead of only warning');
+check(withCatalog.readiness.hostRouteVerified === false && withCatalog.missingForExecution.includes('HOST_ROUTE_UNVERIFIED'),
+  'the unverified host route is listed as a concrete readiness gap',
+  withCatalog.missingForExecution);
+const withoutCatalog = makePlan();
+check(withoutCatalog.hostCatalog.provided === false, 'no catalog means the plan says it did not check the host');
+check(withoutCatalog.readiness.hostRouteVerified === null, 'no catalog means the host route dimension is null, not true');
+check(!withoutCatalog.missingForExecution.includes('HOST_ROUTE_UNVERIFIED'),
+  'skipping the host check is not reported as having verified it');
+
 
 process.stdout.write('\n' + scenarios + ' scenarios, ' + checks + ' checks, ' + failures.length + ' failure(s)\n');
 if (failures.length > 0) {

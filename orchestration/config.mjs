@@ -24,6 +24,11 @@ const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const BACKEND_KINDS = new Set(['workflow-script', 'agent-teams']);
 const SUPPORTED_SELECTION = new Set(['manual']);
 const REASONING_EFFORTS = new Set(['off', 'low', 'high', 'max']);
+// 配置只描述"要什么"：角色、负责人、预算、价格快照、估算假设、后端。
+// 执行是否就绪、预算保护到什么程度，只能由计划按探测结果算，不能由配置声明。
+const CONFIG_TOP_LEVEL_KEYS = [
+  'schema', 'runId', 'roles', 'ownerRole', 'router', 'budget', 'pricing', 'estimates', 'backend',
+];
 
 export class ConfigError extends Error {
   constructor(code, detail) {
@@ -92,10 +97,21 @@ function validateRoles(roles, problems) {
         reasoningEffort = role.reasoningEffort;
       }
     }
+    // channel 是计费渠道（官方 API / 账户额度 / 第三方网关……），不是路由；
+    // 同名的 provider/model 在不同渠道价格不同，因此不声明渠道时只能取"快照中唯一渠道"的价格。
+    let channel;
+    if (role.channel !== undefined) {
+      if (!nonEmptyString(role.channel)) {
+        problem(problems, 'ROUTE_INVALID', where + '.channel 必须是非空字符串');
+      } else {
+        channel = role.channel;
+      }
+    }
     return {
       name,
       provider: role.provider,
       model: role.model,
+      channel,
       selection: SUPPORTED_SELECTION.has(selection) ? selection : 'unsupported',
       reasoningEffort,
     };
@@ -159,7 +175,7 @@ function validateEstimates(estimates, roleNames, problems) {
   }
   const perCall = isPlainObject(estimates.perCall) ? estimates.perCall : {};
   const normalizedPerCall = {};
-  for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens']) {
+  for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']) {
     const value = perCall[key] === undefined ? 0 : perCall[key];
     try {
       normalizedPerCall[key] = requireNonNegativeInteger(value, 'MONEY_NOT_INTEGER', 'estimates.perCall.' + key);
@@ -184,7 +200,24 @@ function validateEstimates(estimates, roleNames, problems) {
   for (const key of Object.keys(rawCalls)) {
     if (!roleNames.includes(key)) problem(problems, 'ESTIMATES_INVALID', 'estimates.calls 引用了未定义的角色 ' + key);
   }
-  return { perCall: normalizedPerCall, calls };
+  // 假设必须是配置里显式声明的：默认不假设"缓存价 = 输入价"，因为那没有供应商计费依据。
+  const assumptions = {};
+  if (estimates.assumptions !== undefined) {
+    if (!isPlainObject(estimates.assumptions)) {
+      problem(problems, 'ESTIMATES_INVALID', 'estimates.assumptions 必须是对象');
+    } else {
+      for (const [key, value] of Object.entries(estimates.assumptions)) {
+        if (key !== 'cachePriceEqualsInput') {
+          problem(problems, 'ESTIMATES_INVALID', '未知的估算假设 ' + key + '（只支持 cachePriceEqualsInput）');
+        } else if (typeof value !== 'boolean') {
+          problem(problems, 'ESTIMATES_INVALID', 'estimates.assumptions.' + key + ' 必须是布尔值');
+        } else if (value) {
+          assumptions[key] = true;
+        }
+      }
+    }
+  }
+  return { perCall: normalizedPerCall, calls, assumptions };
 }
 
 function validateBackend(backend, problems) {
@@ -249,6 +282,14 @@ export function validateConfig(raw) {
   if (!isPlainObject(raw)) {
     throw new ConfigError('CONFIG_INVALID', '配置必须是 JSON 对象');
   }
+  // 只接受已知的顶层键。就绪状态（readiness / executionImplemented / budgetProtection）
+  // 是计划根据探测结果算出来的，配置里写这些键一律拒绝，避免用配置文件伪造"可执行"。
+  for (const key of Object.keys(raw)) {
+    if (!CONFIG_TOP_LEVEL_KEYS.includes(key)) {
+      problem(problems, 'CONFIG_UNKNOWN_KEY',
+        '未知配置键 ' + key + '：就绪状态与预算保护由计划按探测结果计算，不能由配置声明');
+    }
+  }
   if (raw.schema !== CONFIG_SCHEMA) problem(problems, 'CONFIG_SCHEMA', 'schema 必须是 ' + CONFIG_SCHEMA);
   if (typeof raw.runId !== 'string' || !RUN_ID_PATTERN.test(raw.runId)) {
     problem(problems, 'RUN_ID_INVALID', 'runId 必须匹配 ' + RUN_ID_PATTERN);
@@ -292,6 +333,7 @@ export function validateConfig(raw) {
     roles: Object.fromEntries(roles.map((role) => [role.name, {
       provider: role.provider,
       model: role.model,
+      ...(role.channel === undefined ? {} : { channel: role.channel }),
       selection: role.selection,
       ...(role.reasoningEffort === undefined ? {} : { reasoningEffort: role.reasoningEffort }),
     }])),

@@ -8,6 +8,10 @@
 // 3. 峰谷（off-peak）价格只有在来源里有明确字段时才算已知；否则写进 unknownFields，
 //    不得用"估计值"或"固定折扣"冒充。
 // 4. 币种不一致、快照过期、模型缺失，一律显式返回"未知/不可用"，不返回 0 或默认价。
+// 5. 价格按 (provider, model, mode, channel) 唯一。channel 是**计费渠道**（官方 API、
+//    账户额度、第三方网关……），不是路由：同名模型在不同渠道可以有不同价格，因此不同渠道
+//    不得共用一条价格。渠道未声明时只有"该模型在该快照里只有一个渠道"才允许取值，
+//    多渠道一律判为歧义并返回未知。
 
 import { readFileSync } from 'node:fs';
 import { MoneyError, SUPPORTED_CURRENCIES, requireNonNegativeInteger } from './money.mjs';
@@ -75,7 +79,11 @@ export function validateSnapshot(raw) {
         throw new PricingError('PRICING_INVALID', where + '.' + key + ' 不能为空');
       }
     }
-    const key = entry.provider + '/' + entry.model;
+    const channel = typeof entry.channel === 'string' && entry.channel.trim() !== '' ? entry.channel : null;
+    if (entry.channel !== undefined && channel === null) {
+      throw new PricingError('PRICING_INVALID', where + '.channel 必须是非空字符串');
+    }
+    const key = entry.provider + '/' + entry.model + '/' + (channel === null ? '-' : channel);
     if (seen.has(key)) throw new PricingError('PRICING_INVALID', '重复的价格条目 ' + key);
     seen.add(key);
     if (typeof entry.provenance !== 'string' || entry.provenance.trim() === '') {
@@ -98,6 +106,7 @@ export function validateSnapshot(raw) {
     return {
       provider: entry.provider,
       model: entry.model,
+      channel,
       mode: typeof entry.mode === 'string' ? entry.mode : 'chat',
       prices,
       provenance: entry.provenance,
@@ -151,29 +160,65 @@ export function checkFreshness(snapshot, { nowMs, maxAgeHours }) {
   return { status: age <= limit ? 'fresh' : 'stale', ageHours: age, maxAgeHours: limit };
 }
 
-export function lookupEntry(snapshot, provider, model) {
-  return snapshot.entries.find((entry) => entry.provider === provider && entry.model === model) || null;
+export function lookupEntry(snapshot, provider, model, { channel, mode = 'chat' } = {}) {
+  const candidates = snapshot.entries.filter((entry) =>
+    entry.provider === provider && entry.model === model && entry.mode === mode);
+  if (candidates.length === 0) return null;
+  if (channel !== undefined && channel !== null) {
+    return candidates.find((entry) => entry.channel === channel) || null;
+  }
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 /**
  * 查询某角色要用的模型价格。返回"已知"时必须同时带 source/provenance；
  * 任何缺失都返回状态而不是 0。
+ *
+ * channel 是计费渠道：显式声明时按渠道精确匹配；未声明时只有唯一渠道才取值，
+ * 多渠道返回 PRICE_AMBIGUOUS_CHANNEL —— 同名模型的不同渠道不得共用价格。
  */
-export function resolvePrice(snapshot, { provider, model, mode = 'chat' }) {
-  const entry = snapshot.entries.find((candidate) =>
+export function resolvePrice(snapshot, { provider, model, mode = 'chat', channel }) {
+  const sameModel = snapshot.entries.filter((candidate) =>
     candidate.provider === provider && candidate.model === model && candidate.mode === mode);
-  if (!entry) {
+  if (sameModel.length === 0) {
     return {
       status: 'unknown',
       code: 'PRICE_UNKNOWN',
       detail: '快照 ' + snapshot.snapshotId + ' 中没有 ' + provider + '/' + model + '（mode=' + mode + '）的价格',
     };
   }
+  const channels = [...new Set(sameModel.map((candidate) => candidate.channel))];
+  let entry;
+  if (typeof channel === 'string' && channel !== '') {
+    entry = sameModel.find((candidate) => candidate.channel === channel);
+    if (!entry) {
+      return {
+        status: 'unknown',
+        code: 'PRICE_CHANNEL_MISMATCH',
+        detail: '快照 ' + snapshot.snapshotId + ' 只有 ' + provider + '/' + model + ' 在渠道 '
+          + channels.map((item) => item === null ? '(未声明)' : item).join('、') + ' 的价格，没有渠道 ' + channel + ' 的价格',
+        availableChannels: channels,
+      };
+    }
+  } else {
+    if (channels.length > 1) {
+      return {
+        status: 'unknown',
+        code: 'PRICE_AMBIGUOUS_CHANNEL',
+        detail: '快照 ' + snapshot.snapshotId + ' 中 ' + provider + '/' + model + ' 有多个计费渠道（'
+          + channels.map((item) => item === null ? '(未声明)' : item).join('、') + '），必须显式声明渠道',
+        availableChannels: channels,
+      };
+    }
+    entry = sameModel[0];
+  }
   return {
     status: 'known',
     provider,
     model,
     mode: entry.mode,
+    channel: entry.channel,
+    channelSpecified: typeof channel === 'string' && channel !== '',
     currency: snapshot.currency,
     snapshotId: snapshot.snapshotId,
     capturedAt: snapshot.capturedAt,
