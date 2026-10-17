@@ -1,0 +1,91 @@
+{
+  "run_id": "v0.2-run2-20261017T133204Z",
+  "agent": "coding-agent",
+  "stage": "coding",
+  "generated_at": "2026-10-17T21:45:02.0796017+08:00",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "purpose": "Library plus command line entry: pure count_text() returning the four integer statistics, main(argv=None, stdin_text=None) returning an int exit code with two separate call scopes (command line writes exactly four stdout lines, programmatic call writes nothing), --encoding limited to file decoding, and one sys.exit(main()) inside the __main__ guard. Docstrings rewritten to cite this round's BC-01..BC-26 only."
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "Standard library unittest suite (81 tests) mapping every AC-01..AC-25 and BC-01..BC-26 to at least one case: pure function tables, line/non-empty tables, word regex rules, normalisation order, both call scopes, five command line error paths plus their silent programmatic counterparts, --help in both scopes, --encoding, argv semantics, entry point shape, and delivery constraints (no manifests, standard library imports only, README/sample self-consistency, scratch hygiene)."
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "Rewritten documentation: statistics rules keyed to this round's BC numbers, normalisation and line boundary rules, exit-code table, programmatic-call semantics, reproducible examples (sample_input.txt, stdin, immediate EOF, CRLF text via count_text, --encoding with a generated UTF-16LE file, --help, directory error), test instructions, priority list that removes the historical crlf_cr.txt example and the impossible char_count 6 for '  \\r\\n \\r\\n', and a boundary condition quick reference BC-01..BC-26."
+      }
+    ],
+    "implementation_summary": "Delivered examples/text-stats as a standard-library-only tool. count_text(text) normalises in a fixed order (drop one leading U+FEFF, CRLF to LF, remaining CR to LF), then splits on LF only, so line_count and non_empty_line_count come from the same split (empty text has no line, a trailing LF adds no line) and word_count is the count of [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* matches. main() treats stdin_text is None as the command line scope (four 'key: value' stdout lines, exit 0) and any explicit stdin_text, empty string included, as the programmatic scope (no bytes on either stream, never reads sys.stdin, returns 0/1). The five handled errors (missing file, directory or unreadable path, decode failure, unknown --encoding checked with codecs.lookup before input selection, more than one positional argument) return 1 and never argparse's 2; on the command line they print exactly one 'error: ' line and nothing on stdout, while programmatic calls stay completely silent. --help returns 0, verbose for the command line and silent when programmatic. Legacy sources were rewritten rather than patched because their numbering was pervasively stale (a nonexistent BC-27), the README example referenced the absent crlf_cr.txt file, and it still justified the impossible char_count 6; all three delivery sources now cite only AC-01..AC-25 and BC-01..BC-26, and the whitespace CRLF input is consistently 5 / 2 / 0 / 0.",
+    "acceptance_criteria_addressed": [
+      "AC-01 main([], stdin_text=\"\") returns int 0 with empty captured streams and a sys.stdin stub that raises on any read.",
+      "AC-02 the documented python -c one-liner exits 0 and prints exactly 'True 0 int'.",
+      "AC-03 command line with immediate stdin EOF prints the four zero lines, exit 0, empty stderr, well inside the timeout.",
+      "AC-04 count_text returns a dict with exactly the four integer keys (20/2/2/4 for the reference text, 0/0/0/0 for empty) and touches no stream.",
+      "AC-05 python text_stats.py sample_input.txt yields 20/2/2/4 with empty stderr.",
+      "AC-06 stdin bytes b\"hello world\\n\" yield 12/1/1/2.",
+      "AC-07 the PATH route and the stdin byte route agree with count_text on 20/2/2/4.",
+      "AC-08 one leading BOM dropped (3 and 4 characters), \"a\\r\\nb\\rc\" 5/3/3/3, \"  \\r\\n \\r\\n\" 5/2/0/0.",
+      "AC-09 U+2028, U+2029, \\x0b, \\x0c, \\x1c, \\x1d, \\x1e, \\x85 are not line boundaries (1 line, 3 characters) and the counting code never uses splitlines.",
+      "AC-10 the nine-row line_count / non_empty_line_count table matches count_text exactly.",
+      "AC-11 the seven-row char_count table matches, including combining marks counting as separate code points.",
+      "AC-12 the eighteen-row word_count table matches, including hello--world 2, a1b 2, foo_bar baz 3, it\\u2019s 1.",
+      "AC-13 stdout is exactly four ordered 'key: value' lines matching the anchored regular expression, no trailing blank line.",
+      "AC-14 all five command line error classes exit 1 with empty stdout and one 'error: ' line without traceback.",
+      "AC-15 the four programmatic error calls return 1 while writing nothing to either stream.",
+      "AC-16 --help exits 0 with usage text mentioning PATH and --encoding on the command line, and is silent in the programmatic scope.",
+      "AC-17 main signature has argv=None and stdin_text=None; sys.exit( appears once, inside the __main__ guard; exit codes stay in {0, 1}.",
+      "AC-18 main returns only the int 0 while count_text supplies 12/1/1/2.",
+      "AC-19 main([\"sample_input.txt\"], stdin_text=\"ignored\") returns 0 while writing nothing.",
+      "AC-20 a UTF-16LE file read with --encoding utf-16-le yields 4/1/1/1.",
+      "AC-21 the canonical discovery command runs green (81 tests) and the suite contains explicit programmatic-silence and line-count-table cases.",
+      "AC-22 sample_input.txt is exactly 20 LF bytes, the README files and stdin examples match the implementation, no crlf_cr.txt reference survives, no bare U+2019 character appears in module, tests or README.",
+      "AC-23 README and tests cite only AC-01..AC-25 and BC-01..BC-26; every criterion number is referenced.",
+      "AC-24 the only modified paths are the delivery sources and the injected evidence file, with no dependency manifest and an unchanged __pycache__ listing.",
+      "AC-25 both modules import only standard library modules."
+    ],
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.809s\n\nOK",
+    "requirement_conflicts": [],
+    "deviations_from_requirement": [],
+    "report_file": "docs/evidence/v0.2-run2-20261017T133204Z/coding-report.json",
+    "generated_at": "2026-10-17T21:45:02.0796017+08:00",
+    "bytecode_scope": {
+      "env_applied": true,
+      "env_variable": "PYTHONDONTWRITEBYTECODE",
+      "cache_dir": "examples/text-stats/__pycache__",
+      "entries_before": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14916,
+          "mtime_ms": 1792240028925,
+          "sha256": "61a19a441b8e1c399d1989b6cf86d20709ee27783ccfcad964dfd4c9cf825122"
+        }
+      ],
+      "entries_after": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14916,
+          "mtime_ms": 1792240028925,
+          "sha256": "61a19a441b8e1c399d1989b6cf86d20709ee27783ccfcad964dfd4c9cf825122"
+        }
+      ]
+    }
+  }
+}

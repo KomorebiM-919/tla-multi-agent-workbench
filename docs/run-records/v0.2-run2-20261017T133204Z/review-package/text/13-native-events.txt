@@ -1,0 +1,23 @@
+# 13-native-events
+# command: node tests/extract-native-events.mjs --parent session-3f96bf08-83ae-48d6-a239-0223d4b1c12c --workflow-name tla-v02-run2 --since 2026-10-17T21:32:04+08:00 --evidence-dir docs/evidence/v0.2-run2-20261017T133204Z --script-file docs/run-records/v0.2-run2-20261017T133204Z/workflow-script-at-run.js --out docs/run-records/v0.2-run2-20261017T133204Z/review-package/json/native-events.json
+# exit code: 0
+# duration: 5.69s
+# timed out: no
+
+1  Verifier (preflight)  2026-10-17T13:36:52.974Z → 2026-10-17T13:37:33.678Z  deepseek-flash/deepseek-account  child=b3f5752a-d9ad-4b98-b1bd-bca3d0007b59
+2  Requirement Agent  2026-10-17T13:37:33.706Z → 2026-10-17T13:41:27.234Z  deepseek-flash/deepseek-account  child=40da4df5-6e08-42fd-a5b3-ea34484cbd40
+3  Coding Agent  2026-10-17T13:41:27.263Z → 2026-10-17T13:45:38.102Z  deepseek-flash/deepseek-account  child=21a4efb0-7b86-4cf1-b79f-80512d2232e8
+4  Verifier (verify)  2026-10-17T13:45:38.129Z → 2026-10-17T13:46:34.267Z  deepseek-flash/deepseek-account  child=96ac7036-3331-45d5-8934-d7f3cde51af4
+5  Review Agent  2026-10-17T13:46:34.297Z → 2026-10-17T13:49:39.661Z  deepseek-flash/deepseek-account  child=471aa1d9-b6ba-46bf-bfc1-4cc71341741c
+6  Cache Collector  2026-10-17T13:49:39.685Z → 2026-10-17T13:50:44.426Z  deepseek-flash/deepseek-account  child=db088775-9176-40df-9876-9f0032c343e6
+7  Coding Agent (revision 2)  2026-10-17T13:50:44.454Z → 2026-10-17T13:54:01.202Z  deepseek-flash/deepseek-account  child=f5adad0a-83c5-437b-b030-27cdad08c66d
+8  Verifier (verify) (revision 2)  2026-10-17T13:54:01.228Z → 2026-10-17T13:55:15.854Z  deepseek-flash/deepseek-account  child=3139fda0-8eed-40d9-9d4c-326c51199f57
+9  Review Agent (revision 2)  2026-10-17T13:55:15.885Z → 2026-10-17T13:57:58.553Z  deepseek-flash/deepseek-account  child=1095e693-db97-4f16-9191-d4b0605824fe
+10  Cache Collector (revision 2)  2026-10-17T13:57:58.576Z → 2026-10-17T13:58:48.456Z  deepseek-flash/deepseek-account  child=f51fbd4f-1d25-4d1e-9850-a582c301c089
+  docs/evidence/v0.2-run2-20261017T133204Z/preflight.json  2043B  write-tool  #1 Verifier (preflight)
+  docs/evidence/v0.2-run2-20261017T133204Z/requirement.json  25856B  write-tool  #2 Requirement Agent
+  docs/evidence/v0.2-run2-20261017T133204Z/coding-report.json  8120B  write-tool  #3 Coding Agent
+  docs/evidence/v0.2-run2-20261017T133204Z/verify.json  1603B  write-tool  #4 Verifier (verify)
+  docs/evidence/v0.2-run2-20261017T133204Z/review.json  16318B  write-tool  #5 Review Agent
+  docs/evidence/v0.2-run2-20261017T133204Z/.run-owner.json  277B  time-window  #1 Verifier (preflight)
+wrote docs/run-records/v0.2-run2-20261017T133204Z/review-package/json/native-events.json  (checks 10/10)

@@ -1,0 +1,22 @@
+# 03-review-self-test
+# command: python tests/review-run-evidence.py --self-test
+# exit code: 0
+# duration: 2.69s
+# timed out: no
+
+PASS baseline
+PASS empty_criteria
+PASS criteria_wrong_type
+PASS criteria_check_wrong_type
+PASS duplicate_artifact
+PASS coding_conflict
+PASS verify_conflict
+PASS review_conflict
+PASS naive_timestamp
+PASS mapping_missing_clause
+PASS mapping_unknown_id
+PASS mapping_orphan
+PASS bytecode_prefix_accepted
+PASS bytecode_prefix_wrong_value
+
+14/14 个夹具符合预期

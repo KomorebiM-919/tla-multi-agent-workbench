@@ -54,6 +54,23 @@ OK_RE = re.compile(r'(^|\n)OK( \([^\n]*\))?(\n|$|\s*$)')
 SKIPPED_RE = re.compile(r'\([^)\n]*\bskipped=(\d+)[^)\n]*\)')
 RUN_WINDOW_HOURS = 6  # 与生产门禁一致：workflows/three-agent-mvp.js 的 TIMESTAMP_WINDOW_HOURS = 6
 REQUIREMENT_CLAUSE_IDS = tuple('R-%02d' % number for number in range(1, 38))
+CANONICAL_COMMAND = 'python -m unittest discover -s examples/text-stats -p "test_*.py"'
+# v0.2-run2 起，注入的 testCommand 允许带固定的字节码环境前缀：
+# 它防止阶段内的 Python 调用改写 examples/text-stats/__pycache__（见 R-33 的写入边界）。
+# 只有这些**逐字符已知**的前缀可以在比较"命令是否 canonical"时剥离；其余任何差异仍算不 canonical。
+BYTECODE_ENV_PREFIXES = (
+    "$env:PYTHONDONTWRITEBYTECODE = '1'; ",
+    '$env:PYTHONDONTWRITEBYTECODE = "1"; ',
+)
+
+
+def normalize_test_command(command):
+    """剥离允许的字节码环境前缀，返回用于比对的命令本体。"""
+    text = str(command if command is not None else '').strip()
+    for prefix in BYTECODE_ENV_PREFIXES:
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return text
 
 
 def sha256_file(path):
@@ -215,8 +232,9 @@ def main(argv=None):
     check('coding.test_exit_code_zero', str(coding.get('test_exit_code')) == '0', coding.get('test_exit_code'))
 
     # ---- 4. Verifier 独立复跑
-    canonical = 'python -m unittest discover -s examples/text-stats -p "test_*.py"'
-    check('verify.command_is_canonical', str(verify.get('command')).strip() == canonical, verify.get('command'))
+    canonical = CANONICAL_COMMAND
+    check('verify.command_is_canonical', normalize_test_command(verify.get('command')) == canonical,
+          verify.get('command'))
     check('verify.exit_code_zero', str(verify.get('exit_code')) == '0', verify.get('exit_code'))
     verify_output = parse_unittest_output(verify.get('raw_output'))
     check('verify.ran_tests', verify_output['ran'] is not None and verify_output['ran'] >= 1, verify_output['ran'])
@@ -257,7 +275,8 @@ def main(argv=None):
                    if isinstance(item, dict) and item.get('satisfied') is not True]
     check('review.criteria_all_satisfied', len(unsatisfied) == 0, ', '.join(str(item) for item in unsatisfied))
     check('review.independent_command_is_canonical',
-          str(review.get('independent_test_command')).strip() == canonical, review.get('independent_test_command'))
+          normalize_test_command(review.get('independent_test_command')) == canonical,
+          review.get('independent_test_command'))
     check('review.independent_exit_code_zero', str(review.get('independent_test_exit_code')) == '0',
           review.get('independent_test_exit_code'))
     review_output = parse_unittest_output(review.get('independent_test_output'))
@@ -430,7 +449,6 @@ def main(argv=None):
     return 0 if not failures else 1
 
 
-CANONICAL_COMMAND = 'python -m unittest discover -s examples/text-stats -p "test_*.py"'
 DELIVERY_MODULE_SOURCE = 'def main():\n    return 0\n'
 DELIVERY_TEST_SOURCE = 'import unittest\n\n\nclass TestSmoke(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n'
 
@@ -533,6 +551,17 @@ def self_test():
     def unmap_boundary(p, m):
         m['clauses'][2]['criteria'] = []
 
+    def bytecode_prefix(p, m):
+        prefixed = BYTECODE_ENV_PREFIXES[0] + CANONICAL_COMMAND
+        p['verify']['command'] = prefixed
+        p['review']['independent_test_command'] = prefixed
+
+    def bytecode_prefix_wrong_value(p, m):
+        # 前缀里换了值就不再是同一个命令：容差不得把它一并放过
+        wrong = "$env:PYTHONDONTWRITEBYTECODE = '0'; " + CANONICAL_COMMAND
+        p['verify']['command'] = wrong
+        p['review']['independent_test_command'] = wrong
+
     cases = [
         ('baseline', [(_mutate, [])], set(), {
             'requirement.criteria_nonempty', 'verify.artifacts_no_duplicate_paths',
@@ -553,6 +582,10 @@ def self_test():
         ('mapping_missing_clause', [(_mutate, [drop_clause])], {'mapping.covers_requirement_clauses'}, set()),
         ('mapping_unknown_id', [(_mutate, [unknown_criterion])], {'mapping.criteria_ids_known'}, set()),
         ('mapping_orphan', [(_mutate, [unmap_boundary])], {'mapping.covers_all_criteria'}, set()),
+        ('bytecode_prefix_accepted', [(_mutate, [bytecode_prefix])], set(),
+         {'verify.command_is_canonical', 'review.independent_command_is_canonical'}),
+        ('bytecode_prefix_wrong_value', [(_mutate, [bytecode_prefix_wrong_value])],
+         {'verify.command_is_canonical', 'review.independent_command_is_canonical'}, set()),
     ]
 
     failures = []

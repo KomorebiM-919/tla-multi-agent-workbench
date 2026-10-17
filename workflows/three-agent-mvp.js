@@ -75,6 +75,10 @@ const TEST_ENV_VALUE = '1';
 // 前缀只设置这一个变量，然后紧接规范化命令本身：不接受任意 shell 片段。
 const TEST_ENV_PREFIX = '$env:' + TEST_ENV_VAR + " = '" + TEST_ENV_VALUE + "'; ";
 const CACHE_DIR_NAME = '__pycache__';
+// 同一份缓存文件在两次观测之间允许的 mtime 偏差（毫秒）。它只吸收"同一个时间戳的不同数值表示"
+// （Python 的 st_mtime 是浮点、幂等取整口径不同会得到 1792240028919 与 1792240028919.332 这样的值），
+// 不吸收真实重写：真实的缓存重写要么改变 bytes/sha256，要么与上一次观测相隔远超该容差。
+const MTIME_TOLERANCE_MS = 5;
 const MAX_ATTEMPTS_LIMIT = 5;
 const EVIDENCE_ROOT = 'docs/evidence/';
 // 证据目录认领必须由这个排他创建（O_EXCL）工具完成：预检子代理不得自己拼写认领文件（复审要求二）。
@@ -372,6 +376,20 @@ function normalizeCacheEntries(raw, cachePrefix, label) {
   return { ok: true, entries: entries, reason: '' };
 }
 
+/**
+ * 两次观测是否指向"同一份缓存内容"。
+ *
+ * 为什么不能直接比较 mtime：三个子代理各自用 Python 读 `st_mtime * 1000`，同一个文件会被
+ * 报成 `1792240028919`（整数毫秒）与 `1792240028919.332`（浮点毫秒）两种表示；用 `!==` 比较
+ * 会把"bytes 与 sha256 完全相同"的同一份文件误判成被重写（v0.2-run2 的 4 条报错就是这么来的）。
+ * 因此：先比内容（bytes + sha256），内容一致时只把 mtime 差当作噪声，容差见 MTIME_TOLERANCE_MS。
+ */
+function sameCacheObservation(earlier, later) {
+  if (earlier.bytes !== later.bytes) { return false; }
+  if (earlier.sha256 !== later.sha256) { return false; }
+  return Math.abs(earlier.mtimeMs - later.mtimeMs) <= MTIME_TOLERANCE_MS;
+}
+
 function judgeBytecodeScope(scope, cachePrefix, label) {
   const boundary = label + ' 的运行期写入边界（' + cachePrefix + '）';
   if (!isObject(scope)) {
@@ -400,9 +418,7 @@ function judgeBytecodeScope(scope, cachePrefix, label) {
     const entry = after.entries[i];
     const prior = beforeMap[entry.path];
     if (prior === undefined) { created.push(entry.path); continue; }
-    if (prior.bytes !== entry.bytes || prior.mtimeMs !== entry.mtimeMs || prior.sha256 !== entry.sha256) {
-      rewritten.push(entry.path);
-    }
+    if (!sameCacheObservation(prior, entry)) { rewritten.push(entry.path); }
   }
   const reasons = [];
   if (created.length > 0) { reasons.push(boundary + '：测试执行后新增了缓存文件：' + created.join(', ')); }
@@ -426,8 +442,7 @@ function compareCachePoints(earlier, later) {
     const now = laterMap[path];
     if (now === undefined) {
       changes.push({ path: path, kind: 'deleted' });
-    } else if (now.bytes !== earlier.entries[i].bytes || now.mtimeMs !== earlier.entries[i].mtimeMs ||
-      now.sha256 !== earlier.entries[i].sha256) {
+    } else if (!sameCacheObservation(earlier.entries[i], now)) {
       changes.push({ path: path, kind: 'rewritten' });
     }
   }
@@ -1408,12 +1423,16 @@ function bytecodeScopeNote(cacheDir) {
     '- **必须**用带受控环境前缀的命令执行测试（前缀与命令必须在同一条命令里，不得拆成两条）：',
     '  `' + executionTestCommand(C.testCommand) + '`；',
     '- 该前缀只设置一个变量 `' + TEST_ENV_VAR + '=' + TEST_ENV_VALUE + '`，禁止追加别的环境变量、禁止追加别的命令；',
+    '- 本阶段内**任何**执行 Python 的命令都必须带同一个前缀 `' + TEST_ENV_PREFIX.trim() + '`，',
+    '  包括 `python -c` 抽查、临时脚本、`--help` 试跑、导入被测模块看行为：不带前缀的 Python 调用会写 `' + CACHE_DIR_NAME + '`，',
+    '  而全运行账本把这些写入视为本次运行改动了缓存（进度记录 v0.2-run2 的 Review 阶段就是这样写入的）；',
     '- 执行测试**之前**与**之后**，各记录一次缓存目录 `' + cacheDir + '` 的文件清单：',
-    '  每个文件记录 `path`（仓库内相对路径、正斜杠）、`bytes`、`mtime_ms`（毫秒时间戳）与 `sha256`（按原始字节计算）；',
+    '  每个文件记录 `path`（仓库内相对路径、正斜杠）、`bytes`、`mtime_ms`（Unix 毫秒时间戳，整数）与 `sha256`（按原始字节计算）；',
     '  目录不存在或为空时写空数组 `[]`；',
     '- 把两次清单写入 `bytecode_scope`：`{ env_applied: true, env_variable: "' + TEST_ENV_VAR + '", cache_dir: "' + cacheDir +
       '", entries_before: [...], entries_after: [...] }`；',
-    '- 执行后出现新缓存文件、或已有缓存文件被重写（bytes / mtime_ms / sha256 任一变化），本轮判不通过（`BYTECODE_CACHE_WRITTEN`）；',
+    '- 执行后出现新缓存文件、或已有缓存文件被重写（bytes 或 sha256 变化，或 mtime 相差超过 ' + MTIME_TOLERANCE_MS +
+      ' 毫秒），本轮判不通过（`BYTECODE_CACHE_WRITTEN`）；',
     '- 未记录该字段或记录不完整，本轮判"证据不完整"（`BYTECODE_SCOPE_UNMEASURED`）。',
     '  `.gitignore` 忽略该目录不代表允许在运行期写入：`git status` 看不见的写入同样违规。'
   ].join('\n');

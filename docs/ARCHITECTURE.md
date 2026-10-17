@@ -226,7 +226,8 @@ Coding 自述的**内部一致性**（命令 / 退出码 / `test_succeeded` / �
 时间戳必须是合法日历时间且落在"编排层实际时间"附近的运行窗口内——**启动时钟与阶段检查时钟分开**：`runStartedAt` 只与脚本启动时刻比较，
 每个 Agent 返回后都重新读取当前时间，用它判断该阶段的时间戳是否"来自未来"；**运行期写入边界按全运行账本判定**：编排层在启动任何子代理之前先采集
 `cacheBaseline`（必填参数），Coding / Verifier / Review 各自交回执行前后清单，Review 之后再由一个只做只读采集的 `Cache Collector` 阶段交回最终清单，
-相邻两点之间出现新增 / 重写 / 删除都拒绝（`BYTECODE_CACHE_CHANGED_ACROSS_RUN`），"两个验证阶段各自前后不变"只是必要条件。
+相邻两点之间出现新增 / 重写 / 删除都拒绝（`BYTECODE_CACHE_CHANGED_ACROSS_RUN`），"两个验证阶段各自前后不变"只是必要条件；
+"重写"按内容身份（`bytes` + `sha256`）判定，`mtime_ms` 允许 5 毫秒的表示精度差（同一文件被不同 Agent 报成整数毫秒与浮点毫秒）。
 任一条不满足即返回明确状态码、不以 `ok: true` 收场
 （完整状态码表见 `workflows/README.md`，回归测试与认领集成测试见 `tests/`）。
 

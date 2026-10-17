@@ -8,6 +8,8 @@
     python tests/mutation-text-stats.py [--repo-root .] [--json-out <path>]
 
 每个变异体都在 `tests/.scratch/mutation-<名字>/` 的独立副本里运行，不改动交付文件。
+"被抓住"= 交付套件失败 **且** 至少一个失败用例名命中该变异体的行为关键词
+（`name_hint`）；理由见 `matched_failures` 的文档字符串。
 退出码: 0 = 所有变异体都被测试抓住且基线通过; 1 = 有变异体漏网或基线失败。
 """
 
@@ -27,30 +29,38 @@ SCRATCH = Path(__file__).resolve().parent / '.scratch'
 MUTATIONS = (
     {
         'name': 'quiet_errors_still_write_stderr',
-        'why': '程序化调用的受控错误必须两个流都为空（R-09 / AC-12）',
+        'why': '程序化调用的受控错误必须两个流都为空（R-09）',
         'find': '    if quiet:\n        return\n',
         'replace': '',
-        'expect_any_of': ('test_ac12_programmatic_missing_file_is_a_silent_error',
-                          'test_ac12_programmatic_unknown_encoding_is_a_silent_error',
-                          'test_bc17_programmatic_path_and_encoding_still_participate'),
+        # 用例名由交付方自己起，不能用固定名字锁死；只用行为关键词确认"抓住它的是相关用例"。
+        'name_hint': r'silent|quiet|stderr',
     },
     {
         'name': 'programmatic_help_prints_usage',
-        'why': '程序化 --help 必须静默返回 0（R-11 / AC-09）',
+        'why': '程序化 --help 必须静默返回 0（R-11）',
         'find': '    if not quiet:\n        return parser.parse_args(argv)\n',
         'replace': '    return parser.parse_args(argv)\n',
-        'expect_any_of': ('test_ac09_programmatic_help_returns_zero_and_writes_nothing',),
+        'name_hint': r'help|usage',
     },
     {
         'name': 'bad_encoding_without_path_is_success',
-        'why': '非法 --encoding 必须先于输入选择被拒绝（R-13 / BC-14）',
+        'why': '非法 --encoding 必须先于输入选择被拒绝（R-13）',
         'find': '    except LookupError:\n        _report_error("unknown encoding: {0}".format(args.encoding), programmatic)\n        return EXIT_ERROR\n',
         'replace': '    except LookupError:\n        return EXIT_OK\n',
-        'expect_any_of': ('test_ac12_programmatic_unknown_encoding_is_a_silent_error',
-                          'test_bc17_programmatic_path_and_encoding_still_participate',
-                          'test_bc14_invalid_encoding_is_rejected_before_reading_input'),
+        'name_hint': r'encoding',
     },
 )
+
+
+def matched_failures(failed, name_hint):
+    """返回失败的用例名里与变异体的行为提示相关的那部分。
+
+    变异体被抓住的判据有两条：交付套件必须失败，且至少有一个失败用例的名字
+    命中行为关键词。只看"套件失败"会把无关用例的失败也算进来；只看固定名字
+    又会被交付方自己的命名卡住（run2 就是这么漏抓的）。
+    """
+    pattern = re.compile(name_hint)
+    return [name for name in failed if pattern.search(name)]
 
 
 def copy_delivery(repo, destination):
@@ -99,11 +109,11 @@ def main(argv=None):
         (directory / MODULE_FILE).write_text(source.replace(mutation['find'], mutation['replace']),
                                              encoding='utf-8')
         code, output, failed = run_suite(directory)
-        caught = [name for name in failed if any(name.startswith(expected) for expected in mutation['expect_any_of'])]
+        caught = matched_failures(failed, mutation['name_hint'])
         ok = bool(caught)
         results.append({'mutation': mutation['name'], 'applied': True, 'caught': ok,
-                        'why': mutation['why'], 'failed': failed,
-                        'subset_of_expected': caught})
+                        'why': mutation['why'], 'name_hint': mutation['name_hint'],
+                        'failed': failed, 'matched_failures': caught})
         print('%s %s | 失败的用例=%d 命中目标=%d' %
               ('PASS' if ok else 'FAIL', mutation['name'], len(failed), len(caught)))
 

@@ -1,0 +1,25 @@
+{
+  "run_id": "v0.2-run2-20261017T133204Z",
+  "agent": "Cache Collector Agent",
+  "stage": "cache-final",
+  "generated_at": "2026-10-17T21:50:29.6885429+08:00",
+  "result": {
+    "entries": [
+      {
+        "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+        "bytes": 66316,
+        "mtime_ms": 1792240028919,
+        "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+      },
+      {
+        "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+        "bytes": 14885,
+        "mtime_ms": 1792244851273,
+        "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+      }
+    ],
+    "collected_at": "2026-10-17T21:50:29.6885429+08:00",
+    "note": "目录存在，含 2 个 .pyc 文件；连续两次采集（另加一次收尾确认）结果完全一致（path/bytes/mtime_ms/sha256 逐项相同）。采集全程只读：仅使用 Get-ChildItem / Get-FileHash，未创建、修改或删除任何文件，未运行测试，未执行任何会生成字节码的 Python 命令。mtime_ms 取自 LastWriteTimeUtc 的 Unix 毫秒（1792240028919 = 2026-10-17T12:27:08.919Z，1792244851273 = 2026-10-17T13:47:31.273Z）。",
+    "generated_at": "2026-10-17T21:50:29.6885429+08:00"
+  }
+}

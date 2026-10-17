@@ -12,7 +12,7 @@ V0.1 的验收对象是"这条多 Agent 流水线本身"，因此本目录当前
 node tests/workflow-logic.test.mjs
 ```
 
-- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**98 个场景 / 454 项断言**。
+- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**100 个场景 / 464 项断言**。
 - 时间相关门禁使用**注入的可控时钟**（`FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z')`，与夹具 `runId` 的时间戳同秒；由 `workflow-harness.mjs` 的 `setClock()` / `advanceClock()` 驱动，`runWith()` 每个场景开始时重置）。因此"运行起点与编排层时钟相差过大""阶段时间戳晚于当前时间""时钟推进 120 秒跨多个阶段仍成功"这类判定都能离线、确定性地测出来，不需要真实等待；夹具区有一条护栏断言时钟与夹具时间戳一致，防止两者漂移后测试失去意义。
 - 覆盖的场景包括：正常成功；Coding 自述测试失败但 Review 返回 `APPROVED`（⇒ `TEST_NOT_VERIFIED`）；自述成功但独立验证失败（⇒ `INCONSISTENT_EVIDENCE`）；有验收条件未满足但 Review 返回 `APPROVED`（⇒ `CRITERIA_NOT_SATISFIED`）；`criteria_check` 覆盖不全、含未知 ID、含重复 ID（⇒ `CRITERIA_CHECK_INCOMPLETE` / `CRITERIA_CHECK_UNKNOWN_IDS` / `CRITERIA_CHECK_DUPLICATE_IDS`）；Review 自述退出码与原始输出矛盾（⇒ `INCONSISTENT_REVIEW`）；验证前后文件指纹不一致或 Review 未回传复核指纹（⇒ `ARTIFACT_FINGERPRINT_MISMATCH`）；审核不通过后自动修订；达到最大轮次仍不通过（⇒ `MAX_ATTEMPTS_*`）；非法 `targetDir`（路径穿越）；交付目录/证据目录真实路径落在仓库之外、未回报 `realpath`、链接逃逸、未完成证据目录认领（⇒ `TARGET_DIR_OUTSIDE_REPO` / `LINK_ESCAPE` / `EVIDENCE_NOT_CLAIMED`）；非法 `maxCodingAttempts`；非法 `runId`（含缺少 UTC 时间戳后缀、时间戳与 `runStartedAt` 不同秒）；`evidenceDir` 不在 `docs/evidence/` 下或与 `runId` 不一致；任意 shell 测试命令；重复/已存在的 `runId` 不得覆盖历史证据；需求自检报冲突；需求缺验收条件或缺少/重复 ID；编码未返回报告（⇒ `CODING_OUTPUT_INVALID`）；**任一阶段报告未解决需求冲突时不得成功**（Review / Verifier / Coding 各自报告冲突，以及"Coding 报告不可用 + Verifier 报告冲突"时冲突状态优先）；`args` 缺失或为空；Review 的独立复跑命令与规范命令不一致（⇒ `INCONSISTENT_REVIEW`）；Verifier 证据时间戳越出运行窗口（⇒ `INVALID_TIMESTAMP`）。
 - 复审后的第二轮加固新增场景（都是"应当拒绝"）：
@@ -25,6 +25,9 @@ node tests/workflow-logic.test.mjs
 - 复审后的第三轮收口新增场景：
   - **两个时钟分开**：`runStartedAt` 与运行起点比较（启动时钟），每次 Agent 返回后**重新读取**当前时间与阶段时间戳比较；时钟推进 120 秒并跨 Requirement / Coding / Verifier / Review 四个阶段仍成功（⇒ `OK`）；时钟推进 7 小时越出窗口 ⇒ `INVALID_TIMESTAMP`；阶段时间戳晚于编排层当前时间 120 秒 ⇒ `INVALID_TIMESTAMP`（这条用固定时钟即可，不需要真实等待）。
   - **认领前状态**：预检必须回填认领工具自报的 `evidence_dir_state_before`；它与预检自己观察的 `evidence_dir_state` 不一致、或值为 `exists`（目录已有内容）⇒ `EVIDENCE_NOT_CLAIMED`；`empty`（已存在但空目录）可放行。
+- 第二次真实运行结束后（v0.2-run2）补的场景：
+  - **mtime 表示精度不构成重写**：同一个 pyc 被不同子代理报成 `1760000000000`（整数毫秒）与 `1760000000000.332`（浮点毫秒），而 `bytes` 与 `sha256` 完全相同时 ⇒ `OK`（不得误报 `BYTECODE_CACHE_CHANGED_ACROSS_RUN`）。这条直接来自真实运行里的 4 条误报。
+  - **容差不得放过真实重写**：`bytes` 与 `sha256` 相同但 `mtime` 相距 5 秒 ⇒ 仍判 `BYTECODE_CACHE_WRITTEN`（容差只吸收表示精度，不吸收真实写入）。
 
 ### 1a. 预检认领门禁的集成测试（真实认领工具 + 编排层门禁）
 
@@ -127,11 +130,12 @@ python tests/property_text_stats.py   # 1217 组检查，约 0.2 秒，exit 0 = 
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 ```
 
-期望结果：**76 个用例全部通过**（`OK`）。这是 2026-10-17 新版真实流水线（`docs/evidence/v0.2-run1-20261017T121445Z/`）按 `v0.2-demo-input-3` 重写后的套件；覆盖该稿 AC-01 至 AC-27 与 BC-01 至 BC-27（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径、退出码、两类调用作用域）。
+期望结果：**81 个用例全部通过**（`OK`）。这是 2026-10-17 第二次真实流水线（`docs/evidence/v0.2-run2-20261017T133204Z/`）按同一份 `v0.2-demo-input-3` 需求重写后的套件；覆盖该稿 AC-01 至 AC-25 与 BC-01 至 BC-26（空文本、结尾换行、空白行、单词判定规则、编码与 BOM、错误路径、退出码、两类调用作用域）。
 
 - **程序化调用的输出作用域**（2026-10-17 收口新增）：`stdin_text` 显式传入时，成功、`--help`、五类受控错误都必须保持 `stdout`/`stderr` **双流为空**；唯一例外是"非法 `--encoding` 在选输入前就返回 `1`"。命令行侧则保持"成功 4 行 / `--help` 用法 / 错误一行 `error: `"。
 - **新测试确实能抓住旧实现**（2026-10-17 早先那版 86 例套件的对照记录）：把 `git show HEAD:examples/text-stats/text_stats.py` 的旧实现与那版测试放同一目录运行，结果 `Ran 86 tests` / **8 例失败**，全部落在上述静默与编码用例上。
-- **v0.2 套件的变异检查**（正式工具：`python tests/mutation-text-stats.py`）：把当前 76 例套件分别对准三个重新引入旧行为的变异体——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 3 例失败；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 5 例失败（其中 3 例命中目标用例）。基线对未变异实现 76/76 通过，说明这三处假 PASS 仍被回归锁住。
+- **v0.2 套件的变异检查**（正式工具：`python tests/mutation-text-stats.py`）：把当前 81 例套件分别对准三个重新引入旧行为的变异体——① `_report_error` 忽略 `quiet`（程序化错误写 stderr）→ 5 例失败（4 例命中 `silent` 关键词）；② 程序化 `_parse_args` 不重定向 `--help` 输出 → 1 例失败；③ 非法 `--encoding` 且无 PATH 时返回 0 → 3 例失败（2 例命中 `encoding` 关键词）。基线对未变异实现 81/81 通过，说明这三处假 PASS 仍被回归锁住。
+- **"被抓住"的判据从固定用例名改为行为关键词**（2026-10-17 run2 收口）：旧判据要求失败用例名以 run1 那套名字（`test_ac12_…`/`test_ac09_…`/`test_bc14_…`）开头，而用例名由交付方自己起；run2 交付的是 `test_ac15_…`/`test_ac16_…`/`test_bc13_…`，于是三个变异体明明都被杀掉，报告却写"命中目标=0"、整步 `exit=1`。现在判据是"套件失败 **且** 至少一个失败用例名命中该变异体的行为关键词（`name_hint`）"，理由与边界写在 `tests/mutation-text-stats.py` 的 `matched_failures` 文档字符串里，`tests/test_mutation_gate.py` 用 run2 的真实用例名把这个判据钉住（含"提示不得退回 `test_` 固定名"的断言）。
 - **独立行为探针**（正式工具：`python tests/probe-text-stats-requirement.py`）：按需求原文独立推导期望，**不 import 交付测试**、
   不读交付实现之外的判定逻辑，当前 **180 项**（文本层 46、程序化层、命令行层、交付文件层）。它和交付套件是两条独立证据，
   任何一条通过都不能替代另一条。
@@ -156,6 +160,9 @@ node tests/bytecode-integration.test.mjs   # 6 个场景 / 45 项断言，真实
   `BYTECODE_CACHE_CHANGED_ACROSS_RUN`（"两个验证阶段各自前后不变"只是必要条件，见 `tests` 里的离线场景
   "Verifier 与 Review 各自前后不变、但阶段之间缓存变化"）；单阶段自己前后变了 ⇒ `BYTECODE_CACHE_WRITTEN`；
   未设变量 ⇒ `BYTECODE_ENV_NOT_APPLIED`；未测量 / 清单重复 / 越界 ⇒ `BYTECODE_SCOPE_UNMEASURED`。
+- **mtime 比较口径**（v0.2-run2 之后修）：`bytes` 与 `sha256` 是内容身份，`mtime_ms` 只作为附带证据；
+  两者内容一致时允许 `mtime_ms` 相差 ≤ `MTIME_TOLERANCE_MS`（5 毫秒），因为同一个文件会被不同子代理
+  报成整数毫秒与浮点毫秒两种表示。真实重写仍然会被抓住（内容变，或时间差远超容差）。
   四者都在 `REVIEW_NOT_APPROVED` 之前判不通过，且**已存在缓存全程逐字段一致不得被误拒**；
 - 变量是否真的到达子进程**不靠退出码判断**（PowerShell 会把非零退出码折叠成 1）：子进程把 `os.environ` 写进文件，
   父进程再读回比对；`.gitignore` 忽略 `__pycache__/` 不等于允许写入，故检查的是字节/mtime/哈希而不是 `git status`。
@@ -175,21 +182,21 @@ python -B docs/evidence/v0.1-run6-20261016T154400Z/orchestrator-verification-run
 v0.2-run1 起，复核不再是一次性脚本，而是可重复运行的正式工具：
 
 ```powershell
-# 单次运行的证据复核（70 项检查；--self-test 跑 12 个夹具确认"该拒的拒、不该拒的不误拒"）
-python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z `
-  --mapping docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json `
+# 单次运行的证据复核（70 项检查；--self-test 跑 14 个夹具确认"该拒的拒、不该拒的不误拒"）
+python tests/review-run-evidence.py --run-id v0.2-run2-20261017T133204Z `
+  --mapping docs/run-records/v0.2-run2-20261017T133204Z/requirement-mapping.json `
   --allow-scope tests/workflow-harness.mjs --allow-scope workflows/three-agent-mvp.js  # 逐条列出，不静默跳过
 python tests/review-run-evidence.py --self-test
 
 # 一次跑完全部复核项，原始输出与 JSON 全部写进**你指定的唯一目录**（UTF-8 / LF，附 suite-results.json）
-python tests/run-review-suite.py --run-id v0.2-run1-20261017T121445Z `
-  --out-dir docs/run-records/v0.2-run1-20261017T121445Z/review-package `
-  --parent-session <sessionId> --workflow-name tla-v02-run1 --since 2026-10-17T12:00:00Z
+python tests/run-review-suite.py --run-id v0.2-run2-20261017T133204Z `
+  --out-dir docs/run-records/v0.2-run2-20261017T133204Z/review-package `
+  --parent-session <sessionId> --workflow-name tla-v02-run2 --since 2026-10-17T21:32:04+08:00
 
-# 宿主原生事件（白名单字段，不导出消息正文）：5 次调用、父会话、深度、脚本指纹、产物归因
-node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v02-run1 `
-  --since 2026-10-17T12:00:00Z --evidence-dir docs/evidence/v0.2-run1-20261017T121445Z `
-  --script-file docs/run-records/v0.2-run1-20261017T121445Z/workflow-script-at-run.js `
+# 宿主原生事件（白名单字段，不导出消息正文）：调用次数、父会话、深度、脚本指纹、产物归因
+node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v02-run2 `
+  --since 2026-10-17T21:32:04+08:00 --evidence-dir docs/evidence/v0.2-run2-20261017T133204Z `
+  --script-file docs/run-records/v0.2-run2-20261017T133204Z/workflow-script-at-run.js `
   --out docs/run-records/v0.2-run1-20261017T121445Z/native-events.json
 ```
 
@@ -203,7 +210,11 @@ node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v0
   `--json-out`、native 提取的 `--out`），不是只换文本输出目录；`--timeout` 超时记为失败（exit 124）并继续跑完其余命令，
   `suite-results.json` 里同时记录 `timedOut`、`failed` 与每个子进程的 `PYTHONDONTWRITEBYTECODE=1`；
 - 这套管线自身的离线测试在 `tests/test_run_review_suite.py`（10 个用例：拒绝覆盖、参数真正传下去、
-  超时不丢结果且收尾返回 1、归档目录返回 2、子进程环境变量）。
+  超时不丢结果且收尾返回 1、归档目录返回 2、子进程环境变量）与 `tests/test_mutation_gate.py`
+  （6 个用例：变异体"被抓住"的行为关键词判据、run2 真实用例名回归、提示不得退回固定用例名）；
+- **命令比对的口径**（v0.2-run2 之后修）：注入的 `testCommand` 允许带固定前缀
+  `$env:PYTHONDONTWRITEBYTECODE = '1'; `（R-33 的写入边界需要它）。`command_is_canonical` 先剥离
+  **逐字符已知**的这几种前缀再比对；前缀里换了值（如 `= '0'`）仍然算不 canonical，两条都有夹具。
 
 ### 4. 工作流执行证据（比测试结果更重要的部分）
 

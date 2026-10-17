@@ -1,0 +1,190 @@
+{
+  "run_id": "v0.2-run2-20261017T133204Z",
+  "agent": "Review Agent",
+  "stage": "review",
+  "generated_at": "2026-10-17T21:48:34.3963255+08:00",
+  "result": {
+    "verdict": "APPROVED",
+    "criteria_check": [
+      {
+        "criterion": "AC-01 程序化调用作用域：main([], stdin_text=\"\") 返回 int 类型的 0；不写 stdout/stderr，不读进程标准输入",
+        "satisfied": true,
+        "evidence": "Reviewer script: sys.stdin replaced by a stub whose read() raises AssertionError, stdout/stderr redirected to StringIO, main([], stdin_text=\"\") -> type(code) is int, code == 0, both buffers empty, no exception. Scope switch at examples/text-stats/text_stats.py:286 (programmatic = stdin_text is not None) and the silent return at examples/text-stats/text_stats.py:313-315."
+      },
+      {
+        "criterion": "AC-02 程序化调用外层示例：python -c one-liner 退出码 0、stdout 恰为 True 0 int",
+        "satisfied": true,
+        "evidence": "Ran in examples/text-stats: python -c \"import text_stats as t; code = t.main([], stdin_text=''); print(callable(t.main), code, type(code).__name__)\" -> returncode 0, stdout.splitlines() == ['True 0 int'], stderr empty."
+      },
+      {
+        "criterion": "AC-03 命令行调用 + 无 PATH + stdin 立即 EOF：退出码 0、四行全 0、stderr 空、5 秒内返回",
+        "satisfied": true,
+        "evidence": "subprocess [sys.executable, examples/text-stats/text_stats.py] with input=b\"\" -> returncode 0, stdout.splitlines() == ['char_count: 0', 'line_count: 0', 'non_empty_line_count: 0', 'word_count: 0'], stderr == b\"\", elapsed 0.05 s (< 5 s, no blocking read). stdin is only read in the command line branch at examples/text-stats/text_stats.py:316-321."
+      },
+      {
+        "criterion": "AC-04 count_text 纯函数契约：键集合恰为四项且均为 int，20/2/2/4；空串 0/0/0/0；不读流",
+        "satisfied": true,
+        "evidence": "count_text('hello world\\nfoo bar\\n') -> dict with key set exactly {char_count, line_count, non_empty_line_count, word_count}, all type(v) is int, values [20, 2, 2, 4]; count_text('') -> all zeros; the same call with sys.stdin stubbed to raise still returns normally. Implementation at examples/text-stats/text_stats.py:88-121."
+      },
+      {
+        "criterion": "AC-05 命令行 + PATH 文件示例：python text_stats.py sample_input.txt -> 20/2/2/4，stderr 空",
+        "satisfied": true,
+        "evidence": "subprocess run with cwd=examples/text-stats, argv ['sample_input.txt'] -> returncode 0, stdout.splitlines() == ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], stderr == b\"\"."
+      },
+      {
+        "criterion": "AC-06 命令行 + 标准输入示例：stdin=b\"hello world\\n\" -> 12/1/1/2，stderr 空",
+        "satisfied": true,
+        "evidence": "subprocess with input=b'hello world\\n' -> returncode 0, stdout.splitlines() == ['char_count: 12', 'line_count: 1', 'non_empty_line_count: 1', 'word_count: 2'], stderr == b\"\"."
+      },
+      {
+        "criterion": "AC-07 两条输入路径数值一致：同一文本经 PATH 与 stdin 字节均 20/2/2/4，count_text 同值",
+        "satisfied": true,
+        "evidence": "run(['sample_input.txt']).stdout == run([], b'hello world\\nfoo bar\\n').stdout (byte identical four lines); count_text('hello world\\nfoo bar\\n') == {'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}."
+      },
+      {
+        "criterion": "AC-08 归一化顺序：BOM 只剥一个；a\\r\\nb\\rc -> 5/3/3/3；'  \\r\\n \\r\\n' -> 5/2/0/0",
+        "satisfied": true,
+        "evidence": "count_text('\\ufeffabc')['char_count'] == 3; count_text('\\ufeff\\ufeffabc')['char_count'] == 4; count_text('a\\r\\nb\\rc') == {5, 3, 3, 3}; count_text('  \\r\\n \\r\\n') == {'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}. Normalisation order at examples/text-stats/text_stats.py:101-105 (BOM, then CRLF, then lone CR)."
+      },
+      {
+        "criterion": "AC-09 换行边界集合：U+2028/U+2029/0x0b/0x0c/0x1c/0x1d/0x1e/0x85 不是换行；line_count 不以 str.splitlines() 为唯一依据",
+        "satisfied": true,
+        "evidence": "For all eight characters: count_text('a' + ch + 'b')['line_count'] == 1 and ['char_count'] == 3. grep of examples/text-stats/text_stats.py finds no 'splitlines'; the counter is text.split(NEWLINE) at examples/text-stats/text_stats.py:111."
+      },
+      {
+        "criterion": "AC-10 line_count / non_empty_line_count 对照表（9 行）与 count_text 一致",
+        "satisfied": true,
+        "evidence": "All nine rows matched: '' 0/0; '\\n' 1/0; 'a\\n' 1/1; 'a' 1/1; 'a\\nb' 2/2; 'a\\n\\n' 2/1; 'hello world\\nfoo bar\\n' 2/2; 'hello world\\nfoo bar\\n\\n' 3/2; '  \\n\\t\\n' 2/0. One split feeds both counters at examples/text-stats/text_stats.py:107-119."
+      },
+      {
+        "criterion": "AC-11 char_count 对照表（7 行）一致，含组合记号单独计 1 码点",
+        "satisfied": true,
+        "evidence": "'' 0; 'hello world\\nfoo bar\\n' 20; 'a\\r\\nb' 3; 'caf\\u00e9' 4; 'cafe\\u0301' 5; '\\ufeffabc' 3; '  \\r\\n \\r\\n' 5 — all matched count_text."
+      },
+      {
+        "criterion": "AC-12 word_count 对照表（18 行）一致",
+        "satisfied": true,
+        "evidence": "All eighteen rows matched count_text: 2,3,1,1,1,1,2,0,1,2,2,3,1,2,1,1,1,1 for the listed inputs (hello--world 2, a1b 2, a_b 2, foo_bar baz 3, it\\u2019s 1, caf\\u00e9-mocha 2, cafe\\u0301 1, 'abc 1). Regex at examples/text-stats/text_stats.py:85."
+      },
+      {
+        "criterion": "AC-13 命令行成功输出格式：恰 4 行、顺序固定、每行匹配锚定正则、无表头无空行、stderr 空",
+        "satisfied": true,
+        "evidence": "sample run stdout: four lines, keys in order char_count, line_count, non_empty_line_count, word_count; each line matches ^(char_count|line_count|non_empty_line_count|word_count): (0|[1-9][0-9]*)$; no trailing blank line; stderr == b\"\". Formatting at examples/text-stats/text_stats.py:124-128."
+      },
+      {
+        "criterion": "AC-14 命令行受控错误五类：退出码 1、stdout 空、stderr 恰一行 error: 开头、无 traceback",
+        "satisfied": true,
+        "evidence": "Five CLI runs (missing-file-review.txt; directory '.'; file b'A\\xffB'; --encoding bogus; a.txt b.txt) each -> returncode 1, stdout == b\"\", stderr exactly one line starting 'error: ', no 'Traceback'. argparse exit override at examples/text-stats/text_stats.py:196-203 returns 1 rather than 2."
+      },
+      {
+        "criterion": "AC-15 程序化受控错误（四例）：返回 1 且 stdout/stderr 均无写入、无异常",
+        "satisfied": true,
+        "evidence": "In-process calls with captured streams and forbidden stdin: main(['missing.txt'], 'x'), main(['.'], 'x'), main(['--encoding','bogus'], ''), main(['a.txt','b.txt'], '') -> each (1, '', '')."
+      },
+      {
+        "criterion": "AC-16 --help 两种作用域：命令行退出 0、stdout 含 PATH 与 --encoding；程序化返回 0 且两流皆空",
+        "satisfied": true,
+        "evidence": "CLI run(['--help']) -> returncode 0, stdout contains 'PATH' and '--encoding', stderr == b\"\"; in-process main(['--help'], stdin_text='') -> (0, '', ''), the help text being redirected and discarded at examples/text-stats/text_stats.py:238-239."
+      },
+      {
+        "criterion": "AC-17 退出码与入口：签名 argv=None/stdin_text=None；sys.exit( 只在 __main__ 块内一次；退出码仅 0/1",
+        "satisfied": true,
+        "evidence": "inspect.signature(main) parameters are ['argv', 'stdin_text'] with default None each; source.count('sys.exit(') == 1 and the occurrence is 'sys.exit(main())' at examples/text-stats/text_stats.py:329 inside the single if __name__ == '__main__' guard; every exercised path returned 0 or 1 only."
+      },
+      {
+        "criterion": "AC-18 main 只返回退出码：type int 且值 0；数值只能从 count_text 获得（12/1/1/2）",
+        "satisfied": true,
+        "evidence": "type(main([], stdin_text='hello world\\n')) is int and == 0; count_text('hello world\\n') == {'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}."
+      },
+      {
+        "criterion": "AC-19 程序化 + 合法 PATH：main([\"sample_input.txt\"], stdin_text=\"ignored\") -> 0 且两流无写入",
+        "satisfied": true,
+        "evidence": "With cwd=examples/text-stats, captured streams: code 0, stdout '' and stderr '' — the injected text is ignored and no statistics are printed (examples/text-stats/text_stats.py:305-315)."
+      },
+      {
+        "criterion": "AC-20 --encoding 只作用于文件解码：UTF-16LE 文件 abc\\n -> 4/1/1/1",
+        "satisfied": true,
+        "evidence": "Wrote examples/text-stats/.test-scratch/review_utf16le.txt with 'abc\\n'.encode('utf-16-le'), ran python text_stats.py .test-scratch/review_utf16le.txt --encoding utf-16-le -> returncode 0, stdout four lines char_count: 4 / line_count: 1 / non_empty_line_count: 1 / word_count: 1; fixture removed afterwards."
+      },
+      {
+        "criterion": "AC-21 测试通过：规范化命令退出码 0、0 failures、0 errors；含程序化静默与行数对照表用例",
+        "satisfied": true,
+        "evidence": "Independent run of the canonical command: exit code 0, 'Ran 81 tests in 2.052s', 'OK' (81 dots). test_text_stats.py contains test_ac01_programmatic_empty_text_is_silent_zero (test_text_stats.py:497) and test_ac10_line_and_non_empty_line_table (test_text_stats.py:397), plus test_ac10_both_line_counters_share_one_split (:433)."
+      },
+      {
+        "criterion": "AC-22 文档与样例自洽：sample 恰 20 字节；README 示例 20/2/2/4 与 12/1/1/2；不引用 crlf_cr.txt；'  \\r\\n \\r\\n' 写 5 不写 6；无裸 U+2019",
+        "satisfied": true,
+        "evidence": "sample_input.txt bytes == b'hello world\\nfoo bar\\n', len 20. README.md:73-81 shows 20/2/2/4 and README.md:83-91 shows 12/1/1/2; README.md:179-184 states char_count 5 for '  \\r\\n \\r\\n'; grep for 'crlf_cr.txt' and 'char_count: 6' returns nothing; a code-point scan of text_stats.py, test_text_stats.py and README.md finds no bare U+2019 (only \\u2019 escapes). Every console example uses only delivered files or a file it creates itself under .test-scratch."
+      },
+      {
+        "criterion": "AC-23 编号引用与本轮一致：README 与测试只引用 AC-01..AC-25、BC-01..BC-26，无 AC-27/BC-27",
+        "satisfied": true,
+        "evidence": "Scan of README.md, test_text_stats.py and text_stats.py for (AC|BC)-NN found no number above 25/26 and no AC-27/BC-27; test_ac23_documents_and_tests_cite_this_rounds_numbers (test_text_stats.py:925) enforces the limits and test_ac23_every_criterion_number_is_referenced_once (:934) covers all 25 AC and 26 BC numbers."
+      },
+      {
+        "criterion": "AC-24 写入与依赖边界：仅交付 4 文件与证据路径被改；无依赖声明；测试前后 __pycache__ 无新增",
+        "satisfied": true,
+        "evidence": "git status --porcelain shows only ' M examples/text-stats/README.md', ' M examples/text-stats/test_text_stats.py', ' M examples/text-stats/text_stats.py' plus the orchestration evidence directories; no requirements.txt/pyproject.toml/setup.py/Pipfile in the delivery directory; the __pycache__ listing taken immediately before and immediately after the controlled test run is identical (same two files, same bytes, mtime_ms and sha256; no new file)."
+      },
+      {
+        "criterion": "AC-25 依赖边界：两个模块只 import 标准库，无第三方、无联网、不读 ~/.dsh",
+        "satisfied": true,
+        "evidence": "text_stats.py imports argparse, codecs, contextlib, io, re, sys; test_text_stats.py imports ast, contextlib, inspect, io, os, re, subprocess, sys, unittest and the local text_stats; no third-party module, no network or ~/.dsh access anywhere in either file."
+      }
+    ],
+    "issues": [],
+    "independent_test_command": "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "independent_test_exit_code": "0",
+    "independent_test_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 2.052s\n\nOK\n",
+    "artifacts_after": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a",
+        "bytes": 13008
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e",
+        "bytes": 37430
+      }
+    ],
+    "requirement_conflicts": [],
+    "consistency_note": "No requirement contradiction found: AC-03 (command line, empty stdin -> four zero lines) and AC-01 (programmatic, stdin_text='' -> silent 0) are different call scopes, and AC-22's char_count 5 for '  \\r\\n \\r\\n' agrees with BC-02/BC-06; the historical 6 was already removed. One cross-source difference must be disclosed: the Verifier's bytecode_scope recorded examples/text-stats/__pycache__/text_stats.cpython-313.pyc as 14916 bytes / sha256 61a19a44... / mtime_ms 1792240028925, while my pre-run and post-run manifests record 14885 bytes / sha256 453ece51... / mtime_ms 1792244851273. That file was a stale cache written at 21:07 from an older revision of text_stats.py; my own read-only pre-check imported text_stats in-process without PYTHONDONTWRITEBYTECODE, which regenerated the stale cache (new mtime 21:47:31) before the controlled test window. The canonical test run itself wrote nothing: the before/after manifests around it are byte-identical, and the two delivered artifacts are unchanged across the Coding report, the Verifier run and my run (sha256 17e12277... for text_stats.py and caaca9d4... for test_text_stats.py, identical in all three sources). No deliverable file was modified by me; the only file I wrote is this evidence file.",
+    "summary": "Reviewed the delivery by reading examples/text-stats/text_stats.py, test_text_stats.py, README.md and sample_input.txt, and by executing both the canonical unittest command (exit 0, Ran 81 tests, OK — matching the Verifier's 81) and an independent script covering AC-01..AC-20 plus BC-09/BC-23/BC-24/BC-25. Every acceptance criterion AC-01..AC-25 is satisfied: the two call scopes are separated, both line counters come from one LF split, word/char tables and the five silent-vs-verbose error paths behave as specified, and the README no longer cites crlf_cr.txt or the impossible char_count 6. The only discrepancy is a stale __pycache__ .pyc regenerated by my own pre-check import, disclosed in consistency_note; the delivered .py files are byte-identical to the Verifier's artifacts. Verdict APPROVED.",
+    "report_file": "docs/evidence/v0.2-run2-20261017T133204Z/review.json",
+    "generated_at": "2026-10-17T21:48:34.3963255+08:00"
+  },
+  "bytecode_scope": {
+    "env_applied": true,
+    "env_variable": "PYTHONDONTWRITEBYTECODE",
+    "cache_dir": "examples/text-stats/__pycache__",
+    "entries_before": [
+      {
+        "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+        "bytes": 66316,
+        "mtime_ms": 1792240028919,
+        "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+      },
+      {
+        "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+        "bytes": 14885,
+        "mtime_ms": 1792244851273,
+        "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+      }
+    ],
+    "entries_after": [
+      {
+        "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+        "bytes": 66316,
+        "mtime_ms": 1792240028919,
+        "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+      },
+      {
+        "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+        "bytes": 14885,
+        "mtime_ms": 1792244851273,
+        "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+      }
+    ]
+  }
+}

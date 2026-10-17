@@ -49,6 +49,9 @@ ALLOW_SCOPE = (
     'tests/mutation-text-stats.py',
     'tests/probe-text-stats-requirement.py',
     'tests/run-review-suite.py',
+    'tests/preflight-claim-integration.test.mjs',
+    'tests/review-run-evidence.py',
+    'tests/test_mutation_gate.py',
 )
 
 

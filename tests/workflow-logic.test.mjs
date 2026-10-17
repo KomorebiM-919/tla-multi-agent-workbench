@@ -835,6 +835,52 @@ await scenario('任务参数缺 cacheBaseline → INVALID_ARGS（不得默认空
   })(),
   { status: 'INVALID_ARGS', ok: false, calls: 0, errorIncludes: 'cacheBaseline' });
 
+// 54. v0.2-run2 的误报：同一个 pyc 被不同子代理报成整数毫秒与浮点毫秒，
+// bytes 与 sha256 完全相同 → 不是重写，不得因此判不通过。
+await scenario('同一缓存只见 mtime 表示精度差（整数 vs 浮点毫秒）→ OK（不得误报重写）',
+  happyPlan({
+    coding: function () {
+      return codingOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
+    verify: function () {
+      return verifyOk({
+        bytecode_scope: bytecodeScope({
+          entries_before: [cacheEntry({ mtime_ms: 1760000000000.332 })],
+          entries_after: [cacheEntry({ mtime_ms: 1760000000000.332 })]
+        })
+      });
+    },
+    review: function () {
+      return reviewOk({
+        bytecode_scope: bytecodeScope({
+          entries_before: [cacheEntry({ mtime_ms: 1760000000000 })],
+          entries_after: [cacheEntry({ mtime_ms: 1760000000000 })]
+        })
+      });
+    },
+    cacheFinal: function () { return cacheFinalOk({ entries: [cacheEntry({ mtime_ms: 1760000000000.5 })], note: '' }); }
+  }),
+  baseArgs({ task: { cacheBaseline: [cacheEntry({ mtime_ms: 1760000000000.332 })] } }),
+  { status: 'OK', ok: true, attempts: 1, calls: 6 });
+
+// 55. 容差只吸收表示精度：bytes 与 sha256 相同但 mtime 相隔 5 秒 → 仍然是重写（不得被容差放过）。
+await scenario('bytes 与 sha256 相同但 mtime 相隔 5 秒 → 仍判 BYTECODE_CACHE_WRITTEN（容差不得放过真实重写）',
+  happyPlan({
+    coding: function () {
+      return codingOk({ bytecode_scope: bytecodeScope({ entries_before: [cacheEntry()], entries_after: [cacheEntry()] }) });
+    },
+    verify: function () {
+      return verifyOk({
+        bytecode_scope: bytecodeScope({
+          entries_before: [cacheEntry()],
+          entries_after: [cacheEntry({ mtime_ms: 1760000005000 })]
+        })
+      });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'BYTECODE_CACHE_WRITTEN', ok: false, calls: 6, errorIncludes: '重写' });
+
 // ---------------------------------------------------------------- 结果
 
 runner.finish('编排层逻辑回归测试（模拟子代理返回值）');

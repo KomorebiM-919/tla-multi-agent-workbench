@@ -2,46 +2,46 @@
 
 The pure function :func:`count_text` and the command line entry point
 :func:`main` apply exactly the same authoritative counting rules, so the four
-numbers can never disagree between the two ways of running the tool (BC-23,
-BC-24).
+numbers can never disagree between the two ways of running the tool (BC-16).
 
 Counting rules
 --------------
 char_count            ``len`` of the normalised text in Unicode code points
-                      (BC-08).
+                      (BC-06).
 line_count            number of lines obtained by splitting the normalised text
                       on LF only; a trailing LF terminates the last line instead
-                      of opening a new empty one (BC-04, BC-05).
-non_empty_line_count  number of those lines that still hold a character after
-                      ``str.strip()`` (BC-06, BC-07).
+                      of opening a new empty one (BC-04).
+non_empty_line_count  number of those same lines that still hold a character
+                      after ``str.strip()`` (BC-05).
 word_count            number of matches of
                       ``[A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*`` over the normalised
-                      text (BC-09 .. BC-12).
+                      text (BC-07).
 
 Normalisation is the single place where the raw text is rewritten, in this
 order (BC-02): drop one leading U+FEFF, turn every CRLF into LF, turn every
 remaining lone CR into LF.  Everything else - including U+2028, U+2029,
 ``\\x0b``, ``\\x0c``, ``\\x1c``, ``\\x1d``, ``\\x1e`` and ``\\x85`` - is left
-alone: only LF, CR and CRLF end a line (BC-01).  No Unicode normalisation is
-performed and no character is folded or trimmed (BC-27).
+alone: only LF, CR and CRLF end a line (BC-03).  No Unicode normalisation is
+performed and no character is folded or trimmed.
 
 Entry point
 -----------
 ``python text_stats.py [PATH] [--encoding NAME]`` writes exactly four
 ``<key>: <value>`` lines on standard output on success with exit code 0, and on
 every handled error writes exactly one ``error: `` line on standard error with
-empty standard output and exit code 1 (BC-18, BC-21, BC-22).  A usage error -
+empty standard output and exit code 1 (BC-08, BC-12, BC-26).  A usage error -
 more than one positional argument - uses that same exit code 1 rather than
-argparse's default 2 (BC-18, BC-20); ``--help`` still exits with 0.
+argparse's default 2 (BC-10, BC-12); ``--help`` still exits with 0 (BC-11).
 
 A programmatic call - ``main(...)`` invoked with an explicit ``stdin_text``
 argument, ``""`` included - only returns an exit code, writes nothing at all and
-touches neither process stream, the injected text being the whole input (BC-15).
+touches neither process stream, the injected text being the whole input
+(BC-01, BC-14, BC-26).
 
 Worked example for the one input whose figure was once ambiguous
-----------------------------------------------------------------
+-----------------------------------------------------------------
 ``"  \\r\\n \\r\\n"`` holds 7 raw code points; BC-02 rewrites it to
-``"  \\n \\n"``, so BC-08 counts 5 of them - ``char_count`` is 5, never 6 (AC-05).
+``"  \\n \\n"``, so BC-06 counts 5 of them - ``char_count`` is 5, never 6 (AC-08).
 """
 
 import argparse
@@ -64,24 +64,24 @@ EXIT_ERROR = 1
 
 ERROR_PREFIX = "error: "
 
-# Label order of the four output lines is part of the contract (BC-22).
+# Label order of the four output lines is part of the contract (BC-08).
 CHAR_COUNT = "char_count"
 LINE_COUNT = "line_count"
 NON_EMPTY_LINE_COUNT = "non_empty_line_count"
 WORD_COUNT = "word_count"
 OUTPUT_KEYS = (CHAR_COUNT, LINE_COUNT, NON_EMPTY_LINE_COUNT, WORD_COUNT)
 
-# BC-09: the only characters allowed to join two ASCII letter runs.  The third
+# BC-07: the only characters allowed to join two ASCII letter runs.  The third
 # one is U+2019 RIGHT SINGLE QUOTATION MARK, a character that is visually
 # identical to an ASCII apostrophe; it is named here by code point so that no
 # reader has to guess which of the two look-alikes a literal means.
 RIGHT_SINGLE_QUOTATION_MARK = "\u2019"
 WORD_JOINERS = "-'" + RIGHT_SINGLE_QUOTATION_MARK
 
-# BC-09: maximal ASCII letter runs, optionally joined internally by a single
+# BC-07: maximal ASCII letter runs, optionally joined internally by a single
 # joiner.  A doubled joiner such as "--" cannot be absorbed by one match, so it
 # splits the run in two; a joiner at the start or the end of a run is not
-# matched either (BC-09).
+# matched either (BC-07).
 WORD_PATTERN = re.compile(r"[A-Za-z]+(?:[{0}][A-Za-z]+)*".format(WORD_JOINERS))
 
 
@@ -89,14 +89,14 @@ def count_text(text):
     """Count characters, lines, non-empty lines and English words in *text*.
 
     Pure programmatic interface: it takes already decoded text, reads no file
-    and no process stream, and depends on its argument alone (BC-23).
+    and no process stream, and depends on its argument alone.
 
     :param text: already decoded text.
     :returns: dict with exactly the four integer keys of :data:`OUTPUT_KEYS`.
     """
     # BC-02: one leading BOM is dropped, then CRLF and finally lone CR become
     # LF.  Splitting the normalised text on LF is the single split that both
-    # line counters use, so they can never disagree (BC-06).  BC-27: no Unicode
+    # line counters use, so they can never disagree (BC-05).  No Unicode
     # normalisation and no trimming happens here.
     if text.startswith(BYTE_ORDER_MARK):
         text = text[len(BYTE_ORDER_MARK):]
@@ -110,7 +110,7 @@ def count_text(text):
     else:
         lines = text.split(NEWLINE)
         if lines[-1] == "":
-            # BC-05: a trailing LF ends the last line instead of starting one.
+            # BC-04: a trailing LF ends the last line instead of starting one.
             lines.pop()
 
     return {
@@ -122,7 +122,7 @@ def count_text(text):
 
 
 def _format_stats(stats):
-    """Render the four output lines in ``<key>: <value>`` form (BC-22)."""
+    """Render the four output lines in ``<key>: <value>`` form (BC-08)."""
     return "".join(
         "{0}: {1}{2}".format(key, stats[key], NEWLINE) for key in OUTPUT_KEYS
     )
@@ -134,8 +134,8 @@ def _read_file(path, encoding):
     Universal-newline translation is disabled (``newline=""``) so that
     :func:`count_text` receives the raw ``\\r\\n`` / ``\\r`` characters and is
     the single place performing the documented normalisation; that is what keeps
-    the file path and the standard input path identical for the same raw text
-    (BC-02, BC-24).
+    the file path and the standard input path identical for the same decoded
+    text (BC-16).
     """
     with open(path, "r", encoding=encoding, newline="") as handle:
         return handle.read()
@@ -146,7 +146,7 @@ def _encoding_for(name):
 
     Without ``--encoding`` the tool decodes the file as UTF-8; an explicitly
     named encoding is validated with :func:`codecs.lookup`, which raises
-    :class:`LookupError` for a name Python does not know (BC-14).
+    :class:`LookupError` for a name Python does not know (BC-13).
     """
     if name is None:
         return ENCODING_UTF8
@@ -167,10 +167,10 @@ def _write(stream, text):
 
 
 def _report_error(message, quiet=False):
-    """Write exactly one ``error: `` line to standard error (BC-21).
+    """Write exactly one ``error: `` line to standard error (BC-12).
 
     A programmatic call (``stdin_text is not None``) stays silent on **both**
-    streams (BC-15): the caller already gets the exit code, so the diagnostic is
+    streams (BC-26): the caller already gets the exit code, so the diagnostic is
     suppressed instead of leaking to a stream this call promised not to touch.
     """
     if quiet:
@@ -182,7 +182,7 @@ class _ParserExit(Exception):
     """Raised by the argument parser instead of argparse's ``SystemExit``.
 
     ``argparse`` normally prints a usage error to standard error and exits with
-    code 2, which BC-18 forbids.  Both :meth:`error` and :meth:`exit` of the
+    code 2, which BC-10 forbids.  Both :meth:`error` and :meth:`exit` of the
     parser below therefore raise this exception, which :func:`main` converts
     into the tool's own contract: exit code 1 with an ``error: `` line for usage
     errors, exit code 0 for ``--help``.
@@ -227,10 +227,10 @@ def _build_parser():
 def _parse_args(argv, quiet):
     """Parse *argv*, honouring the silent-scope rule for programmatic calls.
 
-    A programmatic ``--help`` still ends with exit code 0, but BC-15 promises
+    A programmatic ``--help`` still ends with exit code 0, but BC-11 promises
     that such a call writes nothing: argparse's help text is written to a
     discarded buffer instead of the caller's standard output.  A command line
-    call keeps the normal help text (BC-16).
+    call keeps the normal help text (BC-11).
     """
     parser = _build_parser()
     if not quiet:
@@ -244,8 +244,8 @@ def _read_stdin_text():
 
     Standard input is decoded by :data:`sys.stdin` itself, i.e. by the encoding
     the interpreter configured for the stream; ``--encoding`` does not apply
-    here (BC-13).  A ``UnicodeDecodeError`` is the decoding failure of BC-14,
-    and the returned ``None`` is how that failure reaches :func:`main`; no other
+    here (BC-17).  A ``UnicodeDecodeError`` is a handled decoding failure, and
+    the returned ``None`` is how that failure reaches :func:`main`; no other
     condition makes this function return ``None``.
     """
     try:
@@ -258,30 +258,30 @@ def _read_stdin_text():
 def main(argv=None, stdin_text=None):
     """Run the tool and return the process exit code.
 
-    Scope rule a (BC-15): as soon as the caller passes *stdin_text* explicitly -
+    Scope rule a (BC-01): as soon as the caller passes *stdin_text* explicitly -
     even the empty string - this is a programmatic call: the function only
     returns an exit code, never writes to standard output and never reads the
     process streams; the caller prints the result itself.
 
-    Scope rule b (BC-16): when *stdin_text* is ``None`` this is a command line
+    Scope rule b (BC-01): when *stdin_text* is ``None`` this is a command line
     run - a PATH argument is read as a file, otherwise standard input is read -
     and a successful run writes exactly the four ``<key>: <value>`` lines in
-    the order of :data:`OUTPUT_KEYS`.
+    the order of :data:`OUTPUT_KEYS` (BC-08).
 
     The two rules select the input and the output scope, not the exit code: a
     PATH or an ``--encoding`` that cannot be read or validated is still a
-    handled error with exit code 1 in both call kinds (BC-17, BC-18).  Only the
+    handled error with exit code 1 in both call kinds (BC-12).  Only the
     diagnostic line differs - a command line run writes one ``error: ...`` line
-    to standard error (BC-21), a programmatic run keeps both streams empty
-    because BC-15 promises it writes nothing at all.
+    to standard error, a programmatic run keeps both streams empty because
+    BC-26 promises it writes nothing at all.
 
     An explicitly invalid ``--encoding`` is rejected before the input is
     chosen, so ``main(["--encoding", "bogus"], stdin_text="")`` returns 1 while
-    still writing nothing (BC-14).
+    still writing nothing (BC-13).
 
-    :param argv: argument list without the program name (``None`` -> ``sys.argv[1:]``, BC-19).
+    :param argv: argument list without the program name (``None`` -> ``sys.argv[1:]``, BC-15).
     :param stdin_text: programmatic text override; ``None`` means command line mode.
-    :returns: ``0`` on success and on ``--help``, ``1`` on every handled error (BC-18).
+    :returns: ``0`` on success and on ``--help``, ``1`` on every handled error (BC-10).
     """
     programmatic = stdin_text is not None
     try:
@@ -295,7 +295,7 @@ def main(argv=None, stdin_text=None):
         return EXIT_ERROR
 
     try:
-        # BC-14: an unknown --encoding name is an error on its own, before the
+        # BC-13: an unknown --encoding name is an error on its own, before the
         # input is chosen - no PATH and empty injected text do not excuse it.
         encoding = _encoding_for(args.encoding)
     except LookupError:
@@ -311,10 +311,10 @@ def main(argv=None, stdin_text=None):
         # Any named file must still be readable even in a programmatic call,
         # which is why this read happens before the scope split below.
     elif programmatic:
-        # BC-15: the caller supplied the text, so report nothing at all.
+        # BC-14: the caller supplied the text, so report nothing at all.
         return EXIT_OK
     else:
-        # BC-13: standard input is decoded by sys.stdin itself and only
+        # BC-17: standard input is decoded by sys.stdin itself and only
         # count_text normalises what either input path hands it.
         text = _read_stdin_text()
         if text is None:

@@ -49,7 +49,10 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
   单个阶段自己前后变了 ⇒ `BYTECODE_CACHE_WRITTEN`；`env_applied` 不为 `true` ⇒ `BYTECODE_ENV_NOT_APPLIED`；
   清单缺失、类型不对、路径不在缓存目录下、重复路径 ⇒ `BYTECODE_SCOPE_UNMEASURED`。四者都在 `REVIEW_NOT_APPROVED` 之前判不通过；
   优先级：`BYTECODE_CACHE_WRITTEN` > `BYTECODE_CACHE_CHANGED_ACROSS_RUN` > `BYTECODE_ENV_NOT_APPLIED` > `BYTECODE_SCOPE_UNMEASURED`；
-  **已存在缓存且全程前后逐字段一致不得被误拒**。
+  **已存在缓存且全程前后逐字段一致不得被误拒**；
+  判定"重写"的口径是**内容身份**（`bytes` + `sha256`）加 `mtime_ms` 容差 `MTIME_TOLERANCE_MS = 5` 毫秒：
+  同一份文件被不同子代理报成 `1792240028919` 与 `1792240028919.332` 属于表示精度差，不算重写（v0.2-run2 因此误报 4 条）；
+  另有强制提示：**该阶段内任何 Python 调用都必须带同一环境前缀**（不只是测试命令），超出前缀范围的真实写入会被全运行账本抓住。
 
 其他失败状态码：`TEST_NOT_VERIFIED`、`INCONSISTENT_REVIEW`、`CODING_REPORT_INCONSISTENT`、`CRITERIA_NOT_SATISFIED`、`REVIEW_NOT_APPROVED`、
 `BYTECODE_CACHE_CHANGED_ACROSS_RUN`、`BYTECODE_CACHE_WRITTEN`、`BYTECODE_ENV_NOT_APPLIED`、`BYTECODE_SCOPE_UNMEASURED`、

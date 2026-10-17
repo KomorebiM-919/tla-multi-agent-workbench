@@ -1,0 +1,12 @@
+# 05-mutation-check
+# command: python tests/mutation-text-stats.py --json-out docs/run-records/v0.2-run2-20261017T133204Z/review-package/json/mutation.json
+# exit code: 0
+# duration: 7.76s
+# timed out: no
+
+PASS baseline | exit=0 failures=0
+PASS quiet_errors_still_write_stderr | 失败的用例=5 命中目标=4
+PASS programmatic_help_prints_usage | 失败的用例=1 命中目标=1
+PASS bad_encoding_without_path_is_success | 失败的用例=3 命中目标=2
+
+3/3 个变异体被抓住; 基线通过

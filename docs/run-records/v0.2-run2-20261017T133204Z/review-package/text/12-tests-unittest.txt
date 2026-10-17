@@ -1,0 +1,20 @@
+# 12-tests-unittest
+# command: python -m unittest discover -s tests -p test_*.py
+# exit code: 0
+# duration: 2.92s
+# timed out: no
+
+[run] 01-sleep
+[01-sleep] exit=124 (timeout)
+[run] 02-ok
+[02-ok] exit=0
+suite results: tests\.scratch\run-review-suite\out\suite-results.json
+failed: 01-sleep
+
+--- stderr ---
+.........................错误：out-dir 已存在且非空，拒绝覆盖：<repo-root>\tests\.scratch\run-review-suite\archived
+..
+----------------------------------------------------------------------
+Ran 27 tests in 2.785s
+
+OK
