@@ -1,0 +1,143 @@
+{
+  "cache_time_criterion": "mtime_ns must be identical (tolerance 0 ns). The documented test command runs with PYTHONDONTWRITEBYTECODE=1, so the cache cannot be written; any mtime movement means the command wrote bytecode and the suppression failed.",
+  "change_scope": {
+    "base": "54a19d9^",
+    "delivery": "54a19d9"
+  },
+  "criteria_checked": 25,
+  "criteria_passed": 25,
+  "declared_outputs": [
+    "tests/.scratch/run5-review/verification.json"
+  ],
+  "failed": [],
+  "repo_head": "54a19d99c1c841cbc3438564ef6881dccc947459",
+  "results": [
+    {
+      "criterion": "AC-01",
+      "detail": "code=0 out=b'{\"quiet\": true, \"second\": 0}\\r\\n'",
+      "ok": true
+    },
+    {
+      "criterion": "AC-02",
+      "detail": "code=0 out=b'True 0 int\\r\\n' err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-03",
+      "detail": "code=0 stats={'char_count': 0, 'line_count': 0, 'non_empty_line_count': 0, 'word_count': 0} err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-04",
+      "detail": "code=0 stats={'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4} err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-05",
+      "detail": "code=0 stats={'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2} err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-06",
+      "detail": "path={'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4} stdin={'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}",
+      "ok": true
+    },
+    {
+      "criterion": "AC-07",
+      "detail": "code=0 lines=['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4']",
+      "ok": true
+    },
+    {
+      "criterion": "AC-08",
+      "detail": "keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count'] first={'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4} stdin_none_ok=True",
+      "ok": true
+    },
+    {
+      "criterion": "AC-09",
+      "detail": "code=0 out=b'4\\r\\n'",
+      "ok": true
+    },
+    {
+      "criterion": "AC-10",
+      "detail": "[{\"char\": \"2028\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"2029\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"000b\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"000c\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"001c\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"001d\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"001e\", \"line_count\": 1, \"char_count\": 3}, {\"char\": \"0085\", \"line_count\": 1, \"char_count\": 3}]",
+      "ok": true
+    },
+    {
+      "criterion": "AC-11-12-14-15-16",
+      "detail": "38/38 cases reproduced; failures=[]",
+      "ok": true
+    },
+    {
+      "criterion": "AC-13",
+      "detail": "[{\"char_count\": 5, \"line_count\": 2, \"non_empty_line_count\": 0, \"word_count\": 0}, {\"char_count\": 3, \"line_count\": 2, \"non_empty_line_count\": 1, \"word_count\": 1}, {\"char_count\": 5, \"line_count\": 2, \"non_empty_line_count\": 0, \"word_count\": 0}]",
+      "ok": true
+    },
+    {
+      "criterion": "AC-17",
+      "detail": "code=0 mentions_path=True mentions_encoding=True err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-18",
+      "detail": "code=0 out=b'[0]\\r\\n' err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-19",
+      "detail": "missing=1/b\"error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'\" too_many=1/b'error: invalid arguments (unrecognized arguments: b.txt)\\r\\n'",
+      "ok": true
+    },
+    {
+      "criterion": "AC-20",
+      "detail": "dir=1 encoding=1 invalid_utf8=1",
+      "ok": true
+    },
+    {
+      "criterion": "AC-21",
+      "detail": "missing=b'[1]\\r\\n'/b'' encoding=b'[1]\\r\\n'/b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-22",
+      "detail": "programmatic=b'[1]\\r\\n'/b'' cli=1",
+      "ok": true
+    },
+    {
+      "criterion": "AC-23",
+      "detail": "code=0 out=b'[0]\\r\\n' err=b''",
+      "ok": true
+    },
+    {
+      "criterion": "AC-24",
+      "detail": "observed=[0, 1] import=0 exits_in_main_guard=[329] exits_in_functions=[]",
+      "ok": true
+    },
+    {
+      "criterion": "AC-25",
+      "detail": "cli=0/{'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4} programmatic=0/{'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}",
+      "ok": true
+    },
+    {
+      "criterion": "AC-26",
+      "detail": "imports={'text_stats.py': ['argparse', 'codecs', 'contextlib', 'io', 're', 'sys'], 'test_text_stats.py': ['ast', 'contextlib', 'hashlib', 'inspect', 'io', 'os', 're', 'subprocess', 'sys', 'text_stats', 'unittest']} non_stdlib={'text_stats.py': [], 'test_text_stats.py': []} forbidden_files=[]",
+      "ok": true
+    },
+    {
+      "criterion": "AC-27",
+      "detail": "sample_bytes=20 ac_refs=['AC-01', 'AC-13', 'AC-29'] bc_refs=['BC-01', 'BC-02', 'BC-03', 'BC-04', 'BC-05', 'BC-06'] no_char_count_6=True no_bare_u2019=True",
+      "ok": true
+    },
+    {
+      "criterion": "AC-28",
+      "detail": "code=0 stats=97 cache_files_before=0 after=0 problems=none time_criterion='mtime_ns must be identical (tolerance 0 ns). The documented test command runs with PYTHONDONTWRITEBYTECODE=1, so the cache cannot be written; any mtime movement means the command wrote bytecode and the suppression failed.'",
+      "ok": true
+    },
+    {
+      "criterion": "AC-29",
+      "detail": "base=54a19d9^ delivery=54a19d9 changed=['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py'] allowed=['examples/text-stats/README.md', 'examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py', 'examples/text-stats/sample_input.txt'] not_touched=['examples/text-stats/sample_input.txt'] declared_outputs=['tests/.scratch/run5-review/verification.json'] problems=none",
+      "ok": true
+    }
+  ],
+  "run_id": "v0.4-run5-20261017T161034Z",
+  "tool": "docs/review/run5-offline-acceptance/verify-run5.py"
+}

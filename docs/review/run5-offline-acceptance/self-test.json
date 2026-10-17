@@ -1,0 +1,70 @@
+{
+  "failures": [],
+  "results": [
+    {
+      "counter_example": "cache-unchanged-control",
+      "detail": "no difference reported for an untouched cache",
+      "ok": true
+    },
+    {
+      "counter_example": "cache-added-during-test",
+      "detail": "added file detected: ['added c.pyc (4 bytes)']",
+      "ok": true
+    },
+    {
+      "counter_example": "cache-same-name-new-content",
+      "detail": "content change detected: ['size changed for a.pyc: 4 -> 5', 'content changed for a.pyc: 61be55a8e2f6b4e1 -> a2356399bc526a34']",
+      "ok": true
+    },
+    {
+      "counter_example": "cache-same-size-different-content",
+      "detail": "sha256 caught the rewrite despite identical 4-byte size: ['content changed for a.pyc: 61be55a8e2f6b4e1 -> 63c1dd951ffedf6f']",
+      "ok": true
+    },
+    {
+      "counter_example": "cache-mtime-moved",
+      "detail": "timestamp criterion is enforced at 0 ns: ['mtime moved for a.pyc by 5000000 ns']",
+      "ok": true
+    },
+    {
+      "counter_example": "scope-exact-match",
+      "detail": "a delivery commit touching exactly the four allowed files passes",
+      "ok": true
+    },
+    {
+      "counter_example": "scope-extra-path",
+      "detail": "a stray fifth path is rejected: [\"paths outside the allowed delivery set: ['workflows/three-agent-mvp.js']\"]",
+      "ok": true
+    },
+    {
+      "counter_example": "scope-partial-accepted",
+      "detail": "the real delivery touches three of four files (sample_input.txt already had the required content) and is accepted: []",
+      "ok": true
+    },
+    {
+      "counter_example": "scope-empty-rejected",
+      "detail": "an empty delivery commit is rejected: ['the delivery commit touched no files']",
+      "ok": true
+    },
+    {
+      "counter_example": "clean-checkout-stability",
+      "detail": "a clean checkout (empty status) passes the stability half",
+      "ok": true
+    },
+    {
+      "counter_example": "declared-output-excluded",
+      "detail": "the review's own declared output is excluded and must be disclosed: []",
+      "ok": true
+    },
+    {
+      "counter_example": "undeclared-file-rejected",
+      "detail": "an undeclared file is rejected: ['unexpected working-tree entry: ?? examples/text-stats/notes.tmp']",
+      "ok": true
+    },
+    {
+      "counter_example": "git-failure-is-not-clean",
+      "detail": "a failing git command raises instead of reporting an empty tree: git status --porcelain could not run in <repo-root>\\tests\\.scratch\\run5-review\\no-such-repo-13388: [WinError 267] 目录名称无效。",
+      "ok": true
+    }
+  ]
+}
