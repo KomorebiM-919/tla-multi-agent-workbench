@@ -170,6 +170,49 @@ async function main() {
     check(error2 !== null && error2.code === 'BUDGET_LIMIT_INVALID', '非整数上限被拒绝');
   }
 
+  scenario('resuming from persisted state does not silently reset the allowance');
+  {
+    // 真实宿主实测反例：激活时抛错，宿主只警告一句就继续无预算运行
+    // （2026-10-18：无预算跑到 2568 次请求）。所以恢复必须**不抛错**，
+    // 而是把已预占数读回来；读不出来就把额度视为用尽。
+    const host = createFakeHost();
+    const interceptor = createAgentRequestListener({ modelRequests: 2, used: 2 });
+    host.on('agent/request', interceptor.listener, { prepend: true });
+    const outcome = await runTurn(host, { agentKey: 'after-restart' });
+    check(outcome.turnError !== null && outcome.turnError.code === 'MODEL_REQUEST_BUDGET_EXCEEDED', '额度已用尽时首个请求即被拒');
+    check(host.sent().length === 0, '重启后零新增发送', host.sent());
+    check(interceptor.snapshot().used === 2, '已用数保持 2，没有归零', interceptor.snapshot());
+    check(interceptor.snapshot().resumedFrom === 2, '快照记录了恢复起点', interceptor.snapshot());
+
+    const partially = createFakeHost();
+    const resumed = createAgentRequestListener({ modelRequests: 3, used: 2 });
+    partially.on('agent/request', resumed.listener, { prepend: true });
+    const one = await runTurn(partially, { agentKey: 'remaining' });
+    const two = await runTurn(partially, { agentKey: 'over' });
+    check(one.turnError === null, '恢复后剩余 1 次仍可放行');
+    check(two.turnError !== null && partially.sent().length === 1, '第 2 次被拒且只有 1 次真实发送', partially.sent());
+
+    let rejectedEvents = 0;
+    const rejecting = createAgentRequestListener({
+      modelRequests: 1,
+      onReject: () => {
+        rejectedEvents += 1;
+      },
+    });
+    try {
+      rejecting.budget.reserve({});
+    } catch (_expected) {
+      // expected
+    }
+    try {
+      rejecting.budget.reserve({});
+    } catch (_expected) {
+      // expected
+    }
+    check(rejectedEvents === 1, '拒绝时回调被调用（用于把 rejected 落盘）', rejectedEvents);
+    check(rejecting.snapshot().rejected === 1, '拒绝计数可读', rejecting.snapshot());
+  }
+
   process.stdout.write('\n' + scenarios + ' scenarios, ' + checks + ' checks, ' + failures.length + ' failures\n');
   if (failures.length > 0) process.exitCode = 1;
 }

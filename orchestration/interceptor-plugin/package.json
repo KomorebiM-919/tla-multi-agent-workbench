@@ -1,0 +1,15 @@
+{
+  "name": "tla-prelaunch-budget",
+  "version": "0.0.0-local",
+  "private": true,
+  "description": "Local dsh plugin that reserves the model-request budget before agent/request leaves the host. Stage 2 experiment scaffold; not published, no dsh.bundle field so mounting stays an explicit profile patch decision.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "lib/budget.mjs"
+  ]
+}
