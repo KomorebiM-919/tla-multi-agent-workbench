@@ -187,10 +187,7 @@ function codingFor(rel, entries) {
 function planFor(rel, over, entries) {
   return happyPlan(Object.assign({
     preflight: function () { return preflightFor(rel); },
-    coding: function () { return codingFor(rel, entries); },
-    cacheFinal: function () {
-      return { entries: cacheEntries(rel), collected_at: '2026-10-16T12:00:00+08:00', note: '' };
-    }
+    coding: function () { return codingFor(rel, entries); }
   }, over || {}));
 }
 
@@ -215,7 +212,7 @@ await scenario('受控环境前缀真的进入 python 子进程 → OK',
   }),
   taskArgs(envProbeRel),
   {
-    status: 'OK', ok: true, attempts: 1, calls: 6,
+    status: 'OK', ok: true, attempts: 1, calls: 5,
     extra: function (result, outcome, expectCheck) {
       expectCheck('带前缀时子进程读到 ' + ENV_VAR + '=1', envProbeWithPrefix.value === '1',
         JSON.stringify(envProbeWithPrefix));
@@ -244,7 +241,7 @@ await scenario('干净目录用受控环境前缀运行规范命令 → 无新�
   }),
   taskArgs(cleanRel),
   {
-    status: 'OK', ok: true, attempts: 1, calls: 6,
+    status: 'OK', ok: true, attempts: 1, calls: 5,
     extra: function (result, outcome, expectCheck) {
       expectCheck('带前缀的规范命令退出码 0', cleanExit === 0, '实际 ' + cleanExit);
       expectCheck('执行后 __pycache__ 不存在（无新缓存）', cleanAfter.length === 0, JSON.stringify(cleanAfter));
@@ -271,7 +268,7 @@ await scenario('已存在缓存用受控环境前缀运行 → 缓存不被重�
   }, rewriteBefore),
   taskArgs(dirtyRel, rewriteBefore),
   {
-    status: 'OK', ok: true, attempts: 1, calls: 6,
+    status: 'OK', ok: true, attempts: 1, calls: 5,
     extra: function (result, outcome, expectCheck) {
       expectCheck('基线用未设置环境的命令确实建出了缓存', dirtyExit === 0 && dirtyEntries.length > 0,
         'exit=' + dirtyExit + ' entries=' + JSON.stringify(dirtyEntries));
@@ -299,7 +296,7 @@ await scenario('未设置环境的真实运行新生成了 __pycache__ → BYTEC
   }, writeBefore),
   taskArgs(writeRel, writeBefore),
   {
-    status: 'BYTECODE_CACHE_WRITTEN', ok: false, attempts: 1, calls: 6, errorIncludes: '运行期写入边界',
+    status: 'BYTECODE_CACHE_WRITTEN', ok: false, attempts: 1, calls: 5, errorIncludes: '运行期写入边界',
     extra: function (result, outcome, expectCheck) {
       expectCheck('未设置环境的命令确实写入了缓存', writeExit === 0 && writeAfter.length > writeBefore.length,
         'exit=' + writeExit + ' before=' + writeBefore.length + ' after=' + writeAfter.length);
@@ -320,7 +317,7 @@ await scenario('报告 env_applied=false（环境未到达测试进程）→ BYT
     review: function () { return unsetEvidence.review; }
   }),
   taskArgs(unsetRel),
-  { status: 'BYTECODE_ENV_NOT_APPLIED', ok: false, attempts: 1, calls: 6, errorIncludes: 'PYTHONDONTWRITEBYTECODE' });
+  { status: 'BYTECODE_ENV_NOT_APPLIED', ok: false, attempts: 1, calls: 5, errorIncludes: 'PYTHONDONTWRITEBYTECODE' });
 
 // E. 完全没有交回运行期边界证据 → 判"证据不完整"（不能当成"没有写入"）
 const missingRel = prepareDelivery('scope-missing');
@@ -334,6 +331,6 @@ await scenario('两阶段都没有交回 bytecode_scope → BYTECODE_SCOPE_UNMEA
     review: function () { return missingEvidence.review; }
   }),
   taskArgs(missingRel),
-  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, attempts: 1, calls: 6, errorIncludes: '证据不完整' });
+  { status: 'BYTECODE_SCOPE_UNMEASURED', ok: false, attempts: 1, calls: 5, errorIncludes: '证据不完整' });
 
 runner.finish('运行期写入边界集成测试（真实 python 子进程）');

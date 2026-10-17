@@ -208,7 +208,7 @@ if (!existsSync(RUNNER_DIR)) { mkdirSync(RUNNER_DIR, { recursive: true }); }
     '认领工具首次认领（真实退出码 0）→ 预检通过并跑完整条流水线',
     plan, integrationArgs(scene.identity, scene.evidenceDirRel),
     {
-      status: 'OK', ok: true, calls: 6,
+      status: 'OK', ok: true, calls: 5,
       extra: function (result, outcome, check) {
         check('认领工具退出码为 0', claim.exitCode === 0, '实际 ' + claim.exitCode + ' / stderr=' + claim.stderr);
         check('工具报告 claim_created=true', claim.payload.claim_created === true, JSON.stringify(claim.payload));
@@ -335,7 +335,7 @@ if (!existsSync(RUNNER_DIR)) { mkdirSync(RUNNER_DIR, { recursive: true }); }
     '已存在但为空的目录可被排他认领（工具报告 empty）→ 放行',
     plan, integrationArgs(scene.identity, scene.evidenceDirRel),
     {
-      status: 'OK', ok: true, calls: 6,
+      status: 'OK', ok: true, calls: 5,
       extra: function (result, outcome, check) {
         check('工具退出码为 0', claim.exitCode === 0, '实际 ' + claim.exitCode);
         check('工具回报的认领前状态是 empty', claim.payload.evidence_dir_state_before === 'empty',
@@ -361,7 +361,7 @@ if (!existsSync(RUNNER_DIR)) { mkdirSync(RUNNER_DIR, { recursive: true }); }
     '证据目录路径含空格 → 认领工具与预检门禁照常放行（参数数组、不经过 shell）',
     plan, integrationArgs(scene.identity, scene.evidenceDirRel),
     {
-      status: 'OK', ok: true, calls: 6,
+      status: 'OK', ok: true, calls: 5,
       extra: function (result, outcome, check) {
         check('夹具本身确实含空格（防止空格被悄悄去掉）',
           scene.evidenceDirRel.indexOf(' ') !== -1 && spaceRunner.indexOf(' ') !== -1,

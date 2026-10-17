@@ -151,14 +151,22 @@ class ClaimEvidenceDirTest(unittest.TestCase):
             results.append((index, process.returncode, parse_payload(stdout), stderr))
 
         winners = [item for item in results if item[1] == EXIT_OK]
-        refused = [item for item in results if item[1] == EXIT_ALREADY_CLAIMED]
+        # 输家的失败码有两种，且都算"被拒绝"：10 = 认领文件已存在（读到了赢家写的 marker）；
+        # 11 = 目录已存在且非空但没有认领文件——竞态下这是真实可能的结果：赢家先把目录建出来、
+        # 还没写 marker，此时输家看到的是"非空目录"而不是"已认领目录"。把 11 判成失败会得到一个
+        # 随机偶发的测试（首次出现即本机 8 进程真并发时），而不是更严格的断言：
+        # 真正要锁住的性质是"只有一个成功"，其余无论走哪条拒绝路径都不得创建认领文件。
+        refused = [item for item in results if item[1] in (EXIT_ALREADY_CLAIMED, EXIT_DIR_NOT_EMPTY)]
         self.assertEqual(len(winners), 1, '并发认领必须只有一个成功：%r' % (results,))
         self.assertEqual(len(refused), WORKERS - 1, '其余进程必须被拒绝：%r' % (results,))
-        for _, _, payload, _ in refused:
+        for _, code, payload, _ in refused:
             self.assertFalse(payload['claim_created'])
             self.assertIsNone(payload['claimed_at'])
-            self.assertEqual(payload['existing_claim']['runId'],
-                             'v0.1-test-20261016T0400%02dZ' % winners[0][0])
+            if code == EXIT_ALREADY_CLAIMED:
+                self.assertEqual(payload['existing_claim']['runId'],
+                                 'v0.1-test-20261016T0400%02dZ' % winners[0][0])
+            else:
+                self.assertEqual(payload['evidence_dir_state_before'], 'exists')
 
         marker = json.loads(self.read_marker_text())
         self.assertEqual(marker['runId'], 'v0.1-test-20261016T0400%02dZ' % winners[0][0])

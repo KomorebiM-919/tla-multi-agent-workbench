@@ -15,11 +15,13 @@
 **执行顺序与结果传递由脚本的编排逻辑保证**（`phase()` 仅用于进度展示，不产生执行依赖）：
 
 ```
-preflight → requirement → [ coding → verify → review ] × (最多 maxCodingAttempts 轮) → cacheFinal
+preflight → requirement → [ coding → verify → review ] × (最多 maxCodingAttempts 轮)
 ```
 
-`cacheFinal`（`Cache Collector (after review)`）是**只读采集**阶段：它不跑测试、不改文件，只把 `<targetDir>/__pycache__`
-在 Review 结束后的清单交回来。它存在的理由见下条"运行期写入边界"：只看两个验证阶段各自的前后不变，证明不了编码阶段和阶段间隙里没有写过缓存。
+每一轮最多 3 次子代理调用，加上预检与需求共 5 次；`task.maxAgentCalls`（默认 8）是**硬上限**，每次调用**启动前**检查，
+超限即拒绝启动并返回 `AGENT_CALL_BUDGET_EXCEEDED`。原来那个"Review 之后再跑一个只读 `Cache Collector` 阶段"的
+设计已被删除：它每轮多花一次完整模型调用，却只读几个文件指纹——而这件事用确定性工具 `tests/collect-cache-state.py`
+几十毫秒就能做完（0 次模型调用）。删除的理由与用量证据见 `docs/run-records/v0.2-run2-20261017T133204Z/budget-overrun.md`。
 
 审核不通过时，脚本把该轮问题清单与编排层的判定原因**回注**给新的 Coding Agent 实例（`coding-report-revision-2.json` 等），再验证、再复审。
 
@@ -44,7 +46,7 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
   同一路径重复出现，或验证前后不一致 ⇒ `ARTIFACT_FINGERPRINT_MISMATCH`（两份清单互相一致但都漏掉测试文件同样不通过）；
 - 预检自身报告的问题清单必须为空（`problems` 非空 ⇒ `PREFLIGHT_PROBLEMS`，先由人处理再重跑）；
 - **运行期写入边界（全运行账本）**：编排层在启动任何子代理**之前**采集的 `task.cacheBaseline` 是必填参数（缺 ⇒ `INVALID_ARGS`），
-  Coding 报告、Verifier 与 Review 的 `bytecode_scope` 各自交回执行前/后清单，`cacheFinal` 交回 Review 结束后的清单；
+  Coding 报告、Verifier 与 Review 的 `bytecode_scope` 各自交回执行前/后清单（Review 的那份就是最后一个观测点）；
   相邻两个观测点之间出现新增 / 重写 / 删除 ⇒ `BYTECODE_CACHE_CHANGED_ACROSS_RUN`（"两个验证阶段各自前后不变"只是必要条件）；
   单个阶段自己前后变了 ⇒ `BYTECODE_CACHE_WRITTEN`；`env_applied` 不为 `true` ⇒ `BYTECODE_ENV_NOT_APPLIED`；
   清单缺失、类型不对、路径不在缓存目录下、重复路径 ⇒ `BYTECODE_SCOPE_UNMEASURED`。四者都在 `REVIEW_NOT_APPROVED` 之前判不通过；
@@ -53,12 +55,20 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
   判定"重写"的口径是**内容身份**（`bytes` + `sha256`）加 `mtime_ms` 容差 `MTIME_TOLERANCE_MS = 5` 毫秒：
   同一份文件被不同子代理报成 `1792240028919` 与 `1792240028919.332` 属于表示精度差，不算重写（v0.2-run2 因此误报 4 条）；
   另有强制提示：**该阶段内任何 Python 调用都必须带同一环境前缀**（不只是测试命令），超出前缀范围的真实写入会被全运行账本抓住。
+- **这套判定的证明边界（必须一起读）**：mtime 容差只吸收"同一时间戳的整数/浮点毫秒表示差"，**不等于**"内容相同就证明没写过"。
+  判定按内容身份比较，因此**把内容改回原样、且 mtime 变化不超过 5 毫秒的写入属于不可观测范围**；
+  Review 返回之后发生的写入同样不在门禁内（最后一个观测点是 Review 自报的执行后清单），只能由运行结束后的
+  `python tests/collect-cache-state.py` 事后补采（返回值里的 `postRunCacheSnapshot` 声明了这条要求，补采结果不参与本次门禁）。
+  返回值 `finalDecision.cacheCoverage` 把 `unobservedWindow` 与这条 `note` 原样写出，避免把"没抓到"读成"没发生"。
 
 其他失败状态码：`TEST_NOT_VERIFIED`、`INCONSISTENT_REVIEW`、`CODING_REPORT_INCONSISTENT`、`CRITERIA_NOT_SATISFIED`、`REVIEW_NOT_APPROVED`、
 `BYTECODE_CACHE_CHANGED_ACROSS_RUN`、`BYTECODE_CACHE_WRITTEN`、`BYTECODE_ENV_NOT_APPLIED`、`BYTECODE_SCOPE_UNMEASURED`、
 `REQUIREMENT_CONFLICT`、`PREFLIGHT_PROBLEMS`、`PATH_NOT_NORMALIZED`、`PATH_TARGET_MISMATCH`、`TARGET_DIR_OUTSIDE_REPO`、`LINK_ESCAPE`、
 `EVIDENCE_NOT_CLAIMED`、`EVIDENCE_EXISTS`、`PREFLIGHT_FAILED`、`NO_ATTEMPT`、`INVALID_ARGS`、
-`INVALID_TIMESTAMP`、`PROMPT_MISSING`、`REQUIREMENT_OUTPUT_INVALID`、`REQUIREMENT_IDS_INVALID`；轮次用尽时前缀 `MAX_ATTEMPTS_`。
+`INVALID_TIMESTAMP`、`PROMPT_MISSING`、`REQUIREMENT_OUTPUT_INVALID`、`REQUIREMENT_IDS_INVALID`、`AGENT_CALL_BUDGET_EXCEEDED`；轮次用尽时前缀 `MAX_ATTEMPTS_`。
+
+`AGENT_CALL_BUDGET_EXCEEDED` 的含义是"**下一次调用没有启动**"：返回值 `agentCallBudget.calls` 的最后一项 `started: false`，
+`attempted` 比 `started` 多 1——这样"第 N+1 次没有发生"是可验证的事实，而不是靠事后把调用次数加起来推断。
 
 ### 输入（`args`）
 
@@ -76,6 +86,7 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
     "sampleFile": "sample_input.txt",
     "testCommand": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
     "maxCodingAttempts": 2,
+    "maxAgentCalls": 8,
     "cacheBaseline": []
   }
 }
@@ -96,6 +107,7 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 | `task.moduleFile` / `testFile` / `sampleFile` | 仅文件名（无目录成分） |
 | `task.testCommand` | 默认由 `targetDir` 推导为 `python -m unittest discover -s <targetDir> -p "test_*.py"`；显式传入时**只接受该规范命令（可加 `-v`）或带固定环境前缀的同一命令**（`$env:PYTHONDONTWRITEBYTECODE = '1'; ` + 规范命令），任意其他 shell 命令一律拒绝 |
 | `task.maxCodingAttempts` | 1–5 的整数；0、小数、字符串、超大值一律 `INVALID_ARGS` |
+| `task.maxAgentCalls` | 可选，子代理调用**硬上限**：1–32 的整数，默认 8；0、小数、字符串、超大值 ⇒ `INVALID_ARGS`。检查发生在**每次调用启动前**，到上限就返回 `AGENT_CALL_BUDGET_EXCEEDED` 并中止（不会"先跑完再算账"）。注意：它限制的是**调用次数**，单个子代理内部的 token 消耗无法由编排层硬限制 |
 | `task.cacheBaseline` | **必填**数组：启动前实测的 `<targetDir>/__pycache__` 清单（`path`/`bytes`/`mtime_ms`/`sha256`）；目录不存在传 `[]`；缺失或条目不合法 ⇒ `INVALID_ARGS` |
 | `runStartedAt` | 可选；必须是**合法的、带时区的 ISO-8601 日历时间**（`2026-02-30`、`25:00`、`+25:00` 一律非法 ⇒ `INVALID_ARGS`），且必须与 `runId` 的时间戳同秒；**省略时由 `runId` 的 UTC 时间戳还原**（时间窗门禁不会因为省略该参数而失效）。它还必须是**这次真实运行的起点**：与编排层实际时间相差超过 1 小时即 `INVALID_ARGS`（把 `runId` 与 `runStartedAt` 一起改成旧时间也会被拦下）。子代理产物（preflight / requirement / coding-report / verify / review）的时间戳必须落在运行窗口（默认 6 小时，含 60 秒时钟偏差容差）内且**不得晚于编排层当前时间**，否则 `INVALID_TIMESTAMP`（防止用占位时间或未来时间冒充真实记录） |
 
@@ -118,8 +130,14 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 
 ### 输出
 
-结构化运行结果：`{ ok, status, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, cacheBaseline, cacheDirPrefix, maxCodingAttempts, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
+结构化运行结果：`{ ok, status, error, errors, runId, evidenceDir, ownerMarkerPath, runStartedAt, pipeline, targetDir, testCommand, testEnvironment, testExecutionCommand, cacheBaseline, cacheDirPrefix, maxCodingAttempts, maxAgentCalls, agentCallBudget, postRunCacheSnapshot, criteriaIds, evidenceFiles, attempts, originalRequirement, requirement, requirementSelfCheck, preflight, attemptsDetail, finalVerdict, finalReview, finalDecision }`。
 每一轮的 `codingReport` / `verification` / `review` 与编排层判定都挂在该轮的 `attemptsDetail[n]` 下（没有 `codingReports` 之类的顶层键）。
+
+`agentCallBudget` 是本次运行的**统一调用账本**：`{ limit, started, attempted, calls: [{ index, label, phase, started }], limits }`。
+它把预检、需求、每一轮编码/验证/审核、以及任何重试都算在同一本账上——`started: false` 的那一项就是"被预算拦住、没有启动"的调用。
+`limits` 字段固定写明"调用次数可硬限制；单个子代理内部的 token 消耗无法由编排层硬限制"。
+`postRunCacheSnapshot` 声明运行结束后必须补采的一次性动作（`python tests/collect-cache-state.py`，写 `cache-postrun.json`），
+因为工作流脚本没有文件系统 API，读不到文件指纹。
 
 `finalDecision` 逐项列出成功判定的依据（`testsIndependentlyVerified`、`reviewApproved`、`allCriteriaSatisfied`、`criteriaCheckCoversAll`、`reviewIndependentTestsPassed`、`fingerprintsMatch`、`stageReportedRequirementConflicts`），便于人工核查而不必信任一句 `ok`；
 
@@ -135,6 +153,7 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 | `coding-report.json`（修订轮为 `coding-report-revision-<n>.json`） | Coding Agent |
 | `verify.json`（修订轮同上） | Verifier Agent（verify） |
 | `review.json`（修订轮同上） | Review Agent |
+| `cache-postrun.json`（可选，运行结束后） | `tests/collect-cache-state.py`：**确定性本地工具**，只读采集 `<targetDir>/__pycache__` 的最终清单（`path`/`bytes`/`mtime_ms`/`sha256`）；0 次模型调用，不参与门禁 |
 
 ## 如何在本机运行（中文步骤）
 
@@ -170,5 +189,7 @@ Verifier 的哈希一律对文件**原始字节**计算（二进制读取；Wind
 - 工作流逻辑的回归测试（模拟子代理返回值，不调用真实子代理）：`tests/workflow-logic.test.mjs`（夹具与可控时钟在 `tests/workflow-harness.mjs`）
 - 预检认领门禁的集成测试（真实调用认领工具，把它的 JSON 接入门禁）：`tests/preflight-claim-integration.test.mjs`
 - 证据目录排他认领工具（预检调用，`O_EXCL` 创建 `.run-owner.json`）：`tools/claim_evidence_dir.py`；其进程级测试：`tests/test_claim_evidence_dir.py`
+- 缓存快照工具（确定性、只读、0 次模型调用）：`tests/collect-cache-state.py`；其测试：`tests/test_collect_cache_state.py`
+- 用量提取器（离线、只读会话日志、不联网、不调用模型）：`tests/extract-usage-report.mjs`；其合成日志测试：`tests/usage-report.test.mjs`
 - 证据核查工具（都在 `docs/evidence/v0.1-second-run/`）：`cross-check-workflow-result.py`（返回值 ↔ 磁盘证据，逐次尝试核对指纹与 ID 集合；历史运行加 `--archived`）、`extract-native-events.mjs`（从 DSH 会话日志提取脱敏原生执行事件）、`make-review-manifest.py`（材料清单 + 逐文件 sha256 / git blob SHA-1）
 - 真实运行的完整记录：`docs/evidence/v0.1-first-run/`、`docs/evidence/v0.1-second-run/`，以及首个通过运行的 `docs/evidence/v0.1-run6-20261016T154400Z/`（另有被门禁拦下的 run 3/4/5，见 `docs/evidence/` 与 `docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`）

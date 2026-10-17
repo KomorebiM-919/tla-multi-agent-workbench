@@ -12,7 +12,7 @@ V0.1 的验收对象是"这条多 Agent 流水线本身"，因此本目录当前
 node tests/workflow-logic.test.mjs
 ```
 
-- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**100 个场景 / 464 项断言**。
+- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**110 个场景 / 529 项断言**。
 - 时间相关门禁使用**注入的可控时钟**（`FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z')`，与夹具 `runId` 的时间戳同秒；由 `workflow-harness.mjs` 的 `setClock()` / `advanceClock()` 驱动，`runWith()` 每个场景开始时重置）。因此"运行起点与编排层时钟相差过大""阶段时间戳晚于当前时间""时钟推进 120 秒跨多个阶段仍成功"这类判定都能离线、确定性地测出来，不需要真实等待；夹具区有一条护栏断言时钟与夹具时间戳一致，防止两者漂移后测试失去意义。
 - 覆盖的场景包括：正常成功；Coding 自述测试失败但 Review 返回 `APPROVED`（⇒ `TEST_NOT_VERIFIED`）；自述成功但独立验证失败（⇒ `INCONSISTENT_EVIDENCE`）；有验收条件未满足但 Review 返回 `APPROVED`（⇒ `CRITERIA_NOT_SATISFIED`）；`criteria_check` 覆盖不全、含未知 ID、含重复 ID（⇒ `CRITERIA_CHECK_INCOMPLETE` / `CRITERIA_CHECK_UNKNOWN_IDS` / `CRITERIA_CHECK_DUPLICATE_IDS`）；Review 自述退出码与原始输出矛盾（⇒ `INCONSISTENT_REVIEW`）；验证前后文件指纹不一致或 Review 未回传复核指纹（⇒ `ARTIFACT_FINGERPRINT_MISMATCH`）；审核不通过后自动修订；达到最大轮次仍不通过（⇒ `MAX_ATTEMPTS_*`）；非法 `targetDir`（路径穿越）；交付目录/证据目录真实路径落在仓库之外、未回报 `realpath`、链接逃逸、未完成证据目录认领（⇒ `TARGET_DIR_OUTSIDE_REPO` / `LINK_ESCAPE` / `EVIDENCE_NOT_CLAIMED`）；非法 `maxCodingAttempts`；非法 `runId`（含缺少 UTC 时间戳后缀、时间戳与 `runStartedAt` 不同秒）；`evidenceDir` 不在 `docs/evidence/` 下或与 `runId` 不一致；任意 shell 测试命令；重复/已存在的 `runId` 不得覆盖历史证据；需求自检报冲突；需求缺验收条件或缺少/重复 ID；编码未返回报告（⇒ `CODING_OUTPUT_INVALID`）；**任一阶段报告未解决需求冲突时不得成功**（Review / Verifier / Coding 各自报告冲突，以及"Coding 报告不可用 + Verifier 报告冲突"时冲突状态优先）；`args` 缺失或为空；Review 的独立复跑命令与规范命令不一致（⇒ `INCONSISTENT_REVIEW`）；Verifier 证据时间戳越出运行窗口（⇒ `INVALID_TIMESTAMP`）。
 - 复审后的第二轮加固新增场景（都是"应当拒绝"）：
@@ -28,6 +28,12 @@ node tests/workflow-logic.test.mjs
 - 第二次真实运行结束后（v0.2-run2）补的场景：
   - **mtime 表示精度不构成重写**：同一个 pyc 被不同子代理报成 `1760000000000`（整数毫秒）与 `1760000000000.332`（浮点毫秒），而 `bytes` 与 `sha256` 完全相同时 ⇒ `OK`（不得误报 `BYTECODE_CACHE_CHANGED_ACROSS_RUN`）。这条直接来自真实运行里的 4 条误报。
   - **容差不得放过真实重写**：`bytes` 与 `sha256` 相同但 `mtime` 相距 5 秒 ⇒ 仍判 `BYTECODE_CACHE_WRITTEN`（容差只吸收表示精度，不吸收真实写入）。
+- 子代理调用预算（`task.maxAgentCalls`）新增场景：
+  - **边界不溢出不漏**：默认预算 8 + `maxCodingAttempts: 2` 恰好两轮 8 次 ⇒ `OK`，`agentCallBudget.limit/started/attempted` 都是 8；
+  - **第 N+1 次调用真的没有启动**：`maxAgentCalls: 7` + 两轮 ⇒ `AGENT_CALL_BUDGET_EXCEEDED`、实际启动 7 次、账本最后一项 `started: false`、`attempted: 8`，日志含"拒绝启动第 8 次调用"；
+  - **预算用完不靠事后算账**：`maxAgentCalls: 8` + 需要 11 次的三轮计划 ⇒ 中止在启动前（账本第 9 项 `started: false`、日志含"拒绝启动第 9 次"），证明拦截点在 `agent()` 之前而不是跑完再统计；
+  - **非法上限**：`maxAgentCalls` 为 `33` / `0` / `2.5` / `'4'` ⇒ `INVALID_ARGS` 且一次子代理都不启动；
+  - **容差边界与证明边界**：mtime 相差正好 5 毫秒 ⇒ `OK`，相差 6 毫秒 ⇒ `BYTECODE_CACHE_WRITTEN`；末条断言 `finalDecision.cacheCoverage.collectsAfterLastAgent === false`、`unobservedWindow` 非空、`note` 含"不可观测"——把"没抓到"与"没发生"分开写进返回值。
 
 ### 1a. 预检认领门禁的集成测试（真实认领工具 + 编排层门禁）
 
@@ -56,7 +62,7 @@ node tests/preflight-claim-integration.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前 11 个用例：首次认领成功并创建 marker；重复认领被拒绝且 marker **逐字节不变**（`claimedAt` / `claimedBy` 不被下一轮覆写）；同一 `runId` 也不可重认领；**8 个进程同时认领只有一个成功**（其余退出码 10）；目录非空且无认领文件时拒绝且不写任何文件；空目录可认领；目标是文件时拒绝；绝对路径 / `..` 穿越 / 反斜杠 / 空值 / 非法 `runId` / 非法日历日期一律参数错误（退出码 4）；marker 里不出现本机绝对路径。
+当前 11 个用例：首次认领成功并创建 marker；重复认领被拒绝且 marker **逐字节不变**（`claimedAt` / `claimedBy` 不被下一轮覆写）；同一 `runId` 也不可重认领；**8 个进程同时认领只有一个成功**（其余退出码 10，或竞态下退出码 11：赢家建好目录但还没写 marker 时，输家看到的是"非空目录"——两者都算拒绝，硬性要求是"只有 1 个成功且输家不创建认领文件"）；目录非空且无认领文件时拒绝且不写任何文件；空目录可认领；目标是文件时拒绝；绝对路径 / `..` 穿越 / 反斜杠 / 空值 / 非法 `runId` / 非法日历日期一律参数错误（退出码 4）；marker 里不出现本机绝对路径。
 
 > 测试的临时目录用 `os.makedirs` + `uuid4` 命名放在 `tests/.scratch/`（已由根 `.gitignore` 忽略），**不要**用 `tempfile.mkdtemp`：它按 `0o700` 建目录，在 Windows 上会把 DACL 收窄到仅所有者，导致测试自己都进不去。
 
@@ -156,7 +162,7 @@ node tests/bytecode-integration.test.mjs   # 6 个场景 / 45 项断言，真实
 - **全运行账本**（2026-10-17 第二轮加固）：编排层在启动任何子代理之前采集 `task.cacheBaseline`（必填参数，
   用调用方的实测清单，不允许默认空数组顶替），Coding / Verifier / Review 各自交回 `bytecode_scope`
   （`env_applied`、`env_variable`、`cache_dir`、`entries_before`、`entries_after`，每项含 `path/bytes/mtime_ms/sha256`），
-  Review 之后再由只读的 `Cache Collector` 阶段交回最终清单；相邻观测点之间出现新增 / 重写 / 删除 ⇒
+  **Review 自报的执行后清单就是本轮最后一个观测点**；相邻观测点之间出现新增 / 重写 / 删除 ⇒
   `BYTECODE_CACHE_CHANGED_ACROSS_RUN`（"两个验证阶段各自前后不变"只是必要条件，见 `tests` 里的离线场景
   "Verifier 与 Review 各自前后不变、但阶段之间缓存变化"）；单阶段自己前后变了 ⇒ `BYTECODE_CACHE_WRITTEN`；
   未设变量 ⇒ `BYTECODE_ENV_NOT_APPLIED`；未测量 / 清单重复 / 越界 ⇒ `BYTECODE_SCOPE_UNMEASURED`。
@@ -166,6 +172,57 @@ node tests/bytecode-integration.test.mjs   # 6 个场景 / 45 项断言，真实
   四者都在 `REVIEW_NOT_APPROVED` 之前判不通过，且**已存在缓存全程逐字段一致不得被误拒**；
 - 变量是否真的到达子进程**不靠退出码判断**（PowerShell 会把非零退出码折叠成 1）：子进程把 `os.environ` 写进文件，
   父进程再读回比对；`.gitignore` 忽略 `__pycache__/` 不等于允许写入，故检查的是字节/mtime/哈希而不是 `git status`。
+- **证明边界（必读，别把"没抓到"读成"没发生"）**：mtime 容差只吸收"同一时间戳的整数/浮点毫秒表示差"，
+  **不构成**"内容相同就证明没写过"。判定按内容身份比较，因此**把内容改回原样、且 mtime 变化不超过 5 毫秒的写入
+  属于不可观测范围**；Review 返回之后的写入也不在门禁内（最后一个观测点就是 Review 自报的清单）。
+  返回值 `finalDecision.cacheCoverage` 原样写出 `collectsAfterLastAgent: false` 与 `unobservedWindow`，
+  需要补证据时用下面的确定性工具事后采集（补采结果**不参与**本次判定）。
+
+### 1g. 确定性缓存快照工具（0 次模型调用）
+
+```powershell
+python tests/collect-cache-state.py --target-dir examples/text-stats --out docs/evidence/<runId>/cache-postrun.json --pretty
+```
+
+- **为什么有它**：v0.2-run2 每轮都额外启动一个 "Cache Collector" 子代理，只为读几个文件指纹——那是**付费模型调用**，
+  也正是 10 次调用超过批准 8 次的直接原因（复盘见 `docs/run-records/v0.2-run2-20261017T133204Z/budget-overrun.md`）。
+  工作流脚本没有文件系统 API，但"读指纹"不需要模型，因此交给这个只读的确定性工具：不联网、不读凭据、不写被采集目录。
+- 字段口径与编排层 `normalizeCacheEntries` 兼容：`path`（仓库内相对、正斜杠）、`bytes`（整数）、`mtime_ms`（整数毫秒）、
+  `sha256`（小写十六进制）；输出 `{collected_at, entries, cache_dir, tool, note}`，UTF-8 无 BOM、LF。
+- 退出码：0 采集完成（目录不存在也算完成，`entries` 为空且 `note` 说明原因）、4 参数错误、5 IO 错误、
+  12 解算后越出仓库根（越界时不写 `--out`）。
+- 进程级测试 `tests/test_collect_cache_state.py`（**9 个用例**）：四字段与磁盘一致、`path` 无反斜杠、`mtime_ms` 为整数毫秒且
+  两次采集一致、空目录/目录不存在均退出 0、只列 `.pyc` 且忽略子目录、`--out` UTF-8 无 BOM + LF 且自动建父目录、
+  参数错误三态退出 4、`--cache-dir ../../../escape-__pycache__` 退出 12 且不写文件。
+
+> 测试里给子进程加了 `PYTHONIOENCODING=utf-8`：工具输出的是 UTF-8 JSON（`note` 含中文），而子进程 stdout 走管道时
+> 默认用 locale 编码（Windows 上是 cp936），不强制就会在父进程按 UTF-8 解码时变成替换字符、断言随之失真。
+
+### 1h. 离线用量报告（只读会话日志，不调用模型）
+
+```powershell
+node tests/extract-usage-report.mjs `
+  --run-id v0.2-run2-20261017T133204Z `
+  --run-record docs/run-records/v0.2-run2-20261017T133204Z `
+  --out-dir docs/run-records/v0.2-run2-20261017T133204Z/usage `
+  --declared-budget docs/run-records/v0.2-run2-20261017T133204Z/usage/declared-budget.json
+```
+
+- 从 DSH 会话日志（多帧 zstd 或纯 JSONL）读 `assistant/message` 的 `usage`，按本次 workflow 的 `childSessionId` 集合归因；
+  **默认排除父会话**，再派生的会话单独列出，不在作用域的会话只计数不静默当 0。输出两份：
+  `usage-report.json`（确定性：同样的日志必然逐字节相同）与 `extraction-metadata.json`（易变：提取时间、日志指纹）。
+- 字段口径：`inputTokens` / `outputTokens` / `cacheReadTokens` / `cacheWriteTokens` / `totalTokens` **分开报原始值**；
+  不默认四者互相独立、不相加冒充准确 total（实测 `totalTokens == input + cacheRead + cacheWrite + output` 的关系记在报告里，
+  并在 184 条消息上核对 `mismatched = 0`）；`cacheWriteTokens` 为 0 只说明"本次没观察到写缓存"，**不能**推断 provider 不支持上报。
+- 预算判定：未声明 ⇒ `NO_BUDGET_DECLARED`；日志缺失/坏帧/坏行/缺 usage ⇒ `INCOMPLETE`（绝不会输出"完整预算内"）；
+  只有运行前声明过的上限才做超限判定，`observedCallSessions > maxAgentCalls` ⇒ `OVER_BUDGET`。
+  `maxTotalTokens: null` 表示批准消息没有 token 上限，因此**不做** token 超限判定；也不输出货币成本（未提供价格）。
+- 合成日志测试 `tests/usage-report.test.mjs`（**12 场景 / 67 项断言**）：正常、缺 usage、明确 0 与缺字段、重复事件、
+  累计口径、不同 provider 语义、缺子会话、再派生、坏日志、未声明预算与超额、两次运行确定性、参数错误退出 4。
+- **路径脱敏**（报告要进公开仓库）：会话日志里带本机用户名，且 DSH 的会话组目录名是按 cwd 编码的
+  （`--C-Users-<用户名>-...`）。因此日志路径一律写成 `<DSH_HOME>/sessions/<group>/session-<id>/session.v4.jsonl.zstd`，
+  只保留会话 id；易变元数据里也不再写本机 `cwd` 绝对路径（改为工作区名字）。`usage-report.json` 与时间无关，两次运行
+  逐字节相同（实测 sha256 一致），`extraction-metadata.json` 才带提取时间。
 
 ### 3. 编排层独立复核
 
@@ -227,6 +284,7 @@ node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v0
 | `coding-report.json` | Coding Agent | 文件清单、实现说明、真实测试命令与退出码、与需求的偏差 |
 | `verify.json` | Verifier Agent（verify） | 独立复跑的原始输出、退出码、用例数、产物 sha256 |
 | `review.json` | Review Agent | 逐条验收条件判定、问题清单、最终结论 |
+| `cache-postrun.json` | `tests/collect-cache-state.py`（可选、运行结束后） | 确定性补采的缓存最终清单（不参与门禁） |
 | `dsh-native-events.json` | 编排层（只读会话日志提取） | 脱敏的 DSH 原生执行事件（会话标识、时间、turn/step、工具调用），用于证明"确实是独立子代理" |
 | `test-output.txt` | 编排层（人工可复现） | 提交前复跑测试的原始输出 |
 | `README.md` | 编排层 | 本次运行记录：时间、命令、环境、核验结论、诚实记录 |

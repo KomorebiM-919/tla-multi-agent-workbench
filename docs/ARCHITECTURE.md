@@ -225,9 +225,14 @@ Coding 自述的**内部一致性**（命令 / 退出码 / `test_succeeded` / �
 解析路径与配置目标一一对应、预检自报的认领前状态必须与认领工具实测的 `evidence_dir_state_before` 一致且只接受"尚不存在/空目录"、`problems` 必须为空）、证据目录由 `tools/claim_evidence_dir.py` 以 `O_EXCL` **排他认领**（已有认领不得覆写）、
 时间戳必须是合法日历时间且落在"编排层实际时间"附近的运行窗口内——**启动时钟与阶段检查时钟分开**：`runStartedAt` 只与脚本启动时刻比较，
 每个 Agent 返回后都重新读取当前时间，用它判断该阶段的时间戳是否"来自未来"；**运行期写入边界按全运行账本判定**：编排层在启动任何子代理之前先采集
-`cacheBaseline`（必填参数），Coding / Verifier / Review 各自交回执行前后清单，Review 之后再由一个只做只读采集的 `Cache Collector` 阶段交回最终清单，
+`cacheBaseline`（必填参数），Coding / Verifier / Review 各自交回执行前后清单，**Review 自报的清单就是本轮最后一个观测点**，
 相邻两点之间出现新增 / 重写 / 删除都拒绝（`BYTECODE_CACHE_CHANGED_ACROSS_RUN`），"两个验证阶段各自前后不变"只是必要条件；
 "重写"按内容身份（`bytes` + `sha256`）判定，`mtime_ms` 允许 5 毫秒的表示精度差（同一文件被不同 Agent 报成整数毫秒与浮点毫秒）。
+**证明边界**：容差只吸收表示差，不构成"内容相同即没写过"——把内容改回原样且 mtime 变化不超过 5 毫秒的写入不可观测，
+Review 返回之后的写入也不在门禁内，由运行结束后的确定性工具 `tests/collect-cache-state.py` 事后补采（0 次模型调用、不参与判定），
+返回值 `finalDecision.cacheCoverage` 原样写出这段未观测窗口。**子代理调用预算**：`task.maxAgentCalls`（默认 8、范围 1–32）在每次调用**启动前**检查，
+到上限即返回 `AGENT_CALL_BUDGET_EXCEEDED`、账本里留下 `started: false` 的那一项；原先每轮额外启动的只读 `Cache Collector` 阶段
+已删除（它是调用超限的直接原因），改用上述确定性工具。注意能力边界：**调用次数可以硬限制，单个子代理内部的 token 消耗无法由编排层硬限制**。
 任一条不满足即返回明确状态码、不以 `ok: true` 收场
 （完整状态码表见 `workflows/README.md`，回归测试与认领集成测试见 `tests/`）。
 

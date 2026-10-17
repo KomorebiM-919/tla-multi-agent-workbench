@@ -224,12 +224,6 @@ export function reviewOk(over) {
   return Object.assign(base, over || {});
 }
 
-/** 最终缓存采集夹具：默认"缓存目录不存在"（空清单），与空基线一致。 */
-export function cacheFinalOk(over) {
-  const base = { entries: [], collected_at: NOW, note: '目录不存在' };
-  return Object.assign(base, over || {});
-}
-
 export function baseArgs(over) {
   const o = over || {};
   const task = Object.assign({
@@ -255,7 +249,6 @@ function pickKey(label) {
   if (label.indexOf('Coding Agent') === 0) { return 'coding'; }
   if (label.indexOf('Verifier (verify)') === 0) { return 'verify'; }
   if (label.indexOf('Review Agent') === 0) { return 'review'; }
-  if (label.indexOf('Cache Collector') === 0) { return 'cacheFinal'; }
   return 'unknown';
 }
 
@@ -295,8 +288,7 @@ export function happyPlan(over) {
     requirement: function () { return requirementOk(3); },
     coding: function () { return codingOk(); },
     verify: function () { return verifyOk(); },
-    review: function () { return reviewOk(); },
-    cacheFinal: function () { return cacheFinalOk(); }
+    review: function () { return reviewOk(); }
   }, over || {});
 }
 

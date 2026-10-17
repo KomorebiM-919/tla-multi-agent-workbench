@@ -80,6 +80,15 @@ const CACHE_DIR_NAME = '__pycache__';
 // 不吸收真实重写：真实的缓存重写要么改变 bytes/sha256，要么与上一次观测相隔远超该容差。
 const MTIME_TOLERANCE_MS = 5;
 const MAX_ATTEMPTS_LIMIT = 5;
+// 子代理调用预算：一次运行最多**启动**多少个付费子代理会话。
+// v0.2-run2 的批准上限是 8 次，实际启动了 10 次（每轮多一个 Cache Collector），
+// 超出的 2 次同样是付费调用。这里的预算检查发生在**启动之前**：达到上限时不再启动第 N+1 次，
+// 而不是运行结束才发现超支（事后计数无法阻止已经花掉的钱）。
+const AGENT_CALL_BUDGET_DEFAULT = 8;
+// 预算上限本身也有上限：允许配置预算不等于允许无限预算（避免把上限改成一个巨大数字绕过约束）。
+const AGENT_CALL_BUDGET_LIMIT = 32;
+// 两个限制的边界必须说清楚：编排层能硬限制"调用了几次"，限制不了"单次调用内部花了多少 token"。
+const AGENT_CALL_BUDGET_LIMITS_NOTE = '调用次数可硬限制（启动前检查）；单个子代理内部的 token 消耗无法由编排层硬限制';
 const EVIDENCE_ROOT = 'docs/evidence/';
 // 证据目录认领必须由这个排他创建（O_EXCL）工具完成：预检子代理不得自己拼写认领文件（复审要求二）。
 const EVIDENCE_CLAIM_TOOL = 'tools/claim_evidence_dir.py';
@@ -490,13 +499,18 @@ function judgeBytecodeRun(parts, cachePrefix) {
     }
   }
 
-  const finalEntries = normalizeCacheEntries(parts.final, cachePrefix, '最终采集（Review 结束后）');
-  if (!finalEntries.ok) {
-    failures.push({ status: 'BYTECODE_SCOPE_UNMEASURED', reasons: [finalEntries.reason],
-      created: [], rewritten: [], removed: [] });
-  } else {
-    points.push({ label: '最终采集（Review 结束后）', entries: finalEntries.entries });
-  }
+  // 不再为"读文件指纹"单独启动子代理（工作流脚本无文件系统 API；v0.2-run2 为此每轮多付一次调用，
+  // 是 10 次调用超过批准 8 次的直接原因）。最后一个观测点是 Review Agent 自报的执行后清单；
+  // Review 返回之后的写入不在门禁覆盖范围内，由运行结束后的确定性工具补充（事后证据，不参与门禁）。
+  const coverage = {
+    finalPoint: 'Review Agent 自报的执行后清单',
+    collectsAfterLastAgent: false,
+    unobservedWindow: 'Review Agent 返回之后发生的缓存写入',
+    note: '本运行没有为读取文件指纹启动额外子代理：最后一个观测点是 Review Agent 自报的执行后清单；' +
+      'Review 返回之后的写入不在门禁覆盖范围内，由运行结束后的确定性工具补充（不参与门禁）。' +
+      '另外：判定按内容身份（bytes + sha256）比较，mtime 只允许 5 毫秒的表示精度差——' +
+      '若一次写入在观测点之间完成、把内容改回原样且 mtime 变化不超过容差，属于不可观测范围，本判定不能证明它没发生。'
+  };
 
   const changes = [];
   for (let i = 0; i + 1 < points.length; i += 1) {
@@ -531,7 +545,7 @@ function judgeBytecodeRun(parts, cachePrefix) {
     (f.removed || []).forEach(function (p) { if (removed.indexOf(p) === -1) { removed.push(p); } });
   });
   if (failures.length === 0) {
-    return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [], removed: [],
+    return { ok: true, status: 'OK', reasons: [], created: [], rewritten: [], removed: [], coverage: coverage,
       points: points.map(function (p) { return { label: p.label, count: p.entries.length }; }), changes: [] };
   }
   let status = priority[priority.length - 1];
@@ -539,6 +553,7 @@ function judgeBytecodeRun(parts, cachePrefix) {
     if (failures.some(function (f) { return f.status === priority[i]; })) { status = priority[i]; break; }
   }
   return { ok: false, status: status, reasons: reasons, created: created, rewritten: rewritten, removed: removed,
+    coverage: coverage,
     points: points.map(function (p) { return { label: p.label, count: p.entries.length }; }), changes: changes };
 }
 
@@ -697,6 +712,20 @@ function validateRunConfig(rawArgs, startupNowMs) {
     }
   }
 
+  // 子代理调用预算：默认就是批准过的上限（8 次），不因为"这次可能不够用"就自动放宽。
+  let maxAgentCalls = AGENT_CALL_BUDGET_DEFAULT;
+  if (task.maxAgentCalls !== undefined) {
+    if (!isInteger(task.maxAgentCalls) || task.maxAgentCalls < 1 || task.maxAgentCalls > AGENT_CALL_BUDGET_LIMIT) {
+      errors.push('maxAgentCalls 非法（必须是 1..' + AGENT_CALL_BUDGET_LIMIT + ' 的整数）：' +
+        JSON.stringify(task.maxAgentCalls));
+    } else {
+      maxAgentCalls = task.maxAgentCalls;
+    }
+  }
+  // 预算是否覆盖最坏情况（2 + 3 × 轮次）只作为返回字段说明，不在校验阶段拦截：
+  // 拦在启动前会让"预算不足"变成参数错误、掩盖真实的限额语义；
+  // 这里让它在**启动前检查**处按预算中止，并留下"第 N 次未启动"的记录（可测试、可审计）。
+
   let runStartedAt = null;
   if (cfg.runStartedAt !== undefined) {
     const parsedStarted = parseIsoTimestamp(cfg.runStartedAt);
@@ -769,6 +798,7 @@ function validateRunConfig(rawArgs, startupNowMs) {
     sampleFile: sampleFile,
     testCommand: canonicalCommand,
     maxCodingAttempts: maxCodingAttempts,
+    maxAgentCalls: maxAgentCalls,
     cacheBaseline: cacheBaseline,
     runStartedAt: runStartedAt
   };
@@ -1399,18 +1429,6 @@ const REVIEW_SCHEMA = {
   }
 };
 
-// 最终采集（Review 结束后、其他复核启动前）：只读取缓存清单，用来证明整轮运行没有写缓存。
-const FINAL_CACHE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['entries', 'collected_at'],
-  properties: {
-    entries: { type: 'array', items: BYTECODE_ENTRY_SCHEMA },
-    collected_at: { type: 'string' },
-    note: { type: 'string' }
-  }
-};
-
 // ================================================================ 提示词构建
 
 /**
@@ -1688,38 +1706,6 @@ function reviewPrompt(attempt, codingReport, verification, artifactPath) {
   ].join('\n');
 }
 
-/**
- * 最终缓存采集：Review 结束后、任何复核启动之前，独立再读一次缓存清单。
- *
- * 为什么需要它：Verifier 与 Review 各自的"前后不变"只能证明这两个阶段内部没写；
- * 编码阶段与阶段之间的间隙不在它们的观测范围内。全运行判定把所有观测点串起来比较，
- * 但最后一个观测点不能由本次运行内的角色提供（那是被检查对象），必须由独立采集补齐。
- */
-function cacheFinalPrompt(artifactPath) {
-  const cacheDir = C.targetDir + '/' + CACHE_DIR_NAME;
-  return [
-    '你是 TLA 流水线中的 **独立采集角色**，本次只做一件事：读取指定缓存目录的清单并原样回报。',
-    '',
-    '【任务】',
-    '- 目标目录（仓库内相对路径）: ' + cacheDir,
-    '- 只读：**不得创建、修改、删除任何文件**，不得运行测试，不得运行会生成字节码的命令；',
-    '- 该目录可能不存在：不存在时 `entries` 写空数组 `[]`，不要为了"有内容"去创建它；',
-    '',
-    '【采集方法】',
-    '- 用一次只读命令列出该目录（不存在则跳过），对每个文件记录：',
-    '  `path`（仓库内相对路径，正斜杠，例如 ' + cacheDir + '/text_stats.cpython-313.pyc）、',
-    '  `bytes`（字节数）、`mtime_ms`（最后写入时间的 Unix 毫秒整数）、`sha256`（文件原始字节的 sha256）；',
-    '- 采集**两次**（先一次，再立刻一次），两次结果必须一致；若两次不同，如实说明（`note` 写清差异）。',
-    '',
-    '【返回】',
-    '- `entries`：本次采集的清单（上面四个字段，逐项）；',
-    '- `collected_at`：采集完成时间（带时区的 ISO-8601）；',
-    '- `note`：可选说明（例如"目录不存在"、"两次采集一致"）。',
-    '',
-    envelopeNote(artifactPath)
-  ].join('\n');
-}
-
 // ================================================================ 运行期装配
 
 // 编排层自己的时钟：所有"时间窗 / 未来时间 / 伪造起点"判定都以它为锚点，绝不由子代理提供。
@@ -1808,17 +1794,76 @@ function reportProblems(context, reasons) {
   if (hasItems(reasons)) { log(context + '：' + reasons.join('；')); }
 }
 
+// ---------------------------------------------------------------- 子代理调用预算
+
+/**
+ * 子代理调用账本：**启动前**记账并检查预算。
+ *
+ * 为什么要在调用前检查：事后统计只能证明"超了多少"，无法阻止第 9 次调用发生。
+ * v0.2-run2 批准 8 次、实际启动 10 次（每轮多一个 Cache Collector），多出来的两次是真实付费调用。
+ * 因此预算耗尽时返回一个标记对象、**不调用 agent()**，由调用点转成 AGENT_CALL_BUDGET_EXCEEDED 中止。
+ *
+ * 注意边界：这里能强制限制的是"启动多少次子代理会话"，**不能**限制单个子代理内部的 token 消耗
+ * （一次调用可能读很多文件、跑很长的循环）。两者不能混为一谈。
+ */
+const agentCalls = [];
+
+function budgetExhaustedMarker(index, label) {
+  return { agentCallBudgetExhausted: true, attemptedIndex: index, label: label, budget: C.maxAgentCalls };
+}
+
+function isBudgetExhausted(value) {
+  return isObject(value) && value.agentCallBudgetExhausted === true;
+}
+
+async function runBudgetedAgent(prompt, options) {
+  const index = agentCalls.length + 1;
+  const entry = { index: index, label: options.label, phase: options.phase };
+  if (index > C.maxAgentCalls) {
+    entry.started = false;
+    agentCalls.push(entry);
+    log('子代理调用预算已用尽（上限 ' + C.maxAgentCalls + ' 次）：拒绝启动第 ' + index + ' 次调用「' + options.label + '」');
+    return budgetExhaustedMarker(index, options.label);
+  }
+  entry.started = true;
+  agentCalls.push(entry);
+  log('子代理调用 ' + index + '/' + C.maxAgentCalls + '：' + options.label);
+  return await agent(prompt, options);
+}
+
+function budgetFailure(marker) {
+  const started = agentCalls.filter(function (c) { return c.started === true; }).length;
+  return failure('AGENT_CALL_BUDGET_EXCEEDED',
+    '子代理调用预算用完（上限 ' + C.maxAgentCalls + ' 次）：第 ' + marker.attemptedIndex + ' 次调用「' + marker.label +
+    '」没有启动，工作流按预算中止；已启动 ' + started + ' 次调用的证据保留',
+    {
+      runId: C.runId,
+      evidenceDir: C.evidenceDir,
+      // 账本形状与成功返回的 agentCallBudget 一致（含 calls），失败时也能直接核对"第几次没启动"
+      agentCallBudget: {
+        limit: C.maxAgentCalls,
+        attempted: marker.attemptedIndex,
+        started: started,
+        limits: AGENT_CALL_BUDGET_LIMITS_NOTE,
+        calls: agentCalls.map(function (c) {
+          return { index: c.index, label: c.label, phase: c.phase, started: c.started };
+        })
+      }
+    });
+}
+
 // ================================================================ 编排
 
 phaseStatic('preflight');
 log('run_id=' + C.runId + ' | evidence_dir=' + C.evidenceDir + ' | target_dir=' + C.targetDir);
 log('step 1/5: Verifier (preflight) -> ' + artifact(1, 'preflight'));
 
-const preflight = await agent(preflightPrompt(artifact(1, 'preflight'), ownerMarkerPath), {
+const preflight = await runBudgetedAgent(preflightPrompt(artifact(1, 'preflight'), ownerMarkerPath), {
   label: 'Verifier (preflight)',
   phase: 'preflight',
   schema: PREFLIGHT_SCHEMA
 });
+if (isBudgetExhausted(preflight)) { return budgetFailure(preflight); }
 
 if (!isObject(preflight)) {
   return failure('PREFLIGHT_FAILED', '环境预检子代理失败（返回空结果），工作流终止', { runId: C.runId, evidenceDir: C.evidenceDir });
@@ -1960,11 +2005,12 @@ log('环境预检通过：repo_root=' + repoRoot + ' | 证据目录状态=' + pr
 phaseStatic('requirement');
 log('step 2/5: Requirement Agent -> ' + artifact(1, 'requirement'));
 
-const requirement = await agent(requirementPrompt(artifact(1, 'requirement')), {
+const requirement = await runBudgetedAgent(requirementPrompt(artifact(1, 'requirement')), {
   label: 'Requirement Agent',
   phase: 'requirement',
   schema: REQUIREMENT_SCHEMA
 });
+if (isBudgetExhausted(requirement)) { return budgetFailure(requirement); }
 
 if (!isObject(requirement) || !hasText(requirement.goal) ||
     !hasItems(requirement.acceptance_criteria) || !hasItems(requirement.boundary_conditions)) {
@@ -2011,11 +2057,12 @@ while (attempt <= C.maxCodingAttempts) {
   phaseStatic('coding' + (attempt > 1 ? '-revision-' + attempt : ''));
   log('step 3/5: Coding Agent' + revTag + ' -> ' + artifact(attempt, 'coding-report'));
 
-  const codingReport = await agent(codingPrompt(attempt, previousReview), {
+  const codingReport = await runBudgetedAgent(codingPrompt(attempt, previousReview), {
     label: 'Coding Agent' + revTag,
     phase: 'coding' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: CODING_SCHEMA
   });
+  if (isBudgetExhausted(codingReport)) { return budgetFailure(codingReport); }
   const codingOutputValid = isObject(codingReport) && hasItems(codingReport.files_created);
   const codingNowMs = currentTimeMs();
   // Coding 自述的内部一致性（命令 / 退出码 / test_succeeded）：报告"看起来可用"也不能自相矛盾（复审要求四）。
@@ -2038,11 +2085,12 @@ while (attempt <= C.maxCodingAttempts) {
   phaseStatic('verify' + (attempt > 1 ? '-revision-' + attempt : ''));
   log('step 4/5: Verifier (verify)' + revTag + ' -> ' + artifact(attempt, 'verify'));
 
-  const verification = await agent(verifyPrompt(artifact(attempt, 'verify')), {
+  const verification = await runBudgetedAgent(verifyPrompt(artifact(attempt, 'verify')), {
     label: 'Verifier (verify)' + revTag,
     phase: 'verify' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: VERIFY_SCHEMA
   });
+  if (isBudgetExhausted(verification)) { return budgetFailure(verification); }
   const verificationJudge = judgeTestEvidence(verification, C.testCommand);
   const verifyNowMs = currentTimeMs();
   if (isObject(verification)) {
@@ -2055,11 +2103,12 @@ while (attempt <= C.maxCodingAttempts) {
   phaseStatic('review' + (attempt > 1 ? '-revision-' + attempt : ''));
   log('step 5/5: Review Agent' + revTag + ' -> ' + artifact(attempt, 'review'));
 
-  const review = await agent(reviewPrompt(attempt, codingReport, verification, artifact(attempt, 'review')), {
+  const review = await runBudgetedAgent(reviewPrompt(attempt, codingReport, verification, artifact(attempt, 'review')), {
     label: 'Review Agent' + revTag,
     phase: 'review' + (attempt > 1 ? '-revision-' + attempt : ''),
     schema: REVIEW_SCHEMA
   });
+  if (isBudgetExhausted(review)) { return budgetFailure(review); }
   const reviewNowMs = currentTimeMs();
   if (isObject(review)) {
     const reviewTime = judgeTimestamp(review.generated_at, C.runStartedAt, TIMESTAMP_WINDOW_HOURS, reviewNowMs);
@@ -2069,22 +2118,17 @@ while (attempt <= C.maxCodingAttempts) {
     }
   }
 
-  // Review 结束后、任何复核启动之前：独立再采集一次缓存清单（不运行测试、只读）。
-  phaseStatic('cache' + (attempt > 1 ? '-revision-' + attempt : ''));
-  log('step 6: 独立采集缓存清单（Review 结束后）-> ' + artifact(attempt, 'cache-final'));
-  const cacheFinal = await agent(cacheFinalPrompt(artifact(attempt, 'cache-final')), {
-    label: 'Cache Collector' + revTag,
-    phase: 'cache' + (attempt > 1 ? '-revision-' + attempt : ''),
-    schema: FINAL_CACHE_SCHEMA
-  });
-
+  // 缓存账本只使用各阶段子代理自报的 before/after 清单：
+  // 不再为"读文件指纹"启动额外子代理——工作流脚本没有文件系统 API（宿主限制），
+  // 而为一个只读快照付一次完整模型调用（v0.2-run2 每轮一次，共 2 次）性价比不合理，
+  // 也是那次运行 10 次调用超过批准 8 次的直接原因。Review 返回之后的写入属于覆盖盲区，
+  // 由运行结束后确定性工具 tests/collect-cache-state.py 生成的 cache-postrun.json 补充（不参与门禁）。
   const cachePrefix = C.targetDir === null ? CACHE_DIR_NAME : C.targetDir + '/' + CACHE_DIR_NAME;
   const bytecodeVerdict = judgeBytecodeRun({
     baseline: C.cacheBaseline,
     coding: codingReport,
     verification: verification,
-    review: review,
-    final: isObject(cacheFinal) ? cacheFinal.entries : null
+    review: review
   }, cachePrefix);
   if (!bytecodeVerdict.ok) {
     log('第 ' + attempt + ' 轮运行期写入边界：' + bytecodeVerdict.status + '（' + bytecodeVerdict.reasons.join('；') + '）');
@@ -2099,7 +2143,6 @@ while (attempt <= C.maxCodingAttempts) {
     codingReport: codingReport,
     verification: verification,
     review: review,
-    cacheFinal: cacheFinal,
     decision: decision
   });
   lastDecision = decision;
@@ -2157,8 +2200,7 @@ return {
   evidenceDir: C.evidenceDir,
   ownerMarkerPath: ownerMarkerPath,
   runStartedAt: C.runStartedAt,
-  pipeline: ['Verifier(preflight)', 'Requirement Agent', 'Coding Agent', 'Verifier(verify)', 'Review Agent',
-    'Cache Collector (after review)'],
+  pipeline: ['Verifier(preflight)', 'Requirement Agent', 'Coding Agent', 'Verifier(verify)', 'Review Agent'],
   targetDir: C.targetDir,
   testCommand: C.testCommand,
   cacheBaseline: C.cacheBaseline,
@@ -2167,13 +2209,30 @@ return {
   testEnvironment: testEnvironment(),
   testExecutionCommand: executionTestCommand(C.testCommand),
   maxCodingAttempts: C.maxCodingAttempts,
+  // 调用预算与实际启动记录：预算在每次启动前检查，台账是"实际启动了几次"的权威记录。
+  // 这里能强制限制的是"启动多少次子代理"，不能限制单个子代理内部的 token 消耗。
+  agentCallBudget: {
+    limit: C.maxAgentCalls,
+    started: agentCalls.filter(function (c) { return c.started === true; }).length,
+    attempted: agentCalls.length,
+    calls: agentCalls.map(function (c) {
+      return { index: c.index, label: c.label, phase: c.phase, started: c.started };
+    }),
+    limits: AGENT_CALL_BUDGET_LIMITS_NOTE
+  },
+  // 运行结束后必须由确定性本地工具补充的缓存快照（不是子代理，不产生调用）。
+  postRunCacheSnapshot: {
+    required: true,
+    tool: 'python tests/collect-cache-state.py',
+    path: C.evidenceDir + '/cache-postrun.json',
+    note: '工作流脚本没有文件系统 API，无法自己读取文件指纹；Review 返回之后的写入只能事后补充采集。'
+  },
   criteriaIds: expectedCriteriaIds,
   evidenceFiles: attemptsDetail.reduce(function (list, d) {
     return list.concat([
       artifact(d.attempt, 'coding-report'),
       artifact(d.attempt, 'verify'),
-      artifact(d.attempt, 'review'),
-      artifact(d.attempt, 'cache-final')
+      artifact(d.attempt, 'review')
     ]);
   }, [ownerMarkerPath, artifact(1, 'preflight'), artifact(1, 'requirement')]),
   attempts: attemptsDetail.length,
@@ -2187,7 +2246,6 @@ return {
       codingReport: d.codingReport,
       verification: d.verification,
       review: d.review,
-      cacheFinal: d.cacheFinal,
       decision: { ok: d.decision.ok, status: d.decision.status, reasons: d.decision.reasons },
       selfReportVsVerified: d.decision.selfReportVsVerified,
       bytecodeScope: d.decision.bytecode
@@ -2218,6 +2276,8 @@ return {
       ? (finalAttempt.decision.bytecode.points || []) : [],
     cacheChanges: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
       ? (finalAttempt.decision.bytecode.changes || []) : [],
+    cacheCoverage: isObject(finalAttempt) && isObject(finalAttempt.decision.bytecode)
+      ? (finalAttempt.decision.bytecode.coverage || null) : null,
     stageReportedRequirementConflicts: finalStageConflicts,
     criteriaIds: expectedCriteriaIds
   }

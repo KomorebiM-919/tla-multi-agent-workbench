@@ -1,0 +1,263 @@
+{
+  "tool": "tests/extract-usage-report.mjs",
+  "toolVersion": "1.0.0",
+  "extractedAt": "2026-10-17T14:55:22.163Z",
+  "elapsedMs": 4984,
+  "node": "v24.21.0",
+  "platform": "win32",
+  "workspaceName": "tla-multi-agent-workbench",
+  "outDir": "docs/run-records/v0.2-run2-20261017T133204Z/usage",
+  "inputs": {
+    "sessionRoot": "<DSH_HOME>/sessions",
+    "runRecord": "docs/run-records/v0.2-run2-20261017T133204Z",
+    "declaredBudget": "docs/run-records/v0.2-run2-20261017T133204Z/usage/declared-budget.json",
+    "sessionMap": null,
+    "logFiles": [
+      {
+        "path": "<DSH_HOME>/sessions/<group>/session-58223921-0d98-4d52-b1b1-b2b271355678/session.v4.jsonl.zstd",
+        "bytes": 57315
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/session-bb037b13-633d-451d-92fe-6ec8f8740af5/session.v4.jsonl.zstd",
+        "bytes": 125360
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/session-c667a2ac-1023-4cd6-bec6-e7a4104cdb35/session.v4.jsonl.zstd",
+        "bytes": 327
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/session-1840451d-ffa9-4ebb-828c-5ddb70f0d77c/session.v4.jsonl.zstd",
+        "bytes": 411
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/386eb21b-9619-43d2-86cb-17746e34cea0/session.v4.jsonl.zstd",
+        "bytes": 241891
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/c8b28520-b81d-450a-9101-6e1c551c3792/session.v4.jsonl.zstd",
+        "bytes": 296084
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/cf0f0312-e731-4042-97bd-b96e1020591e/session.v4.jsonl.zstd",
+        "bytes": 140009
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/session-ad69d735-7922-4ca9-8f9c-26f421faead4/session.v4.jsonl.zstd",
+        "bytes": 7665119
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/1095e693-db97-4f16-9191-d4b0605824fe/session.v4.jsonl.zstd",
+        "bytes": 259861
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/1181bd8b-0981-4486-b31c-6a937d624dd1/session.v4.jsonl.zstd",
+        "bytes": 128774
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/1b378414-0f17-4e3f-b0d7-f7a554b199ee/session.v4.jsonl.zstd",
+        "bytes": 128249
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/1c842886-c70f-49c6-843d-ddb9c60fd88a/session.v4.jsonl.zstd",
+        "bytes": 173660
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/1d6f0252-96f2-44bf-8fb6-cc25753657d1/session.v4.jsonl.zstd",
+        "bytes": 166673
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/21a4efb0-7b86-4cf1-b79f-80512d2232e8/session.v4.jsonl.zstd",
+        "bytes": 344530
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/267299a1-0493-4b1c-8a7e-d97dc2c57d15/session.v4.jsonl.zstd",
+        "bytes": 203365
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/269798ea-aa84-4176-9c81-0d35368f9d69/session.v4.jsonl.zstd",
+        "bytes": 145890
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/31028159-db1b-4cff-bf04-2afb18f7044c/session.v4.jsonl.zstd",
+        "bytes": 299441
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/3139fda0-8eed-40d9-9d4c-326c51199f57/session.v4.jsonl.zstd",
+        "bytes": 138863
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/31bd56fa-147d-4804-8793-62278725c48b/session.v4.jsonl.zstd",
+        "bytes": 169199
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/32e4dcdc-c8a6-4fef-b627-26c70f39abd5/session.v4.jsonl.zstd",
+        "bytes": 233125
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/371f086c-287a-430b-b14a-0cc0f3ecaa60/session.v4.jsonl.zstd",
+        "bytes": 178197
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/3a235608-965a-464b-aa4a-b8d10d5a9e1e/session.v4.jsonl.zstd",
+        "bytes": 62482
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/3da3bf8f-b604-4b00-b396-4aa389ce5ce4/session.v4.jsonl.zstd",
+        "bytes": 143356
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/3eb48128-7596-4541-b138-d733e9b3d728/session.v4.jsonl.zstd",
+        "bytes": 486956
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/40da4df5-6e08-42fd-a5b3-ea34484cbd40/session.v4.jsonl.zstd",
+        "bytes": 288389
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/471aa1d9-b6ba-46bf-bfc1-4cc71341741c/session.v4.jsonl.zstd",
+        "bytes": 273113
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/5306bfac-c42a-4328-94b1-8ac46bfa6b87/session.v4.jsonl.zstd",
+        "bytes": 345586
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/5df3e1a1-624d-47af-b178-7f61a8a4c049/session.v4.jsonl.zstd",
+        "bytes": 198056
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/6050b308-0a17-46e1-9448-739a8d6eebd6/session.v4.jsonl.zstd",
+        "bytes": 83020
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/635947f4-2578-40ae-b29b-bd7849d4b90c/session.v4.jsonl.zstd",
+        "bytes": 201090
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/6b0b99ff-0fc2-44ed-a591-ac8fb7887955/session.v4.jsonl.zstd",
+        "bytes": 92939
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/6b777b34-8890-4c15-bda0-deea062fb7d1/session.v4.jsonl.zstd",
+        "bytes": 430505
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/6e796ec7-9e3a-4f73-8b5d-fcf8aa8773c1/session.v4.jsonl.zstd",
+        "bytes": 70017
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/76724e4f-4955-4d31-b8e4-959832246936/session.v4.jsonl.zstd",
+        "bytes": 257805
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/937e337e-ba6b-4705-880c-7aabef085100/session.v4.jsonl.zstd",
+        "bytes": 186360
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/95080ad7-47d1-4914-ba2e-1f5b6f033a52/session.v4.jsonl.zstd",
+        "bytes": 68217
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/966b6c23-b2b7-4f98-9836-fc3d7b520de5/session.v4.jsonl.zstd",
+        "bytes": 451304
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/96ac7036-3331-45d5-8934-d7f3cde51af4/session.v4.jsonl.zstd",
+        "bytes": 91317
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/a0e87d06-73c9-4a28-9372-796bf64a9d5c/session.v4.jsonl.zstd",
+        "bytes": 265276
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/a288b8cf-8bee-47b7-a453-acbe07c2ef82/session.v4.jsonl.zstd",
+        "bytes": 268456
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/aa4447bd-782d-4c58-8d97-b3dc96a7ce6c/session.v4.jsonl.zstd",
+        "bytes": 203083
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/acd7cdfc-a9b4-4a52-a388-822bfce9682f/session.v4.jsonl.zstd",
+        "bytes": 359791
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/b2d554b6-3114-4e9e-835b-fa84e8cadd9d/session.v4.jsonl.zstd",
+        "bytes": 115806
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/b3f5752a-d9ad-4b98-b1bd-bca3d0007b59/session.v4.jsonl.zstd",
+        "bytes": 67862
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/c0b942a9-33cf-4f27-bb87-e0a1787a90d1/session.v4.jsonl.zstd",
+        "bytes": 166523
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/c834d134-c55f-4bf0-9622-9c314a396088/session.v4.jsonl.zstd",
+        "bytes": 179471
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/cc7b6d6f-892a-40a2-aa01-4d9f3297607e/session.v4.jsonl.zstd",
+        "bytes": 132747
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/cc85c0f3-850c-4649-820c-c114faf6338a/session.v4.jsonl.zstd",
+        "bytes": 120826
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/ce5ffdbe-8f5b-4e2a-9971-132c8a2618e0/session.v4.jsonl.zstd",
+        "bytes": 90948
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/d610249a-b590-4e77-8d61-4827827821a6/session.v4.jsonl.zstd",
+        "bytes": 72376
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/db088775-9176-40df-9876-9f0032c343e6/session.v4.jsonl.zstd",
+        "bytes": 104599
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/db55d83d-1de3-4879-9a65-6f80fa743d47/session.v4.jsonl.zstd",
+        "bytes": 74849
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/dc79b5f9-8ae1-4a69-bb74-3aa0f6e4ff53/session.v4.jsonl.zstd",
+        "bytes": 116425
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/e772759c-b8db-438a-b870-09ca3d064c3d/session.v4.jsonl.zstd",
+        "bytes": 71250
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/e97396ba-711a-4947-b3a3-b7527a79a06b/session.v4.jsonl.zstd",
+        "bytes": 225116
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/eb2e9ca7-3db8-4043-9074-84ffb91b074f/session.v4.jsonl.zstd",
+        "bytes": 252903
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/f51fbd4f-1d25-4d1e-9850-a582c301c089/session.v4.jsonl.zstd",
+        "bytes": 73228
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/f5adad0a-83c5-437b-b030-27cdad08c66d/session.v4.jsonl.zstd",
+        "bytes": 254289
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/f8cb0341-b4b6-4d31-9670-cc7b34a27205/session.v4.jsonl.zstd",
+        "bytes": 480556
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/fd72de74-f079-4345-87b2-09dd37be4da9/session.v4.jsonl.zstd",
+        "bytes": 120398
+      },
+      {
+        "path": "<DSH_HOME>/sessions/<group>/session-3f96bf08-83ae-48d6-a239-0223d4b1c12c/session.v4.jsonl.zstd",
+        "bytes": 21211896
+      }
+    ]
+  },
+  "reportSha256": "2d2b6ee86e791acb6819fe55c0196673616feeaf9e2b9f8026c2a3c66b561b3e"
+}
