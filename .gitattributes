@@ -25,3 +25,10 @@ examples/text-stats/README.md text eol=lf
 workflows/three-agent-mvp.js text eol=lf
 
 docs/evidence/v0.1-approval-rejection-20261017T112518Z/** text eol=lf
+
+# 运行记录与证据目录都带自证哈希（`SHA256SUMS.txt`、`usage-report.json` 的“同输入必得同字节”）。
+# 本机 `core.autocrlf=true`：若这些路径按文本处理，检出与 `git archive` 导出都会把 LF 改成 CRLF，
+# “工作区字节 == Git blob == 记录 sha256”这条链在干净副本里就断了。
+# 2026-10-17 归档 v0.4-run4 时发现此前只覆盖了 v0.2-run1 一个目录，现按目录整体禁用行尾转换。
+docs/evidence/** -text -whitespace
+docs/run-records/** -text -whitespace
