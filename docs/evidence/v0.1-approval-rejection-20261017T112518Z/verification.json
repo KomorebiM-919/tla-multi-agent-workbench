@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 3,
+  "tool": "tools/approval-rejection-evidence.mjs",
+  "generatedAt": "2026-10-17T11:32:32.001Z",
+  "runId": "v0.1-approval-rejection-20261017T112518Z",
+  "marker": "[tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]",
+  "callId": "call_00_K4tzXwBaomhNd0DjLDB77970",
+  "decode": {
+    "frames": 8362,
+    "badFrames": 0,
+    "badLines": 0
+  },
+  "machine": {
+    "verdict": "PASS",
+    "failures": [],
+    "incompletes": [],
+    "caveats": [
+      "remote refs NOT observed (offline); local tracking refs unchanged does not prove the remote is unchanged"
+    ],
+    "details": {}
+  },
+  "human": {
+    "present": true,
+    "confirmedRejection": true,
+    "file": "<repo-root>\\docs\\evidence\\v0.1-approval-rejection-20261017T112518Z\\human-observation.md",
+    "issues": []
+  },
+  "final": {
+    "verdict": "PASS",
+    "reason": "machine evidence + human confirmation",
+    "failures": []
+  }
+}

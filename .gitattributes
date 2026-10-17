@@ -3,3 +3,4 @@
 # 变成 CRLF，于是 examples/text-stats 的 test_ac22 在干净副本里必然失败（无人值守加固 D
 # 的实测发现）。这里只固定这一个数据文件的行尾，不改动其它文件的既有处理方式。
 examples/text-stats/sample_input.txt text eol=lf
+docs/evidence/v0.1-approval-rejection-20261017T112518Z/** text eol=lf

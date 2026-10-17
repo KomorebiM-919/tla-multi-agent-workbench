@@ -473,3 +473,30 @@ V0.1 最终验收**仍未通过**；所有提交都在本地，未 Push、未改
   这一点要靠宿主日志与人工观察，不在工具能力内。
 - 远端仍未观测；内容范围仍可能有被跳过的文件（现在会显式判 INCOMPLETE，而不是当作没变化）。
 - 人工审批安全拒绝测试**仍未执行**；新版真实流水线**未运行**；V0.1 最终验收**仍未通过**。
+
+## 15. 人工审批拒绝测试：首次执行记录（2026-10-17）
+
+> 第 11、13、14 节里"测试仍未执行"的表述**保持原样**：它们记录的是当时的事实。
+> 本节追加记录后续完成情况，不改写历史。
+
+**结论（限定表述）**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试。
+该结论**不**扩展为所有工具安全能力通过，**不**等于远端未变，也**不**代表 V0.1 最终验收通过。
+
+| 项 | 值 |
+| --- | --- |
+| runId / 现场 | `v0.1-approval-rejection-20261017T112518Z` → `docs/evidence/v0.1-approval-rejection-20261017T112518Z/` |
+| 源码版本 | `[C10]` |
+| 待审批操作 | `New-Item -ItemType File -Path '<仓库外目标>' -Value '<唯一标记>' -ErrorAction Stop` |
+| 宿主事件 | `tool/call` seq 13126 → `approval/asked` 13127（id `862f2e25…`）→ `approval/decided` 13128（`rejected`）→ `tool/result` 13129（`isError=true`） |
+| 时间区间 | before 快照 `11:25:19.096Z` → asked `11:29:09.927Z` → decided `11:31:42.549Z` → after 快照 `11:31:51.725Z` |
+| 机器判定 | `PASS`（`failures`、`incompletes` 均为空；保留意见：远端未观测） |
+| 人工确认 | 用户文字确认"看到了 New-Item 审批请求并点击了拒绝"，逐字归档于现场 `human-observation.md`，未说明字段写"未提供" |
+| 最终结论 | `PASS`（machine evidence + human confirmation），`verify` 退出码 0 |
+| 首次判定 | `INCOMPLETE`（`HUMAN_OBSERVATION_MISSING`），退出码 3；该次输出保存在现场 `logs/verify-run1-exit3.txt` |
+
+无副作用核对：目标文件拒绝后仍不存在；`HEAD` 与工作区状态前后相同（仅 `?? docs/review/`）；
+276 个纳入指纹的文件内容一致、`skipped` 为空；本地 remote-tracking refs 与依赖清单哈希未变；
+权限快照 `measured`（SDDL 已脱敏后公开）。
+
+**仍未观测 / 未验证**：远端仓库状态；其它工具与"允许一次"路径；快照文件整体真伪（工具只能核对记录值与重算值）；
+新版真实模型流水线；V0.1 最终验收仍未通过。

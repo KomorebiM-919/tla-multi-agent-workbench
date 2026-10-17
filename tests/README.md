@@ -70,7 +70,8 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ### 1d. 审批拒绝取证工具的离线回归与反向验证
 
-人工审批安全拒绝测试本身**尚未执行**（见 `docs/APPROVAL-REJECTION-TEST-PLAN.md` 的"未执行"状态）。
+人工审批安全拒绝测试**已执行一次**（2026-10-17，父会话 `pwsh` 升级审批被用户拒绝，机器判定 `PASS` +
+用户逐字确认，现场见 `docs/evidence/v0.1-approval-rejection-20261017T112518Z/`）。
 下面两个套件只验证**取证与判定逻辑**，全程不触发审批、不访问网络、不读凭据、不跑真实子代理：
 
 ```powershell

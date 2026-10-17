@@ -1,10 +1,12 @@
 # 人工审批安全拒绝测试：可审查方案
 
-> **状态：未执行（方案 v2，取证工具已加固）。** 本文档只是方案与取证准备材料。在真实审批请求被用户
-> 拒绝、`tools/approval-rejection-evidence.mjs verify` 的**机器判定**为 `PASS`、并且 `human-observation.md`
-> 由**用户本人**写明"我点了拒绝"之前，V0.1 验收条件 3（`docs/ROADMAP.md:55`）**不得**标记通过。
-> 本机历史上有 5 次真实审批弹窗记录，结果全部是 `allowed-once`（允许一次），没有任何一次拒绝——
-> 那些记录不能当作本项验收证据。
+> **状态：已执行（2026-10-17，方案当前 v4，取证工具已加固）。**
+> 已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试，现场见
+> `docs/evidence/v0.1-approval-rejection-20261017T112518Z/`（机器判定 `PASS` + 用户逐字确认拒绝，
+> 退出码 0；首次判定因缺人工观察为 `INCOMPLETE`、退出码 3，两次记录都保留）。
+> 该结论的范围**只有这一次**：一个父会话、一个工具、一次拒绝；**不**代表所有工具的安全能力已验证，
+> 也**不**代表 V0.1 最终验收通过（新版真实模型流水线尚未运行，远端未观测）。
+> 本机历史的 5 次真实审批记录全部是 `allowed-once`，不能当作本项验收证据。
 
 ---
 
@@ -285,7 +287,9 @@ v4 的关键原则：**先判"有没有测到"，再判"前后是否相同"，�
 
 ## 10. 验收状态与遗留
 
-- 本项：**未完成**（未触发审批、未发生拒绝、无判定结果）。本轮未提交任何"通过"结论。
+- 本项：**已执行一次并判定 PASS（机器 + 人工确认）**，范围与边界见第 1 节与
+  `docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md`。
+  **V0.1 最终验收仍未通过**：真实模型流水线未运行、远端未观测、其它工具与"允许一次"路径未验证。
 - 方案当前版本：**v4**（工具已支持 marker 绑定、目标约束重算、内容跳过判 INCOMPLETE、快照区间与审批事件对应、排他创建）。
 - 与需求基线的关系：RB-1 – RB-6 已裁定，不受本项影响；本项只补 `docs/ROADMAP.md:55` 的安全证据。
 - 其他未决项继续单列：完整演示任务规范中未逐条裁定的条文、以哪一轮需求文本为准、新版真实流水线验证。
@@ -297,3 +301,4 @@ v4 的关键原则：**先判"有没有测到"，再判"前后是否相同"，�
 | 2026-10-17 | 加固为 v2 | 缺证据改判 INCOMPLETE（退出码 3）；审批事件关联与顺序校验；内容指纹；快照身份/时间对应；目标创建改排他创建；取消"误点允许后自动删除并重发"；机器/人工/最终三段分离；日志切帧改结构解析；文档记录可观测边界 |
 | 2026-10-17 | 复审修复（v3） | 六类"缺失值相等 / 身份错配"不再 PASS（先判是否测到，再判是否相同；缺失走 INCOMPLETE）；快照会话必须与日志会话一致、仓库根必须等于会话 cwd；新增规范命令契约与逐字绑定（`APPROVAL_COMMAND_UNBOUND` / `APPROVAL_COMMAND_UNMEASURED`）；目标必须在工作区外且名字符合契约、`justification` 必须含目标路径；新增 `snapshot --session-id`；回归 90→116 断言，并加 7 组 v2→v3 反向验证 |
 | 2026-10-17 | 复审修复（v4） | ① 快照 marker 必须**就是本次审批的 marker**（`SNAPSHOT_MARKER_NOT_BOUND`）；② 目标"是否在工作区内""名字是否符合契约"由工具**按路径重算**，改快照字段即 `TARGET_CONSTRAINT_TAMPERED`；③ 内容指纹有文件被跳过 ⇒ `CONTENT_SCOPE_INCOMPLETE`（部分覆盖不算完整）；④ 快照采集区间必须围住审批事件（`SNAPSHOT_BEFORE_AFTER_APPROVAL` / `SNAPSHOT_AFTER_BEFORE_RESULT` / `EVENT_TIME_UNMEASURED`）；⑤ 规范命令改为**排他创建** `New-Item -ItemType File ... -ErrorAction Stop`，误点允许也不会覆盖既有文件；⑥ 取证回归的临时 git 仓库改到仓库内 `tests/.scratch/`，`git init` 失败即单点前置失败；回归 116→131 断言、7→11 组 v2→v3 反向验证 |
+| 2026-10-17 | 首次执行（runId `v0.1-approval-rejection-20261017T112518Z`） | 父会话发起 1 次 `pwsh` 升级审批，用户点"拒绝"：`approval/decided.outcome=rejected`、`tool/result.isError=true`、目标文件未创建、仓库内容前后一致。首次判定因 `human-observation.md` 未归档 ⇒ `INCOMPLETE`（退出码 3）；归档用户逐字确认后重跑 ⇒ `PASS`（退出码 0）。两次日志都保留；`verification.json`/`VERDICT.md` 是第 2 次运行的内容，第 1 次只存在于 `logs/verify-run1-exit3.txt` |

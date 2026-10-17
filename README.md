@@ -60,7 +60,10 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ### 规划中（未开始）
 
-- [ ] V0.1 剩余：**人工审批的安全拒绝测试**（受保护操作被拒绝后必须无实际副作用，是 V0.1 正式验收要求）
+- [x] **人工审批的安全拒绝测试**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试（现场见
+  [`docs/evidence/v0.1-approval-rejection-20261017T112518Z/`](docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md)；
+  范围仅这一次：其它工具与"允许一次"路径未验证、远端未观测）
+- [ ] V0.1 剩余：**新版真实模型流水线**在新门禁下的完整运行（演示需求输入需先经一次确认）
 - [ ] V0.1 扩展目标：加入 discussion、testing 两个角色，构成五角色完整流水线（不是首次运行成功的前提）
 - [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、ChatGPT Plus/Codex 兼容性验证、LangGraph 互补路线评估
 - 详见 [docs/ROADMAP.md](docs/ROADMAP.md)
