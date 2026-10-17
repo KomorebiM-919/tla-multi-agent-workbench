@@ -1,8 +1,8 @@
 {
   "tool": "tests/extract-usage-report.mjs",
   "toolVersion": "1.0.0",
-  "extractedAt": "2026-10-17T14:55:22.163Z",
-  "elapsedMs": 4984,
+  "extractedAt": "2026-10-17T14:58:52.535Z",
+  "elapsedMs": 5050,
   "node": "v24.21.0",
   "platform": "win32",
   "workspaceName": "tla-multi-agent-workbench",
@@ -255,9 +255,9 @@
       },
       {
         "path": "<DSH_HOME>/sessions/<group>/session-3f96bf08-83ae-48d6-a239-0223d4b1c12c/session.v4.jsonl.zstd",
-        "bytes": 21211896
+        "bytes": 21347162
       }
     ]
   },
-  "reportSha256": "2d2b6ee86e791acb6819fe55c0196673616feeaf9e2b9f8026c2a3c66b561b3e"
+  "reportSha256": "5602616ba3427fdab32eaf5e363b3d6faf17387b657c6ebb1c037caf240daeb4"
 }

@@ -292,7 +292,7 @@ function summarizeSession(entry, logInfo, relativePath) {
     seq: entry.seq === undefined ? null : entry.seq,
     label: entry.label || null,
     phase: entry.phase || null,
-    attempt: entry.attempt === undefined ? null : entry.attempt,
+    attempt: deriveAttempt(entry),
     attribution: entry.attribution || (entry.label ? 'recorded' : 'unknown'),
     sessionId: header && typeof header.id === 'string' ? header.id : entry.sessionId,
     parentSession: header && typeof header.parentSession === 'string' ? header.parentSession : null,
@@ -347,6 +347,23 @@ function derivationOf(records) {
 function bareSessionId(value) {
   if (typeof value !== 'string') { return null; }
   return value.replace(/^session-/, '');
+}
+
+/**
+ * 尝试轮次：native-events 的 agentCalls 没有 attempt 字段，但阶段名带上了轮次后缀
+ * （`coding` → 第 1 轮，`coding-revision-2` → 第 2 轮），标签同样带 `(revision 2)`。
+ * 显式给出 attempt 时优先用它；两者都没有时返回 null（不猜）。
+ */
+function deriveAttempt(entry) {
+  if (!entry) { return null; }
+  if (typeof entry.attempt === 'number' && isFinite(entry.attempt)) { return entry.attempt; }
+  const phase = typeof entry.phase === 'string' ? entry.phase : '';
+  const fromPhase = /-revision-(\d+)$/.exec(phase);
+  if (fromPhase) { return Number(fromPhase[1]); }
+  const label = typeof entry.label === 'string' ? entry.label : '';
+  const fromLabel = /\(revision\s+(\d+)\)/i.exec(label);
+  if (fromLabel) { return Number(fromLabel[1]); }
+  return phase ? 1 : null;
 }
 
 /** 读运行记录里的 native-events.json：真实 childSessionId → label/phase/seq。 */
@@ -583,6 +600,43 @@ function main() {
     unattributed: { sessions: unattributed.length, messages: unattributedUsage.messages, totalTokens: unattributedUsage.totalTokens }
   };
   totals.runTotalTokens = totals.totalTokens + derivedUsage.totalTokens + unattributedUsage.totalTokens;
+  // 按"尝试轮次 + 阶段 + 代理 + 模型"分组汇总：同一阶段在第 2 轮会再花一次钱，混在一起看不清。
+  const byAttemptMap = new Map();
+  sessions.forEach(function (session) {
+    const key = [session.attempt === null ? 'unknown' : session.attempt, session.phase, session.label, session.model].join(' | ');
+    if (!byAttemptMap.has(key)) {
+      byAttemptMap.set(key, {
+        attempt: session.attempt,
+        phase: session.phase,
+        label: session.label,
+        model: session.model,
+        provider: session.provider,
+        sessions: 0,
+        messages: 0,
+        messagesMissingUsage: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0
+      });
+    }
+    const bucket = byAttemptMap.get(key);
+    bucket.sessions += 1;
+    bucket.messages += session.messages;
+    bucket.messagesMissingUsage += session.messagesMissingUsage;
+    bucket.inputTokens += session.usage.inputTokens;
+    bucket.outputTokens += session.usage.outputTokens;
+    bucket.cacheReadTokens += session.usage.cacheReadTokens;
+    bucket.cacheWriteTokens += session.usage.cacheWriteTokens;
+    bucket.totalTokens += session.usage.totalTokens;
+  });
+  totals.byAttempt = Array.from(byAttemptMap.values()).sort(function (a, b) {
+    const attemptDelta = (a.attempt === null ? Number.MAX_SAFE_INTEGER : a.attempt) - (b.attempt === null ? Number.MAX_SAFE_INTEGER : b.attempt);
+    if (attemptDelta !== 0) { return attemptDelta; }
+    return String(a.phase).localeCompare(String(b.phase));
+  });
+  totals.attempts = sortedUnique(sessions.map(function (session) { return session.attempt; }).filter(function (value) { return value !== null; })).sort(function (a, b) { return a - b; });
 
   const identity = {
     checked: sumOf(sessions.map(function (session) { return session.identityCheck.checked; })),
@@ -666,7 +720,8 @@ function main() {
       'cacheWriteTokens 为 0 只表示"上报了 0"，不代表 provider 不支持该字段',
       '再派生会话单独列出：若某个子代理内部又派生了代理，其用量不在本报告的 sessions 里',
       '没有价格信息，因此没有货币成本；token 数不等于费用',
-      '父会话默认排除：父会话包含与本次运行无关的对话，混入会高估用量'
+      '父会话默认排除：父会话包含与本次运行无关的对话，混入会高估用量',
+      '尝试轮次取自阶段名后缀 -revision-N 或标签 (revision N)：记录里没有真正的 attempt 字段，轮次是名字派生的，改名会让轮次失真'
     ]
   };
 

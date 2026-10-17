@@ -134,7 +134,87 @@
         "totalTokens": 0
       }
     },
-    "runTotalTokens": 3918430
+    "runTotalTokens": 3918430,
+    "byAttempt": [
+      {
+        "attempt": 1,
+        "phase": "coding",
+        "label": "Coding Agent",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 23,
+        "messagesMissingUsage": 0,
+        "inputTokens": 99209,
+        "outputTokens": 59362,
+        "cacheReadTokens": 1243264,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1401835
+      },
+      {
+        "attempt": 1,
+        "phase": "preflight",
+        "label": "Verifier (preflight)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 7,
+        "messagesMissingUsage": 0,
+        "inputTokens": 20767,
+        "outputTokens": 6426,
+        "cacheReadTokens": 127360,
+        "cacheWriteTokens": 0,
+        "totalTokens": 154553
+      },
+      {
+        "attempt": 1,
+        "phase": "requirement",
+        "label": "Requirement Agent",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 13,
+        "messagesMissingUsage": 0,
+        "inputTokens": 24579,
+        "outputTokens": 41742,
+        "cacheReadTokens": 528384,
+        "cacheWriteTokens": 0,
+        "totalTokens": 594705
+      },
+      {
+        "attempt": 1,
+        "phase": "review",
+        "label": "Review Agent",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 19,
+        "messagesMissingUsage": 0,
+        "inputTokens": 53110,
+        "outputTokens": 34047,
+        "cacheReadTokens": 1113856,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1201013
+      },
+      {
+        "attempt": 1,
+        "phase": "verify",
+        "label": "Verifier (verify)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 17,
+        "messagesMissingUsage": 0,
+        "inputTokens": 28207,
+        "outputTokens": 12165,
+        "cacheReadTokens": 525952,
+        "cacheWriteTokens": 0,
+        "totalTokens": 566324
+      }
+    ],
+    "attempts": [
+      1
+    ]
   },
   "budget": {
     "declared": true,
@@ -162,7 +242,7 @@
       "seq": 1,
       "label": "Verifier (preflight)",
       "phase": "preflight",
-      "attempt": null,
+      "attempt": 1,
       "attribution": "native-events",
       "sessionId": "95080ad7-47d1-4914-ba2e-1f5b6f033a52",
       "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
@@ -302,7 +382,7 @@
       "seq": 2,
       "label": "Requirement Agent",
       "phase": "requirement",
-      "attempt": null,
+      "attempt": 1,
       "attribution": "native-events",
       "sessionId": "e97396ba-711a-4947-b3a3-b7527a79a06b",
       "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
@@ -472,7 +552,7 @@
       "seq": 3,
       "label": "Coding Agent",
       "phase": "coding",
-      "attempt": null,
+      "attempt": 1,
       "attribution": "native-events",
       "sessionId": "acd7cdfc-a9b4-4a52-a388-822bfce9682f",
       "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
@@ -692,7 +772,7 @@
       "seq": 4,
       "label": "Verifier (verify)",
       "phase": "verify",
-      "attempt": null,
+      "attempt": 1,
       "attribution": "native-events",
       "sessionId": "cc7b6d6f-892a-40a2-aa01-4d9f3297607e",
       "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
@@ -882,7 +962,7 @@
       "seq": 5,
       "label": "Review Agent",
       "phase": "review",
-      "attempt": null,
+      "attempt": 1,
       "attribution": "native-events",
       "sessionId": "76724e4f-4955-4d31-b8e4-959832246936",
       "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
@@ -1085,6 +1165,7 @@
     "cacheWriteTokens 为 0 只表示\"上报了 0\"，不代表 provider 不支持该字段",
     "再派生会话单独列出：若某个子代理内部又派生了代理，其用量不在本报告的 sessions 里",
     "没有价格信息，因此没有货币成本；token 数不等于费用",
-    "父会话默认排除：父会话包含与本次运行无关的对话，混入会高估用量"
+    "父会话默认排除：父会话包含与本次运行无关的对话，混入会高估用量",
+    "尝试轮次取自阶段名后缀 -revision-N 或标签 (revision N)：记录里没有真正的 attempt 字段，轮次是名字派生的，改名会让轮次失真"
   ]
 }

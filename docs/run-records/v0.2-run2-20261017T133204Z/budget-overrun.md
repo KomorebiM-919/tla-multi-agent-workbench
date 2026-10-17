@@ -40,6 +40,12 @@
 | 其中两次 `Cache Collector` | **846 265**（560 169 + 286 096），占 **9.6%** |
 | 同一份需求的 run1 全部 5 次调用 | 3 918 430 |
 | run1 是否在预算内 | **WITHIN_BUDGET**（5 ≤ 8） |
+| run2 第 1 轮 6 次调用（含 1 次 Cache Collector） | **5 412 619** |
+| run2 第 2 轮 4 次调用（含 1 次 Cache Collector） | **3 361 072** |
+
+- 轮次来自报告里的 `totals.byAttempt`：`native-events.json` 没有 `attempt` 字段，轮次按阶段名后缀
+  `-revision-N` 派生（`coding` = 第 1 轮、`coding-revision-2` = 第 2 轮）。两轮各自都多付了一次
+  `Cache Collector`，所以"每轮 3 次"的旧口径在两轮下就是 10 次而不是 8 次。
 
 - 字段恒等式 `totalTokens = inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens` 在 184 条消息上全部成立（`mismatched = 0`）。
 - **不输出货币成本**：会话日志里没有 price/cost/billing 字段，价格与渠道计费未核实，报告里固定写「未提供价格」。token 数不等于费用。
@@ -53,7 +59,7 @@
 | 每次模型调用**启动前**检查总量，超限即拒绝启动并中止 | 同上 `runBudgetedAgent()` / `budgetFailure()` / 返回 `agentCallBudget.calls[].started` | 场景 57：`maxAgentCalls = 7` 时第 8 次调用 `started: false`，状态 `AGENT_CALL_BUDGET_EXCEEDED`；场景 58：`maxAgentCalls = 8` 时第 9 次调用 `started: false` |
 | 删除 `Cache Collector` 阶段（每轮省 1 次调用） | 同上：阶段、`FINAL_CACHE_SCHEMA`、`cacheFinalPrompt()` 一并删除；返回值改为声明 `postRunCacheSnapshot` 由本地工具补采 | 场景 56–58 的调用账本长度（1 轮 5 次、2 轮 8 次） |
 | 缓存快照改用**确定性本地工具** | `tests/collect-cache-state.py`（只读，0 次模型调用） | 与 run2 的 `cache-final.json` 交叉验证一致（`text_stats.cpython-313.pyc` 14885 B / `453ece51d210…`） |
-| 用量可离线复算 | `tests/extract-usage-report.mjs` + `tests/usage-report.test.mjs` | 12/12 场景、67 项断言；run1/run2 只读复算结论见 §4 |
+| 用量可离线复算 | `tests/extract-usage-report.mjs` + `tests/usage-report.test.mjs` | 13/13 场景、75 项断言；run1/run2 只读复算结论见 §4 |
 
 **能力边界（必须一起说清）**：编排层能**硬限制子代理启动次数**（启动前检查，第 N+1 次不会发生），但**无法硬限制单个子代理内部的 token 消耗**——一轮 Coding 花多少 token 由模型自身行为决定，脚本只能事后统计。两者不能混为一谈；`agentCallBudget.limits` 字段把这句话写进了返回值。
 
@@ -77,6 +83,7 @@ node tests/extract-usage-report.mjs `
 # 2) 期望输出（确定性部分）
 #    10 个会话、184 条消息、totalTokens = 8773691、coverage = complete、budget = OVER_BUDGET
 #    理由：观察到子会话数 10 超过声明上限 8（超出 2 个）
+#    totals.attempts = [1, 2]：第 1 轮 6 次（含 cache）、第 2 轮 4 次（含 cache）
 ```
 
 - `usage-report.json` 不含提取时刻，同一输入两次运行逐字节相同；提取时间、耗时、日志文件指纹放在 `extraction-metadata.json`。

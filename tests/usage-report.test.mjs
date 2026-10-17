@@ -18,6 +18,8 @@
 // 9. 坏日志：坏行、缺 session 头都要判不完整，且工具不能崩；
 // 10. 预算：未声明 → NO_BUDGET_DECLARED；声明 2 次却观察到 3 个 → OVER_BUDGET；
 // 11. 确定性：同一输入两次运行 usage-report.json 字节相同，extraction-metadata.json 各自带时间。
+// 12. 尝试轮次：记录里没有 attempt 字段时按阶段名后缀 -revision-N（或标签 (revision N)）派生，
+//     并按"轮次 + 阶段 + 代理 + 模型"分组汇总——否则多轮返工的花费会混在一起看不清。
 //
 // 运行：node tests/usage-report.test.mjs
 
@@ -443,6 +445,42 @@ scenario('参数错误：缺 --run-id 退出 4，不写报告', function (entry)
   check(run.status === 4, '缺 --run-id 退出码 4', 'exit=' + run.status);
   check(run.stderr.indexOf('--run-id') !== -1, '错误信息点出 --run-id', run.stderr.trim());
   check(existsSync(path.join(dir, 'usage-report.json')) === false, '参数错误时不写报告');
+});
+
+// ------------------------------------------------------------------ 场景 12 尝试轮次
+
+scenario('尝试轮次：记录里没有 attempt 字段时从阶段名后缀派生，并按轮次分组汇总', function (entry) {
+  const dir = freshDir('attempts');
+  const root = path.join(dir, 'sessions');
+  writeSession(root, 'g1', CALL_A, sessionLog({ id: CALL_A, createdAt: BASE_MS + 1000, parentSession: PARENT_ID }, [
+    { usage: usageOf(10, 5, 100, 0) }
+  ]));
+  writeSession(root, 'g1', CALL_B, sessionLog({ id: CALL_B, createdAt: BASE_MS + 2000, parentSession: PARENT_ID }, [
+    { usage: usageOf(20, 6, 200, 0) }
+  ]));
+  writeSession(root, 'g1', CALL_C, sessionLog({ id: CALL_C, createdAt: BASE_MS + 3000, parentSession: PARENT_ID }, [
+    { usage: usageOf(30, 7, 300, 0) }
+  ]));
+  // 刻意不给 attempt：真实 native-events.json 的 agentCalls 就没有这个字段。
+  const map = sessionMapFile(dir, [
+    { sessionId: CALL_A, seq: 1, label: 'Coding Agent', phase: 'coding' },
+    { sessionId: CALL_B, seq: 2, label: 'Coding Agent (revision 2)', phase: 'coding-revision-2' },
+    { sessionId: CALL_C, seq: 3, label: 'Review Agent (revision 3)', phase: 'review-revision-3' }
+  ]);
+  const run = runExtractor(['--run-id', 'synthetic-attempts', '--session-map', map, '--session-root', root, '--out-dir', dir], dir);
+  check(run.status === 0, '尝试轮次场景退出码 0', 'exit=' + run.status + ' stderr=' + run.stderr);
+  const report = readReport(dir);
+  if (!report) { check(false, '尝试轮次场景产出报告'); return; }
+  const attempts = report.sessions.map(function (session) { return session.attempt; }).sort(function (a, b) { return a - b; });
+  check(JSON.stringify(attempts) === JSON.stringify([1, 2, 3]), '每个会话的 attempt 由阶段名派生', JSON.stringify(attempts));
+  check(JSON.stringify(report.totals.attempts) === JSON.stringify([1, 2, 3]), '报告列出出现过的轮次', JSON.stringify(report.totals.attempts));
+  check(report.totals.byAttempt.length === 3, '按轮次 + 阶段 + 代理 + 模型分组', String(report.totals.byAttempt.length));
+  const firstRound = report.totals.byAttempt[0];
+  const revision2 = report.totals.byAttempt[1];
+  check(firstRound.attempt === 1 && firstRound.totalTokens === 115, '第 1 轮分组只含首轮用量', JSON.stringify(firstRound && firstRound.totalTokens));
+  check(revision2.attempt === 2 && revision2.phase === 'coding-revision-2', '第 2 轮分组保留阶段名', JSON.stringify(revision2 && revision2.phase));
+  check(revision2.totalTokens === 226, '第 2 轮分组用量独立累加', JSON.stringify(revision2 && revision2.totalTokens));
+  check(report.limitations.join(' ').indexOf('名字派生') !== -1, '局限里写明轮次是名字派生的', JSON.stringify(report.limitations));
 });
 
 // ------------------------------------------------------------------ 收尾

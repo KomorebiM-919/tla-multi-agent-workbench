@@ -217,8 +217,14 @@ node tests/extract-usage-report.mjs `
 - 预算判定：未声明 ⇒ `NO_BUDGET_DECLARED`；日志缺失/坏帧/坏行/缺 usage ⇒ `INCOMPLETE`（绝不会输出"完整预算内"）；
   只有运行前声明过的上限才做超限判定，`observedCallSessions > maxAgentCalls` ⇒ `OVER_BUDGET`。
   `maxTotalTokens: null` 表示批准消息没有 token 上限，因此**不做** token 超限判定；也不输出货币成本（未提供价格）。
-- 合成日志测试 `tests/usage-report.test.mjs`（**12 场景 / 67 项断言**）：正常、缺 usage、明确 0 与缺字段、重复事件、
-  累计口径、不同 provider 语义、缺子会话、再派生、坏日志、未声明预算与超额、两次运行确定性、参数错误退出 4。
+- 轮次口径：`native-events.json` 的 `agentCalls` 里**没有** `attempt` 字段，轮次由阶段名后缀派生
+  （`coding` → 第 1 轮，`coding-revision-2` → 第 2 轮，标签里的 `(revision N)` 作兜底）；
+  报告同时给出每个会话的 `attempt`、`totals.attempts` 与按"轮次 + 阶段 + 代理 + 模型"分组的
+  `totals.byAttempt`——返工轮次的花费必须能单独看出，不能混进合计。轮次是名字派生的，
+  记录侧改名就会失真，这一条写进了报告的 `limitations`。
+- 合成日志测试 `tests/usage-report.test.mjs`（**13 场景 / 75 项断言**）：正常、缺 usage、明确 0 与缺字段、重复事件、
+  累计口径、不同 provider 语义、缺子会话、再派生、坏日志、未声明预算与超额、两次运行确定性、参数错误退出 4、
+  缺 `attempt` 时按阶段名派生轮次并分组汇总。
 - **路径脱敏**（报告要进公开仓库）：会话日志里带本机用户名，且 DSH 的会话组目录名是按 cwd 编码的
   （`--C-Users-<用户名>-...`）。因此日志路径一律写成 `<DSH_HOME>/sessions/<group>/session-<id>/session.v4.jsonl.zstd`，
   只保留会话 id；易变元数据里也不再写本机 `cwd` 绝对路径（改为工作区名字）。`usage-report.json` 与时间无关，两次运行
