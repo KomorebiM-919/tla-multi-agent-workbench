@@ -1,0 +1,54 @@
+PASS owner.runId | v0.2-run1-20261017T121445Z
+PASS owner.claimedAt | 2026-10-17T20:19:14.564772+08:00
+PASS owner.claimedBy | verifier-preflight
+PASS owner.claimMode | exclusive-create (O_EXCL)
+PASS preflight.state_before | missing
+PASS preflight.claim_created
+PASS preflight.claim_exit_code
+PASS requirement.criteria_ids_present
+PASS requirement.criteria_ids_unique | 27
+PASS requirement.self_checked
+PASS requirement.no_conflicts | []
+PASS coding.files_within_scope
+PASS coding.test_exit_code_zero | 0
+PASS verify.command_is_canonical | python -m unittest discover -s examples/text-stats -p "test_*.py"
+PASS verify.exit_code_zero | 0
+PASS verify.ran_tests | 76
+PASS verify.ok_marker
+PASS verify.no_failed_marker
+PASS verify.not_all_skipped
+PASS verify.artifacts_exact_set | ['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']
+PASS verify.artifacts_match_disk | {"recorded": {"examples/text-stats/text_stats.py": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc", "examples/text-stats/test_text_stats.py": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990"}, "disk": {"examples/text-stats/test_text_stats.py": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990", "examples/text-stats/text_stats.py": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc"}}
+PASS review.verdict_approved | APPROVED
+PASS review.criteria_ids_present
+PASS review.criteria_cover_all | {"missing": [], "unknown": []}
+PASS review.criteria_no_duplicates
+PASS review.criteria_all_satisfied
+PASS review.independent_command_is_canonical | python -m unittest discover -s examples/text-stats -p "test_*.py"
+PASS review.independent_exit_code_zero | 0
+PASS review.independent_ran_tests | 76
+PASS review.independent_ok_marker
+PASS review.ran_matches_verifier | {"review": 76, "verifier": 76}
+PASS review.artifacts_exact_set | ['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']
+PASS review.artifacts_equal_verify | {"examples/text-stats/text_stats.py": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc", "examples/text-stats/test_text_stats.py": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990"}
+PASS review.artifacts_match_disk
+PASS review.no_conflicts
+PASS time.preflight.valid | 2026-10-17T20:19:28.546819+08:00
+PASS time.requirement.valid | 2026-10-17T20:21:27.2308535+08:00
+PASS time.coding.valid | 2026-10-17T20:26:27.887939+08:00
+PASS time.verify.valid | 2026-10-17T20:28:15.328120+08:00
+PASS time.review.valid | 2026-10-17T20:30:24.5474296+08:00
+PASS time.claim_before_stages | ["2026-10-17T20:19:14.564772+08:00", "2026-10-17T20:19:28.546819+08:00"]
+PASS time.order.requirement_after_preflight | ["2026-10-17T20:19:28.546819+08:00", "2026-10-17T20:21:27.230853+08:00"]
+PASS time.order.coding_after_requirement | ["2026-10-17T20:21:27.230853+08:00", "2026-10-17T20:26:27.887939+08:00"]
+PASS time.order.verify_after_coding | ["2026-10-17T20:26:27.887939+08:00", "2026-10-17T20:28:15.328120+08:00"]
+PASS time.order.review_after_verify | ["2026-10-17T20:28:15.328120+08:00", "2026-10-17T20:30:24.547429+08:00"]
+PASS time.within_window | 656.00061
+PASS workspace.base_head_recorded | [C16]
+PASS workspace.delivery_files_changed | examples/text-stats/README.md, examples/text-stats/test_text_stats.py, examples/text-stats/text_stats.py
+PASS workspace.tracked_sources_within_scope
+PASS workspace.orchestrator_tools | tests/review-run-evidence.py
+PASS workspace.non_source_changes | .gitattributes, README.md, docs/DEMO-REQUIREMENT-INPUT-v3.md, docs/ROADMAP.md, docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md, docs/evidence/v0.2-run1-20261017T121445Z/.run-owner.json, docs/evidence/v0.2-run1-20261017T121445Z/coding-report.json, docs/evidence/v0.2-run1-20261017T121445Z/preflight.json, docs/evidence/v0.2-run1-20261017T121445Z/requirement.json, docs/evidence/v0.2-run1-20261017T121445Z/review.json, docs/evidence/v0.2-run1-20261017T121445Z/verify.json, docs/run-records/v0.2-run1-20261017T121445Z/approval.md, docs/run-records/v0.2-run1-20261017T121445Z/precheck.json, docs/run-records/v0.2-run1-20261017T121445Z/requirement-injected.txt, tests/README.md
+PASS workspace.untracked_within_scope
+
+52/52 项检查通过

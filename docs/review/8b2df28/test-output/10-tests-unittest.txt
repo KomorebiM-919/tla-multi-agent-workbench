@@ -1,0 +1,11 @@
+python : ...........
+所在位置 行:12 字符: 1
++ python -B -m unittest discover -s tests -p "test_*.py" *> "$out\10-te ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (...........:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+----------------------------------------------------------------------
+Ran 11 tests in 1.435s
+
+OK

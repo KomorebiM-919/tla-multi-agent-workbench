@@ -1,0 +1,86 @@
+{
+  "runId": "v0.2-run1-20261017T121445Z",
+  "source": {
+    "kind": "derived-summary",
+    "from": [
+      "宿主 workflow 工具本次调用（后台任务 workflow-2）的返回值字段：ok / status / attempts / finalVerdict / evidenceFiles / 摘要行 '(5 agents)'",
+      "各阶段产物文件自身的 generated_at 与哨兵字段"
+    ],
+    "notFrom": "未重放宿主会话日志：本会话日志为 zstd 压缩的 JSONL（约 16 MB），当前环境无 zstd 解码器，因此这里不声称是逐帧重放结果；如需逐帧证据，应在具备解码器的环境另行提取。",
+    "whitelistOnly": "只取运行相关的标识、时间、计数与退出码；未读取凭据、未导出无关消息正文。"
+  },
+  "workflowCall": {
+    "hostJobId": "workflow-2",
+    "metaName": "tla-v02-run1",
+    "scriptPath": "workflows/three-agent-mvp.js",
+    "scriptSha256": "48f3aaea0b799ef4ec73d55d0344d5d4030e82d89d2c9afdf56fa084d84271b6",
+    "scriptBytes": 104089,
+    "agentCallCount": 5,
+    "agentCallBudget": {
+      "plannedMin": 5,
+      "max": 8,
+      "used": 5
+    },
+    "codingAttempts": 1,
+    "maxCodingAttempts": 2,
+    "resultOk": true,
+    "resultStatus": "OK",
+    "finalVerdict": "APPROVED"
+  },
+  "requirementInjected": {
+    "path": "docs/run-records/v0.2-run1-20261017T121445Z/requirement-injected.txt",
+    "sha256": "6307a7f0ca0a84ccf0b8036ad202d7acaa56e8664d5761b22c10a915a86f71d7",
+    "bytes": 15249,
+    "clausesPresent": 37,
+    "approvedIn": "宿主消息 m07160"
+  },
+  "runStartedAt": "2026-10-17T20:14:45+08:00",
+  "claim": {
+    "claimedAt": "2026-10-17T20:19:14.564772+08:00",
+    "claimedBy": "verifier-preflight",
+    "claimMode": "exclusive-create (O_EXCL)",
+    "claimTool": "tools/claim_evidence_dir.py"
+  },
+  "stages": [
+    {
+      "kind": "preflight",
+      "agent": "Verifier 预检（认领 + 提示词 + 目标目录）",
+      "artifact": "docs/evidence/v0.2-run1-20261017T121445Z/preflight.json",
+      "sha256": "5850288c50c05b3d8ad4de4b81c117604c6b309b3852f23a28c16a34049a92b0",
+      "bytes": 2140,
+      "generatedAt": "2026-10-17T20:19:28.546819+08:00"
+    },
+    {
+      "kind": "requirement",
+      "agent": "Requirement Agent",
+      "artifact": "docs/evidence/v0.2-run1-20261017T121445Z/requirement.json",
+      "sha256": "9119b09ca0ace17a4f37ce80c5116309702e47d122c64fb8c0a620174674f089",
+      "bytes": 23000,
+      "generatedAt": "2026-10-17T20:21:27.2308535+08:00"
+    },
+    {
+      "kind": "coding",
+      "agent": "Coding Agent",
+      "artifact": "docs/evidence/v0.2-run1-20261017T121445Z/coding-report.json",
+      "sha256": "02992917870036b536c607ba0bcbe53600787930016384bfc104e8895229fabc",
+      "bytes": 5977,
+      "generatedAt": "2026-10-17T20:26:27.887939+08:00"
+    },
+    {
+      "kind": "verify",
+      "agent": "Verifier Agent（跑交付测试）",
+      "artifact": "docs/evidence/v0.2-run1-20261017T121445Z/verify.json",
+      "sha256": "f75ea00c24067ad25144cfa06c716571c8f1a769ff751030bea371fe2f47e0a2",
+      "bytes": 1384,
+      "generatedAt": "2026-10-17T20:28:15.328120+08:00"
+    },
+    {
+      "kind": "review",
+      "agent": "Review Agent（独立复跑 + 逐条核对）",
+      "artifact": "docs/evidence/v0.2-run1-20261017T121445Z/review.json",
+      "sha256": "2f419cb69b56516dc880139a8e4d06a303ce85d3b0fe3e25568c25054985c2f5",
+      "bytes": 15023,
+      "generatedAt": "2026-10-17T20:30:24.5474296+08:00"
+    }
+  ]
+}

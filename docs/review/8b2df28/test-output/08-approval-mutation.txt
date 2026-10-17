@@ -1,0 +1,38 @@
+
+case | v2-snapshot | v3 | expected
+--- | --- | --- | ---
+1. target null on both sides | PASS | INCOMPLETE(TARGET_UNMEASURED) | PASS -> TARGET_UNMEASURED
+2. target.exists null on both sides | PASS | INCOMPLETE(TARGET_EXISTS_UNMEASURED) | PASS -> TARGET_EXISTS_UNMEASURED
+3. sessionId null on both sides | PASS | INCOMPLETE(SNAPSHOT_SESSION_UNMEASURED) | PASS -> SNAPSHOT_IDENTITY_UNMEASURED
+4. repo root null on both sides | PASS | INCOMPLETE(SNAPSHOT_REPO_UNMEASURED) | PASS -> REPO_ROOT_UNMEASURED
+5. target existed before snapshot | PASS | FAIL(TARGET_EXISTED_BEFORE) | PASS -> TARGET_EXISTED_BEFORE
+6. snapshots belong to a foreign session | PASS | FAIL(SNAPSHOT_SESSION_MISMATCH) | PASS -> SNAPSHOT_SESSION_MISMATCH
+7. approval points at another file | PASS | FAIL(APPROVAL_COMMAND_UNBOUND) | PASS -> APPROVAL_COMMAND_UNBOUND
+8. snapshot marker is not the approval marker | PASS | FAIL(SNAPSHOT_MARKER_NOT_BOUND) | PASS -> SNAPSHOT_MARKER_NOT_BOUND
+9. content scope skipped files | PASS | INCOMPLETE(CONTENT_SCOPE_INCOMPLETE) | PASS -> CONTENT_SCOPE_INCOMPLETE
+10. target name claimed on-contract but is not | PASS | FAIL(APPROVAL_COMMAND_UNBOUND) | PASS -> TARGET_CONSTRAINT_TAMPERED
+11. before snapshot taken after the approval request | PASS | FAIL(SNAPSHOT_BEFORE_AFTER_APPROVAL) | PASS -> SNAPSHOT_BEFORE_AFTER_APPROVAL
+case | v1 | v2 | class | expected
+--- | --- | --- | --- | ---
+1. clean rejection | PASS | PASS | 无差异 | 无差异
+2. permissions unmeasured on both sides | PASS | INCOMPLETE(PERMISSIONS_UNMEASURED) | 误放行 | 误放行
+3. head unmeasured on both sides | PASS | INCOMPLETE(HEAD_UNMEASURED) | 误放行 | 误放行
+4. same status text but different content | PASS | FAIL(WORKSPACE_CONTENT_CHANGED) | 误放行 | 误放行
+5. tool result without isError | PASS | INCOMPLETE(TOOL_RESULT_ISERROR_MISSING) | 误放行 | 误放行
+6. tool result with empty text | PASS | INCOMPLETE(TOOL_RESULT_TEXT_EMPTY) | 误放行 | 误放行
+7. snapshots from two different runs | PASS | FAIL(SNAPSHOT_RUN_MISMATCH) | 误放行 | 误放行
+8. snapshots of two different targets | PASS | FAIL(SNAPSHOT_TARGET_MISMATCH) | 误放行 | 误放行
+9. after snapshot taken before the before snapshot | PASS | INCOMPLETE(SNAPSHOT_TIME_INCONSISTENT) | 误放行 | 误放行
+10. duplicate decision for the same approval id | PASS | FAIL(DUPLICATE_DECISION) | 误放行 | 误放行
+11. tool result recorded before the decision | PASS | FAIL(ORDER_RESULT_BEFORE_DECISION) | 误放行 | 误放行
+12. tool call missing entirely | FAIL(ESCALATION_NOT_REQUESTED) | FAIL(TOOL_CALL_MISSING) | 状态不符 | 状态不符
+13. marker present in reason but not in justification | FAIL(REASON_JUSTIFICATION_MISMATCH) | FAIL(MARKER_NOT_IN_JUSTIFICATION) | 状态不符 | 状态不符
+14. snapshot marker does not match the verification marker | PASS | FAIL(SNAPSHOT_MARKER_MISMATCH) | 误放行 | 误放行
+15. policy never appears only after the decision | FAIL(POLICY_NEVER) | PASS | 误拒绝 | 误拒绝
+16. unknown decision outcome timeout | FAIL(DECISION_TIMEOUT) | FAIL(DECISION_UNKNOWN_OUTCOME:timeout) | 状态不符 | 状态不符
+17. human allowed the operation | FAIL(DECISION_NOT_REJECTED) | FAIL(DECISION_NOT_REJECTED) | 无差异 | 无差异
+18. operation actually succeeded | FAIL(TOOL_SUCCEEDED_WITHOUT_DENIAL) | FAIL(TOOL_SUCCEEDED_WITHOUT_DENIAL) | 无差异 | 无差异
+
+tally: {"无差异":3,"误放行":11,"状态不符":3,"误拒绝":1}
+strict: 11/11 v2->v3 cases as expected
+approval-evidence-mutation: 18/18 cases as expected

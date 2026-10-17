@@ -33,6 +33,8 @@ ALLOWED_DELIVERY_FILES = (
     'examples/text-stats/README.md',
     'examples/text-stats/sample_input.txt',
 )
+# 编排层自己的复核工具：不是交付源码，但也不能默默放过，单独列出供人复核。
+ORCHESTRATOR_TOOLS = ('tests/review-run-evidence.py',)
 CRITERION_ID_RE = re.compile(r'^\s*([A-Za-z]{2,8}-[A-Za-z0-9]{1,4})')
 RAN_RE = re.compile(r'Ran (\d+) tests? in ')
 FAILED_RE = re.compile(r'(^|\n)FAILED')
@@ -250,22 +252,44 @@ def main(argv=None):
         span = (stage_times[-1][1] - first).total_seconds()
         check('time.within_window', abs(span) <= RUN_WINDOW_HOURS * 3600, span)
 
-    # ---- 8. 工作区范围（交付代码只允许 4 个文件被修改；文档状态更新单独归类）
-    code, status_out = git(repo_root, 'status', '--porcelain', '--untracked-files=no')
+    # ---- 8. 工作区范围（交付源码只允许 4 个文件变化；其余变化按类别单列）
+    # 基准点是运行前 HEAD（记录在 precheck.json 的 repository.head）。这样"提交前"与
+    # "提交后"两种时点都能复核：已提交的改动用 `git diff --name-only <base>` 取，
+    # 未提交的改动仍在 `git status` 里。
+    precheck_path = repo_root / 'docs' / 'run-records' / args.run_id / 'precheck.json'
+    base_head = ''
+    if precheck_path.is_file():
+        base_head = (json.loads(precheck_path.read_text(encoding='utf-8'))
+                     .get('repository', {}).get('head', ''))
+    check('workspace.base_head_recorded', bool(base_head), base_head or '（precheck.json 缺 repository.head）')
+
     changed = []
+    if base_head:
+        code, diff_out = git(repo_root, 'diff', '--name-only', base_head)
+        changed.extend(line.strip().replace('\\', '/') for line in diff_out.splitlines() if line.strip())
+    code, status_out = git(repo_root, 'status', '--porcelain', '--untracked-files=no')
     for line in status_out.splitlines():
         if len(line) > 3:
-            changed.append(line[3:].strip().replace('\\', '/'))
-    outside_changed = [path for path in changed if path not in ALLOWED_DELIVERY_FILES]
-    # 编排层在运行后更新状态文档是允许的，但必须与交付代码分开统计：这里只要求
-    # "任何一条非交付改动都不是源码"（即 examples/ 下没有越界文件），并把文档改动列出供人复核。
+            path = line[3:].strip().replace('\\', '/')
+            if path not in changed:
+                changed.append(path)
+
     delivery_changed = [path for path in changed if path in ALLOWED_DELIVERY_FILES]
+    outside_changed = [path for path in changed if path not in ALLOWED_DELIVERY_FILES]
+    # 编排层在运行后更新状态文档、归档证据是允许的，但必须与交付源码分开统计：
+    # 任何 examples/ 下或 .py/.js/.mjs 的越界改动都是硬失败，文档类改动只列出来供人复核。
     out_of_scope_sources = [path for path in outside_changed
                             if path.startswith('examples/') or path.endswith(('.py', '.js', '.mjs'))]
+    # 编排层自带的复核工具不算交付源码；但不能因此把它当成"自然合规"——它被单独列出，
+    # 由人用 `git show` 复核。这是本工具唯一无法自证的类别，必须显式可见。
+    orchestrator_tools = [path for path in out_of_scope_sources if path in ORCHESTRATOR_TOOLS]
+    out_of_scope_sources = [path for path in out_of_scope_sources if path not in ORCHESTRATOR_TOOLS]
     check('workspace.delivery_files_changed', len(delivery_changed) > 0, ', '.join(delivery_changed))
     check('workspace.tracked_sources_within_scope', len(out_of_scope_sources) == 0, ', '.join(out_of_scope_sources))
-    doc_updates = [path for path in outside_changed if path not in out_of_scope_sources]
-    check('workspace.tracked_doc_updates', True, ', '.join(doc_updates) or '（无）')
+    check('workspace.orchestrator_tools', True, ', '.join(orchestrator_tools) or '（无）')
+    other_changes = [path for path in outside_changed
+                     if path not in out_of_scope_sources and path not in ORCHESTRATOR_TOOLS]
+    check('workspace.non_source_changes', True, ', '.join(other_changes) or '（无）')
     untracked_code, untracked_out = git(repo_root, 'status', '--porcelain', '--untracked-files=all')
     untracked = [line[3:].strip().replace('\\', '/') for line in untracked_out.splitlines() if line.startswith('??')]
     # 白名单：本轮运行产物、运行记录、历史审批测试的本地原件（含 SID，按设计不提交）、
