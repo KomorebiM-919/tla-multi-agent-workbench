@@ -60,13 +60,23 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ### 规划中（未开始）
 
+- [x] **V0.2 离线原型：手动多模型分工与预算规划**（分支 `feat/v0.2-component-reuse`，2026-10-18；**未启动任何真实模型调用、未安装任何第三方插件**）：
+
+  - `orchestration/`：配置校验、离线价格快照查询、整数金额估算、按基点分配预算（最大余数法，各项之和恒等于总额）、计划生成与 `create` 入参翻译
+  - 价格快照 `orchestration/data/pricing-snapshot.portkey-72e1084.json`：取自 portkey-models@`72e1084` 的 6 条真实条目，由"美分/token"换算为"微-分/百万 token"整数；该仓库无时间戳，**新鲜度未知、未与官网核对**
+  - 对 `dsh-agent-teams` 只做兼容性探测与计划翻译，执行恒返回 `unavailable`（`BACKEND_EXECUTION_NOT_IMPLEMENTED`），不伪造集成成功
+  - 边界声明：预算是**计划分配**，不是付款/余额/跨供应商划拨；`agent-teams` 后端**没有**全局模型调用硬上限（`CALL_CAP_PARTIAL`）
+  - 离线复跑：`node orchestration/cli.mjs plan --config orchestration/examples/plan-agent-teams.json --pricing orchestration/data/pricing-snapshot.portkey-72e1084.json --now 2026-10-17T18:00:00Z`（退出码 0 = ready，2 = blocked）
+  - 测试 `tests/v02-orchestration.test.mjs`（9 个场景 / 143 项断言，全部离线）
+  - 结论与清单：[`docs/V0.2-REUSE-DECISIONS.md`](docs/V0.2-REUSE-DECISIONS.md)、[`docs/V0.2-ARCHITECTURE.md`](docs/V0.2-ARCHITECTURE.md)、[`docs/V0.2-MOBILE-CHANNEL.md`](docs/V0.2-MOBILE-CHANNEL.md)
+
 - [x] **人工审批的安全拒绝测试**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试（现场见
   [`docs/evidence/v0.1-approval-rejection-20261017T112518Z/`](docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md)；
   范围仅这一次：其它工具与"允许一次"路径未验证、远端未观测）
 - [x] **新版真实模型流水线的完整运行（第五次，`v0.4-run5-20261017T161034Z`）**：5 个角色各 1 次调用（5/8，无派生）、交付测试 97 项全绿、编排层独立复核 28/28、缓存边界 `CLEAN`、用量 4 465 947 tokens（声明 8 000 000，`WITHIN_BUDGET`）；证据见 [`docs/run-records/v0.4-run5-20261017T161034Z/`](docs/run-records/v0.4-run5-20261017T161034Z/README.md)。**所有者已于 2026-10-18 基于审核报告确认“本轮演示功能验收通过”**（记录：[`OWNER-ACCEPTANCE.md`](docs/run-records/v0.4-run5-20261017T161034Z/review-package/OWNER-ACCEPTANCE.md)）；该确认是“基于报告的验收确认”，不是所有者逐行审查或独立复跑，也不代表整个多模型平台开发完成
 - [ ] **远端发布授权**：交付与归档均只在本地，未 push、未建 PR、未合并 `main`；按 `AGENTS.md` §9 需所有者单独授权。发布前的离线检查、PR 文稿与安全检查见 [docs/PUBLICATION-READINESS-v0.1.md](docs/PUBLICATION-READINESS-v0.1.md)
 - [ ] V0.1 扩展目标：加入 discussion、testing 两个角色，构成五角色完整流水线（不是首次运行成功的前提）
-- [ ] V0.2 起：多模型分工、状态持久化/断点续跑评估、ChatGPT Plus/Codex 兼容性验证、LangGraph 互补路线评估（V0.2–V0.4 均未开始）
+- [ ] V0.2 剩余：智能推荐与排序（需要真实评估数据）、推荐预算比例、状态持久化的真实冷恢复实测、手机通道安装与移动网络实测、Codex 兼容性验证、LangGraph 互补路线评估（均未开始）
 - 详见 [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## 目录说明
@@ -89,6 +99,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
 | `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |
 | `docs/evidence/` | 工作流运行证据归档（原始 Agent 产物、DSH 原生事件、测试输出、独立复核） |
+| `orchestration/` | V0.2 离线编排原型：配置校验、价格快照、估算、预算分配、计划与后端适配（不调用模型） |
 | `tests/` | 编排逻辑回归测试与验证入口（见 `tests/README.md`） |
 | `src/`（规划中） | TLA 自有代码（如后续接入 LangGraph 时的编排层） |
 
@@ -138,6 +149,9 @@ python tests/property_text_stats.py
 
 # 演示项目的单元测试（97 个用例；v0.4-run5 交付版，含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
+
+# V0.2 编排原型的离线测试（9 个场景 / 143 项断言；不联网、不调用模型）
+node tests/v02-orchestration.test.mjs
 
 # 编排层独立复核（直接验算需求中的边界条件）
 python -B docs/evidence/v0.1-second-run/orchestrator-verification.py
