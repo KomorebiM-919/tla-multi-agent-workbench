@@ -70,8 +70,9 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   - 金额一律整数微单位、费用**向上取整**（非零用量不会被算成 0）。缓存读写缺价时**不冒充上界**：金额记未知并进入 blocker，只有配置显式声明 `estimates.assumptions.cachePriceEqualsInput` 才按输入价代入，并标 `assumed`/`low`
   - 启动前拦截器 `orchestration/interceptors/prelaunch-budget.mjs` + 真实接线插件 `orchestration/interceptor-plugin/`：宿主形状的 `agent/request` 监听器，在请求发出前同步预占、超限抛错（**零新增发送**）。**已在隔离 profile 的真实宿主上验证**：额度耗尽时假服务端零新增请求、重启不重置额度、监听器异常 fail-closed；同时实测到"插件激活失败只警告、不 fail-closed"（无预算跑到 2567 次请求，全轮含失败证据共 2580 次假模型 HTTP 请求），因此"装上了"永远不等于"预算生效"，**该缺口已登记为付费实验的前置阻塞**。夹具测试 7 场景 / 28 断言，真实宿主实验见 [`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)
   - 离线复跑：`node orchestration/cli.mjs plan --config orchestration/examples/plan-agent-teams.json --pricing orchestration/data/pricing-snapshot.portkey-72e1084.json --host-catalog orchestration/data/host-catalog.dsh-0.2.0-rc.2.json --now 2026-10-17T18:00:00Z`（退出码 0 = ready，2 = blocked）
-  - 测试 `tests/v02-orchestration.test.mjs`（12 个场景 / 267 项断言）与 `tests/v02-prelaunch-budget.test.mjs`（7 个场景 / 28 项断言）；含针对"半上取整""2^53 中间量溢出""缓存写被丢弃""兼容即 ready""缓存缺价被当成上界""重启静默重置额度"六处真实缺陷的回归断言。测试本身不联网、不调模型
-  - 结论与清单：[`docs/V0.2-REUSE-DECISIONS.md`](docs/V0.2-REUSE-DECISIONS.md)、[`docs/V0.2-ARCHITECTURE.md`](docs/V0.2-ARCHITECTURE.md)、[`docs/V0.2-MOBILE-CHANNEL.md`](docs/V0.2-MOBILE-CHANNEL.md)、[`docs/V0.2-INTEGRATION-PLAN.md`](docs/V0.2-INTEGRATION-PLAN.md)（阶段 1/2 已执行，阶段 3 付费协作**未授权**）、[`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)（隔离环境实测记录）
+  - 启动闸门 `orchestration/gate/` + 启动器 `tools/gated-run.mjs`（同日的后续修复）：本地 HTTP 代理只绑 `127.0.0.1`、**默认拒绝**，只有"有效租约 + 额度未用尽"才建立上游连接；启动器在启动宿主前校验生效配置的 `baseURL` 指向闸门，读到新鲜挂载心跳才发租约、心跳过期则撤销并终止宿主。真实宿主故障注入的上游请求数：插件缺失 **0**（闸门 403、宿主退出码 3）、正常挂载 1（退出码 0）、额度耗尽 1（第 2 次在插件层被拒）。实现、故障矩阵与**未证明项**见 [`docs/V0.2-PRELAUNCH-GATE.md`](docs/V0.2-PRELAUNCH-GATE.md)；闸门只是本地实验工具，不是宿主级强制保护，宿主若绕过被覆写的 `baseURL` 直连公网它看不到
+  - 测试 `tests/v02-orchestration.test.mjs`（12 个场景 / 267 项断言）、`tests/v02-prelaunch-budget.test.mjs`（7 个场景 / 28 项断言）与 `tests/v02-gate.test.mjs`（7 个场景 / 57 项断言）；含针对"半上取整""2^53 中间量溢出""缓存写被丢弃""兼容即 ready""缓存缺价被当成上界""重启静默重置额度""无租约仍放行"七处真实缺陷的回归断言。测试本身不联网、不调模型
+  - 结论与清单：[`docs/V0.2-REUSE-DECISIONS.md`](docs/V0.2-REUSE-DECISIONS.md)、[`docs/V0.2-ARCHITECTURE.md`](docs/V0.2-ARCHITECTURE.md)、[`docs/V0.2-MOBILE-CHANNEL.md`](docs/V0.2-MOBILE-CHANNEL.md)、[`docs/V0.2-INTEGRATION-PLAN.md`](docs/V0.2-INTEGRATION-PLAN.md)（阶段 1/2 已执行，阶段 3 付费协作**未授权**）、[`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)（隔离环境实测记录）、[`docs/V0.2-PRELAUNCH-GATE.md`](docs/V0.2-PRELAUNCH-GATE.md)（启动闸门：设计、故障矩阵、限制）
 
 - [x] **人工审批的安全拒绝测试**：已执行并通过一次父会话 `pwsh` 沙箱升级审批的人工拒绝路径测试（现场见
   [`docs/evidence/v0.1-approval-rejection-20261017T112518Z/`](docs/evidence/v0.1-approval-rejection-20261017T112518Z/README.md)；
@@ -102,7 +103,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 | `workflows/` | 工作流编排脚本（DSH Workflow）与运行说明 |
 | `examples/` | 工作流跑通用的演示项目（如 `examples/text-stats/`） |
 | `docs/evidence/` | 工作流运行证据归档（原始 Agent 产物、DSH 原生事件、测试输出、独立复核） |
-| `orchestration/` | V0.2 离线编排原型：配置校验、价格快照与宿主目录核对、估算、预算分配、计划与后端适配、启动前拦截器（不调用模型） |
+| `orchestration/` | V0.2 离线编排原型：配置校验、价格快照与宿主目录核对、估算、预算分配、计划与后端适配、启动前拦截器、默认拒绝的启动闸门（不调用模型） |
 | `tests/` | 编排逻辑回归测试与验证入口（见 `tests/README.md`） |
 | `src/`（规划中） | TLA 自有代码（如后续接入 LangGraph 时的编排层） |
 
@@ -153,9 +154,10 @@ python tests/property_text_stats.py
 # 演示项目的单元测试（97 个用例；v0.4-run5 交付版，含程序化调用 --help / 受控错误 / 非法 --encoding 的静默回归）
 python -m unittest discover -s examples/text-stats -p "test_*.py" -v
 
-# V0.2 编排原型的离线测试（12 个场景 / 267 项断言 + 7 个场景 / 28 项断言；不联网、不调用模型）
+# V0.2 编排原型的离线测试（12 个场景 / 267 项断言 + 7 个场景 / 28 项断言 + 7 个场景 / 57 项断言；不联网、不调用模型）
 node tests/v02-orchestration.test.mjs
 node tests/v02-prelaunch-budget.test.mjs
+node tests/v02-gate.test.mjs
 
 # 编排层独立复核（直接验算需求中的边界条件）
 python -B docs/evidence/v0.1-second-run/orchestrator-verification.py
