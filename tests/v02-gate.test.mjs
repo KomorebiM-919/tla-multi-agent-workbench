@@ -1240,6 +1240,7 @@ async function scenarioLauncherProjectPreflight() {
     );
     check(missingFile.code === 2, 'project preflight: missing required file is rejected before any host starts', missingFile.code);
   } finally {
+    await upstream.close();
     rmSync(runDir, { recursive: true, force: true });
   }
 }

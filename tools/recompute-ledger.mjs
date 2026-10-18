@@ -134,7 +134,14 @@ export function measureRun(runDir, label = basename(runDir)) {
   // 关联 ID：闸门给每条放行请求生成一个，服务端把收到的那个记下来。
   // 用它做逐请求配对 —— 只用于观测，不声称是身份认证。
   const allowedIds = gateEvents.filter((event) => event.event === 'allowed').map((event) => event.correlationId ?? null);
-  const upstreamIds = upstreamEvents.filter((event) => event.event === 'arrived' || event.accepted !== undefined).map((event) => event.correlationId ?? null);
+  // When the server writes staged events, `arrived` is the only line that means
+  // "this request reached me". The legacy `accepted` line and the `responded`
+  // line repeat the same correlation id for the same request, so counting them
+  // as extra requests would fabricate duplicates.
+  const upstreamIds = (staged
+    ? upstreamEvents.filter((event) => event.event === 'arrived')
+    : upstreamEvents.filter((event) => event.accepted !== undefined)
+  ).map((event) => event.correlationId ?? null);
   const counts = new Map();
   for (const id of upstreamIds) counts.set(id, (counts.get(id) ?? 0) + 1);
   row.correlation = {

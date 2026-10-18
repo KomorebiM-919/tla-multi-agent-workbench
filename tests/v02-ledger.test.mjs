@@ -177,6 +177,26 @@ try {
   check(duplicateRow.correlation.duplicatedAtUpstream === 1, 'correlation: duplicate id is counted', duplicateRow.correlation);
   check(duplicateRow.completeness === 'INCOMPLETE', 'correlation: duplicate id makes the ledger incomplete', duplicateRow.stageMismatch);
 
+  // The hardened server writes one `arrived` line, one model line that repeats
+  // `accepted`, and one `responded` line per request. Only `arrived` means the
+  // request reached the server; counting the repeats as extra requests would
+  // invent a duplicate that never happened (observed on the repair4 run).
+  const stagedWithRepeats = join(scratch, 'staged-repeats');
+  makeRun(stagedWithRepeats, {
+    reserved: 1,
+    allowed: 1,
+    upstream: 1,
+    upstreamRows: [
+      { seq: 1, event: 'arrived', accepted: true, correlationId: 'tla-run-x#1' },
+      { seq: 1, accepted: true, model: 'deepseek-flash', correlationId: 'tla-run-x#1' },
+      { seq: 1, event: 'responded', stopReason: 'end_turn', correlationId: 'tla-run-x#1' },
+    ],
+  });
+  const stagedRepeatsRow = measureRun(stagedWithRepeats, 'staged-repeats');
+  check(stagedRepeatsRow.upstreamReceived === 1, 'correlation: staged repeats are not extra requests', stagedRepeatsRow.upstreamReceived);
+  check(stagedRepeatsRow.correlation.duplicatedAtUpstream === 0, 'correlation: staged repeats are not duplicates', stagedRepeatsRow.correlation);
+  check(stagedRepeatsRow.completeness === 'COMPLETE', 'correlation: staged repeats stay complete', stagedRepeatsRow.stageMismatch);
+
   const unstamped = join(scratch, 'unstamped');
   makeRun(unstamped, { reserved: 2, allowed: 2, upstream: 2, correlation: false });
   const unstampedRow = measureRun(unstamped, 'unstamped');
