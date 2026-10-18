@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, UsageError } from '../tools/gated-run.mjs';
-import { buildCommand, PLACEHOLDER_PATTERN, REPORTED_FLAGS } from '../tools/experiment-command.mjs';
+import { buildCommand, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder } from '../tools/experiment-command.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -239,6 +239,17 @@ try {
   check(plainMissing.problems.some((problem) => /--dsh-cli does not exist/u.test(problem)), 'a plain missing cli path is refused');
 } finally {
   rmSync(root, { recursive: true, force: true });
+}
+
+// The command must fail closed when the caller passes something it does not know. The first
+// version of main() returned a number while the happy path returned a promise, so an unknown
+// flag crashed with "main(...).then is not a function" instead of a usage error. Checks call
+// main() directly: spawning a child that redirects into this workspace is blocked by the
+// sandbox anyway, and the defect lived in the return shape, not in the process plumbing.
+{
+  const pending = runCommandBuilder(['--not-a-flag', 'x']);
+  check(typeof pending.then === 'function', 'the command builder returns a promise on the failure path');
+  check((await pending) === 2, 'an unknown argument resolves to exit code 2');
 }
 
 console.log('v02-experiment-package: ' + checks + ' checks, ' + failures + ' failures');

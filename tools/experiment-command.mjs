@@ -235,7 +235,10 @@ export function toPowerShell(command) {
   return pieces.join('\n');
 }
 
-function main(argv) {
+// Async because the pre-flight checks spawn the CLI. Earlier the early-return paths returned a
+// number while the happy path returned a promise, so `main(...).then` threw a TypeError on a
+// usage error; every path now resolves to an exit code.
+async function main(argv) {
   let spec;
   try {
     spec = readLocalArgs(argv);
@@ -301,6 +304,8 @@ function main(argv) {
     return 0;
   });
 }
+
+export { main as runCommandBuilder };
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).then(
