@@ -1,0 +1,149 @@
+{
+  "tools": [
+    {
+      "name": "agent_teams_create"
+    },
+    {
+      "name": "agent_teams_status"
+    },
+    {
+      "name": "agent_teams_create_task"
+    }
+  ],
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are the captain of team <TEAM>."
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are the captain of team <TEAM>. Create the team as planned, then drive the implementation, review and repair loop to completion. Do not write the member deliverables yourself."
+        },
+        {
+          "type": "text",
+          "text": ""
+        },
+        {
+          "type": "text",
+          "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file"
+        },
+        {
+          "type": "text",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_fake_1_0",
+          "name": "agent_teams_create",
+          "input": {
+            "name": "<TEAM>",
+            "description": "Minimal repair loop on a small project: implement, review, repair, re-review.",
+            "approval": "automatic",
+            "plan": {
+              "members": [
+                {
+                  "name": "worker",
+                  "role": "implementer",
+                  "provider": "deepseek-official",
+                  "model": "deepseek-flash"
+                },
+                {
+                  "name": "reviewer",
+                  "role": "reviewer",
+                  "provider": "deepseek-official",
+                  "model": "deepseek-flash"
+                }
+              ],
+              "tasks": [
+                {
+                  "id": "T1",
+                  "subject": "Implement sum() in src/sum.mjs",
+                  "description": "Read src/sum.mjs, replace the stub with an implementation, and run node test/sum.test.mjs.",
+                  "assignee": "worker"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_fake_1_0",
+          "is_error": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "Team \"<TEAM>\" created (id <TEAM>) under <PROJECT>\\teams\\<TEAM>. You are the captain.\nt1 [T1]: Implement sum() in src/sum.mjs; assignee=worker; dependencies="
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_fake_2_0",
+          "name": "agent_teams_status",
+          "input": {}
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_fake_2_0",
+          "is_error": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "Team \"<TEAM>\" — Minimal repair loop on a small project: implement, review, repair, re-review.\nLoop: running — Work remains on the shared task list; wait for the scheduler or complete owned tasks.\nViewing as: captain\nMembers (2):\n  - worker [implementer] working/running · deepseek-official/deepseek-flash · reasoning high\n  - reviewer [reviewer] idle/unspawned · deepseek-official/deepseek-flash · reasoning high\nTasks (1):\n  - t1 [claimed] work attempt 1 seed T1 Implement sum() in src/sum.mjs → worker\nDelivery: blocked (t1 (work) is not completed)\nCaptain inbox (0):"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_fake_4_0",
+          "name": "agent_teams_status",
+          "input": {}
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_fake_4_0",
+          "is_error": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "Team \"<TEAM>\" — Minimal repair loop on a small project: implement, review, repair, re-review.\nLoop: running — Work remains on the shared task list; wait for the scheduler or complete owned tasks.\nViewing as: captain\nMembers (2):\n  - worker [implementer] working/running · deepseek-official/deepseek-flash · reasoning high\n  - reviewer [reviewer] idle/unspawned · deepseek-official/deepseek-flash · reasoning high\nTasks (1):\n  - t1 [claimed] work attempt 1 seed T1 Implement sum() in src/sum.mjs → worker\nDelivery: blocked (t1 (work) is not completed)\nCaptain inbox (0):"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "schema": "tla.repair-protocol/v1",
+  "source": "local capture, raw bodies not published",
+  "captured": "closure/run4 (2026-10-18)",
+  "conversion": [
+    "system prompt -> one normalized role sentence",
+    "tool list -> the names the policy dispatches on",
+    "tool_result text kept and truncated to 600 chars",
+    "host project path -> <PROJECT>",
+    "worktree path -> <WORKTREE>",
+    "other host path -> <HOST_PATH>",
+    "team name -> <TEAM>",
+    "uuid -> <UUID:n> (stable across files)"
+  ],
+  "files": [
+    {
+      "file": "request-001.json",
+      "role": "captain",
+      "sha256": "942bf091f6d9a80bae76e60c70d64c1ad5679ef1b45c73f91f81b46448ff7106",
+      "bytes": 995,
+      "messages": 2
+    },
+    {
+      "file": "request-002.json",
+      "role": "captain",
+      "sha256": "a87278d862df91d48b959ca747c5bbd7e6099762e110604099d3849ee88294da",
+      "bytes": 2692,
+      "messages": 4
+    },
+    {
+      "file": "request-003.json",
+      "role": "member",
+      "sha256": "4a817cf96eb84b65989acdc4f5086e26ba20270d7cd99c45477b73226dc95dab",
+      "bytes": 3175,
+      "messages": 2
+    },
+    {
+      "file": "request-004.json",
+      "role": "captain",
+      "sha256": "459f359033a192e870f1084d67549077fc7167f720b71aadc3f074414d6bbccc",
+      "bytes": 3800,
+      "messages": 6
+    },
+    {
+      "file": "request-005.json",
+      "role": "member",
+      "sha256": "b1690e9c4d30dc792f46a531ea4c5bba85e7ffdafc7071ef0adf462ed289e20e",
+      "bytes": 4069,
+      "messages": 4
+    },
+    {
+      "file": "request-006.json",
+      "role": "captain",
+      "sha256": "ba8bb0c1df831916c17cbf76f20c8dab49a93c383767c25fcd04b566a750abc8",
+      "bytes": 4908,
+      "messages": 8
+    },
+    {
+      "file": "request-007.json",
+      "role": "member",
+      "sha256": "bd7e7e79dff06a0f5269935ae757c60ca6191d2679594a5eee2dd2c73c1bd16a",
+      "bytes": 4739,
+      "messages": 6
+    },
+    {
+      "file": "request-008.json",
+      "role": "captain",
+      "sha256": "e17243db2e90fa4de35a8f651b18d38848d113fb803d21274bc667cbdddafb60",
+      "bytes": 6324,
+      "messages": 10
+    },
+    {
+      "file": "request-009.json",
+      "role": "member",
+      "sha256": "c078afefbd1b897968042aa93723e683e4640de88a6d815cd05e91f3cb59572c",
+      "bytes": 5557,
+      "messages": 8
+    },
+    {
+      "file": "request-010.json",
+      "role": "captain",
+      "sha256": "ffc2f71e8e280cdab2b6fb97c7b3433f8b07747f75a89db1f6451fe65bdafa9d",
+      "bytes": 7436,
+      "messages": 12
+    },
+    {
+      "file": "request-011.json",
+      "role": "member",
+      "sha256": "8044d0d5b425120a0f668ca7f9d71aa8ed0344da4dd7a98c45434c8bcb21cfd2",
+      "bytes": 6254,
+      "messages": 10
+    },
+    {
+      "file": "request-012.json",
+      "role": "captain",
+      "sha256": "ee0d066db15c3d6ea5a81684c51c672c7a7f6c5c5349097c2fc6de8d8529388b",
+      "bytes": 8951,
+      "messages": 14
+    },
+    {
+      "file": "request-013.json",
+      "role": "captain",
+      "sha256": "318a81cf34c5467a919c347b1ddd85e319cc00c263c9bfb8602b8c5444163126",
+      "bytes": 10524,
+      "messages": 16
+    },
+    {
+      "file": "request-014.json",
+      "role": "captain",
+      "sha256": "3f81cd3bb3448303936d9de94a6494ab57f4cc14bb07b3b8f06ca4ae60fa8482",
+      "bytes": 11633,
+      "messages": 18
+    }
+  ]
+}

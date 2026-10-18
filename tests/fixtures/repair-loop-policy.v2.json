@@ -1,0 +1,871 @@
+{
+  "schema": "tla.reactive-model/v2",
+  "description": "Closure experiment: preflight write, implementation, review, automatic repair, re-review.",
+  "rules": [
+    {
+      "name": "captain-creates-team",
+      "role": "captain",
+      "state": "new",
+      "match": {
+        "noToolResult": true
+      },
+      "maxUses": 1,
+      "next": "team-created",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_create",
+            "input": {
+              "name": "fixture-loop",
+              "description": "Minimal repair loop on a small project: implement, review, repair, re-review.",
+              "approval": "automatic",
+              "plan": {
+                "members": [
+                  {
+                    "name": "worker",
+                    "role": "implementer",
+                    "provider": "deepseek-official",
+                    "model": "deepseek-flash"
+                  },
+                  {
+                    "name": "reviewer",
+                    "role": "reviewer",
+                    "provider": "deepseek-official",
+                    "model": "deepseek-flash"
+                  }
+                ],
+                "tasks": [
+                  {
+                    "id": "T1",
+                    "subject": "Implement sum() in src/sum.mjs",
+                    "description": "Read src/sum.mjs, replace the stub with an implementation, and run node test/sum.test.mjs.",
+                    "assignee": "worker"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-create-failed",
+      "role": "captain",
+      "state": "new",
+      "match": {
+        "tool": "agent_teams_create",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "TEAM-CREATE-FAILED: the team could not be created; stopping instead of retrying blindly."
+      }
+    },
+    {
+      "name": "captain-polls-after-create",
+      "role": "captain",
+      "state": "team-created",
+      "match": {
+        "tool": "agent_teams_create",
+        "isError": false
+      },
+      "maxUses": 6,
+      "progressExempt": true,
+      "next": "team-created",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_status",
+            "input": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-creates-review-task",
+      "role": "captain",
+      "state": "team-created",
+      "match": {
+        "tool": "agent_teams_status",
+        "isError": false,
+        "resultMatches": "t1\\s*\\[(failed|completed)\\]"
+      },
+      "maxUses": 1,
+      "next": "review-created",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_create_task",
+            "input": {
+              "kind": "review",
+              "subject": "Review the sum() change",
+              "description": "Run the project test yourself and judge the change.",
+              "objective": "Decide whether src/sum.mjs returns 0 for empty input and includes negative values.",
+              "acceptance": [
+                "sum([]) returns 0",
+                "sum([1,-2,3]) returns 2",
+                "the regression test passes"
+              ],
+              "reviewedTaskId": "t1",
+              "assignee": "reviewer",
+              "dependencies": [
+                "t1"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-polls-while-members-work",
+      "role": "captain",
+      "state": "team-created",
+      "match": {
+        "tool": "agent_teams_status",
+        "isError": false
+      },
+      "maxUses": 6,
+      "progressExempt": true,
+      "next": "team-created",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_status",
+            "input": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-polls-after-review-task",
+      "role": "captain",
+      "state": "review-created",
+      "match": {
+        "tool": "agent_teams_create_task",
+        "isError": false
+      },
+      "maxUses": 6,
+      "progressExempt": true,
+      "next": "review-created",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_status",
+            "input": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-stops-when-loop-closed",
+      "role": "captain",
+      "state": "review-created",
+      "match": {
+        "tool": "agent_teams_status",
+        "isError": false,
+        "resultMatches": "t4\\s*\\[completed\\]"
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "CLOSED: the repair task and its review both reached completed."
+      }
+    },
+    {
+      "name": "captain-polls-for-repair",
+      "role": "captain",
+      "state": "review-created",
+      "match": {
+        "tool": "agent_teams_status",
+        "isError": false
+      },
+      "maxUses": 6,
+      "progressExempt": true,
+      "next": "review-created",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_status",
+            "input": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-gives-up",
+      "role": "captain",
+      "state": "review-created",
+      "match": {
+        "tool": "agent_teams_status",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "NO-CLOSE: the review never reported completion inside the poll budget."
+      }
+    },
+    {
+      "name": "worker-claims-task",
+      "role": "worker",
+      "state": "new",
+      "match": {
+        "noToolResult": true
+      },
+      "maxUses": 1,
+      "next": "claimed",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_claim_task",
+            "input": {
+              "task_id": "{{promptTaskId}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-claim-rejected",
+      "role": "worker",
+      "state": "new",
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "STOP: the task could not be claimed; nothing was written."
+      }
+    },
+    {
+      "name": "worker-starts-task",
+      "role": "worker",
+      "state": "new",
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "working",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "in_progress"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-reads-source",
+      "role": "worker",
+      "state": "working",
+      "match": {
+        "tool": "agent_teams_update_task",
+        "isError": false,
+        "resultMatches": "in_progress"
+      },
+      "maxUses": 1,
+      "next": "reading",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-reads-note-before-write",
+      "role": "worker",
+      "state": "reading",
+      "match": {
+        "tool": "read",
+        "isError": false,
+        "resultMatches": "STUB: the implementation task has not been done yet"
+      },
+      "maxUses": 1,
+      "next": "note-reading",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/note.txt"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-preflight-writes-note",
+      "role": "worker",
+      "state": "note-reading",
+      "match": {
+        "tool": "read",
+        "isError": false,
+        "resultMatches": "PREFLIGHT-BASELINE"
+      },
+      "maxUses": 2,
+      "next": "preflight-written",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "write",
+            "input": {
+              "file_path": "src/note.txt",
+              "content": "PREFLIGHT-OK\n"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-rewrites-source-after-read",
+      "role": "worker",
+      "state": "reading",
+      "match": {
+        "tool": "read",
+        "isError": false,
+        "resultMatches": "FIX-V1"
+      },
+      "maxUses": 1,
+      "next": "v2-written",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "write",
+            "input": {
+              "file_path": "src/sum.mjs",
+              "content": "// FIX-V2\nexport function sum(values) {\n  if (!Array.isArray(values)) throw new TypeError('sum expects an array');\n  let total = 0;\n  for (const value of values) {\n    total += value;\n  }\n  return total;\n}\n"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-preflight-write-failed",
+      "role": "worker",
+      "state": "note-reading",
+      "match": {
+        "tool": "write",
+        "isError": true
+      },
+      "maxUses": 2,
+      "next": "note-reading",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/note.txt"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-runs-preflight-test",
+      "role": "worker",
+      "state": "preflight-written",
+      "match": {
+        "tool": "write",
+        "isError": false,
+        "resultMatches": "note\\.txt"
+      },
+      "maxUses": 1,
+      "next": "preflight-tested",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "command": "node test/preflight.test.mjs",
+              "description": "Read the note back through the project test"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-preflight-shell-failed",
+      "role": "worker",
+      "state": "preflight-written",
+      "match": {
+        "tool": "pwsh",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "PREFLIGHT-SHELL-FAILED: the member could not run the project test after writing; stopping."
+      }
+    },
+    {
+      "name": "worker-reads-source-after-preflight",
+      "role": "worker",
+      "state": "preflight-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false,
+        "resultMatches": "preflight tests: 1 passed, 0 failed"
+      },
+      "maxUses": 1,
+      "next": "v1-reading",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-preflight-test-red",
+      "role": "worker",
+      "state": "preflight-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "PREFLIGHT-READBACK-RED: the overwritten file did not read back as expected; stopping."
+      }
+    },
+    {
+      "name": "worker-implements-v1",
+      "role": "worker",
+      "state": "v1-reading",
+      "match": {
+        "tool": "read",
+        "isError": false,
+        "resultMatches": "STUB: the implementation task has not been done yet"
+      },
+      "maxUses": 1,
+      "next": "v1-written",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "write",
+            "input": {
+              "file_path": "src/sum.mjs",
+              "content": "// FIX-V1\nexport function sum(values) {\n  if (!Array.isArray(values)) throw new TypeError('sum expects an array');\n  let total = 0;\n  for (const value of values) {\n    if (value > 0) total += value;\n  }\n  return total;\n}\n"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-runs-test-after-v1",
+      "role": "worker",
+      "state": "v1-written",
+      "match": {
+        "tool": "write",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "v1-tested",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "command": "node test/sum.test.mjs",
+              "description": "Run the project regression test"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-v1-write-failed",
+      "role": "worker",
+      "state": "v1-written",
+      "match": {
+        "tool": "write",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "WRITE-FAILED: the implementation could not be written; stopping."
+      }
+    },
+    {
+      "name": "worker-reports-red-test",
+      "role": "worker",
+      "state": "v1-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "failed",
+              "verdict": "needs_revision",
+              "output": "The first implementation does not satisfy the regression test."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-runs-test-after-v2",
+      "role": "worker",
+      "state": "v2-written",
+      "match": {
+        "tool": "write",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "v2-tested",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "command": "node test/sum.test.mjs",
+              "description": "Run the project regression test again"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-v2-write-failed",
+      "role": "worker",
+      "state": "v2-written",
+      "match": {
+        "tool": "write",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "WRITE-FAILED: the repaired implementation could not be written; stopping."
+      }
+    },
+    {
+      "name": "worker-completes-repair",
+      "role": "worker",
+      "state": "v2-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false,
+        "resultMatches": "\\b0 failed"
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "completed",
+              "verdict": "pass",
+              "output": "Rewrote src/sum.mjs so every element is included; node test/sum.test.mjs reports 0 failed."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-reports-repair-red",
+      "role": "worker",
+      "state": "v2-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "failed",
+              "verdict": "needs_revision",
+              "output": "The repaired implementation still fails the regression test."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "worker-shell-unavailable",
+      "role": "worker",
+      "state": "v1-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "SHELL-FAILED: cannot run the project test; stopping without claiming success."
+      }
+    },
+    {
+      "name": "worker-shell-unavailable-repair",
+      "role": "worker",
+      "state": "v2-tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "SHELL-FAILED: cannot run the project test; stopping without claiming success."
+      }
+    },
+    {
+      "name": "reviewer-claims-task",
+      "role": "reviewer",
+      "state": "new",
+      "match": {
+        "noToolResult": true
+      },
+      "maxUses": 1,
+      "next": "claimed",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_claim_task",
+            "input": {
+              "task_id": "{{promptTaskId}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-claim-rejected",
+      "role": "reviewer",
+      "state": "new",
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "text": "STOP: the review task could not be claimed."
+      }
+    },
+    {
+      "name": "reviewer-starts-review",
+      "role": "reviewer",
+      "state": "new",
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "working",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "in_progress"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-runs-test",
+      "role": "reviewer",
+      "state": "working",
+      "match": {
+        "tool": "agent_teams_update_task",
+        "isError": false,
+        "resultMatches": "in_progress"
+      },
+      "maxUses": 1,
+      "next": "tested",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "command": "node test/sum.test.mjs",
+              "description": "Run the project regression test independently"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-passes",
+      "role": "reviewer",
+      "state": "tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false,
+        "resultMatches": "\\b0 failed"
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "completed",
+              "verdict": "pass",
+              "output": "Ran node test/sum.test.mjs: 0 failed. The implementation is accepted."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-rejects",
+      "role": "reviewer",
+      "state": "tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "failed",
+              "verdict": "needs_revision",
+              "output": "The regression test fails: negative values are dropped.",
+              "findings": [
+                {
+                  "id": "F1",
+                  "severity": "high",
+                  "problem": "sum() skips negative values, so sum([1,-2,3]) returns 4 instead of 2.",
+                  "requiredFix": "Include every element and keep sum([]) at 0.",
+                  "file": "src/sum.mjs"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-shell-unavailable",
+      "role": "reviewer",
+      "state": "tested",
+      "match": {
+        "tool": "pwsh",
+        "isError": true
+      },
+      "maxUses": 1,
+      "next": "inspect",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-static-rejects",
+      "role": "reviewer",
+      "state": "inspect",
+      "match": {
+        "tool": "read",
+        "isError": false,
+        "resultMatches": "FIX-V1"
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "failed",
+              "verdict": "needs_revision",
+              "output": "Read src/sum.mjs: it skips negative values.",
+              "findings": [
+                {
+                  "id": "F1",
+                  "severity": "high",
+                  "problem": "sum() skips negative values, so sum([1,-2,3]) returns 4 instead of 2.",
+                  "requiredFix": "Include every element and keep sum([]) at 0.",
+                  "file": "src/sum.mjs"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reviewer-static-passes",
+      "role": "reviewer",
+      "state": "inspect",
+      "match": {
+        "tool": "read",
+        "isError": false
+      },
+      "maxUses": 1,
+      "next": "done",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "agent_teams_update_task",
+            "input": {
+              "task_id": "{{claimTaskId}}",
+              "attempt_id": "{{claimAttemptId}}",
+              "status": "completed",
+              "verdict": "pass",
+              "output": "Read src/sum.mjs: it includes every element and returns 0 for empty input."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

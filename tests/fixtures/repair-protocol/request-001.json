@@ -1,0 +1,40 @@
+{
+  "tools": [
+    {
+      "name": "agent_teams_create"
+    },
+    {
+      "name": "agent_teams_status"
+    },
+    {
+      "name": "agent_teams_create_task"
+    }
+  ],
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are the captain of team <TEAM>."
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are the captain of team <TEAM>. Create the team as planned, then drive the implementation, review and repair loop to completion. Do not write the member deliverables yourself."
+        },
+        {
+          "type": "text",
+          "text": ""
+        },
+        {
+          "type": "text",
+          "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file"
+        },
+        {
+          "type": "text",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

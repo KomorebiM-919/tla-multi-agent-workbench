@@ -32,3 +32,7 @@ docs/evidence/v0.1-approval-rejection-20261017T112518Z/** text eol=lf
 # 2026-10-17 归档 v0.4-run4 时发现此前只覆盖了 v0.2-run1 一个目录，现按目录整体禁用行尾转换。
 docs/evidence/** -text -whitespace
 docs/run-records/** -text -whitespace
+
+# 脱敏协议夹具的字节本身就是断言对象：MANIFEST.json 记录的是这些文件的 sha256，
+# 检出、导出或克隆都不能改行尾，否则“固定 SHA 下可复跑”不成立（2026-10-18）。
+tests/fixtures/repair-protocol/** -text -whitespace

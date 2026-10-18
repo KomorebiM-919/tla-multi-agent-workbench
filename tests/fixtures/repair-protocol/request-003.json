@@ -1,0 +1,46 @@
+{
+  "tools": [
+    {
+      "name": "agent_teams_claim_task"
+    },
+    {
+      "name": "agent_teams_update_task"
+    },
+    {
+      "name": "read"
+    },
+    {
+      "name": "write"
+    },
+    {
+      "name": "pwsh"
+    }
+  ],
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are worker, a member of team <TEAM>."
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "AgentTeams automatic task assignment from the shared task list.\n\nYou are executing as configured member \"worker\".\nDo not start a teammate's assigned task.\n\nTeam goal:\nMinimal repair loop on a small project: implement, review, repair, re-review.\n\nProfile protocol:\n(none)\n\nCompleted dependency results:\n(none)\n\nTask: t1 [T1] — Implement sum() in src/sum.mjs\n\nRead src/sum.mjs, replace the stub with an implementation, and run node test/sum.test.mjs.\n\nContract:\nKind: work\n\nAttempt: 1\nAttempt id: d9d6604f-aa45-4a76-93b7-eb19d8c57ce2\n\nCall agent_teams_claim_task for t1; it will return this same attempt_id. Include attempt_id=d9d6604f-aa45-4a76-93b7-eb19d8c57ce2 in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. claimed cannot jump to completed. Mark in_progress first, then completed or failed. Include attempt_id on every update. Then send_message to captain with source_task_id and source_attempt_id and become idle.\nWhen finishing: use status=completed only when the task's success criteria are satisfied; use status=failed when blocking findings or validation failures mean downstream work must not proceed; include a concise output in either case. Quality kinds must submit structured fields: review/requirements need verdict=pass to complete (needs_revision/reject must fail with findings); implementation/repair/verification/integration need acceptanceResults and commandsRun, while implementation/repair also need in-scope changedPaths. Use status values \"passed\" or \"failed\" inside those arrays. After the work and verification finish, call agent_teams_update_task immediately; do not wait for captain confirmation and do not continue exploring. Do not approve your own implementation. Mail is not a formal next review. Completed work must not be repeated to attach late evidence: call update_task on the original task with its attempt_id and acceptanceResults/commandsRun/evidence_note; supplements are append-only and cannot change its verdict. Treat the dependency results above as source material. Do not ignore them. Work only this task and only its in-scope paths in this turn.\n\nState policy: teams/<TEAM>/ is read-only diagnostics; mutate team state only through agent_teams_* tools."
+        },
+        {
+          "type": "text",
+          "text": ""
+        },
+        {
+          "type": "text",
+          "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify file"
+        },
+        {
+          "type": "text",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}
