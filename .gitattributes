@@ -41,5 +41,5 @@ tests/fixtures/repair-protocol/** -text -whitespace
 # buildDigest，并与 preflight 里登记的审查指纹比对。本机 `core.autocrlf=true` 时，
 # 同一提交的新检出会把 LF 变 CRLF（3 个文件、10362 → 10607 字节），指纹随之从
 # 54f1a8e3… 变成 4de4b80e…，启动器按设计拒绝启动（2026-10-18 受控实验预检实测）。
-# 固定该路径的行尾，使“审查指纹”在干净检出上也能复现。
-orchestration/interceptor-plugin/** -text -whitespace
+# 这里只关闭行尾转换，**保留空白检查**：这些文件没有需要豁免的空白问题。
+orchestration/interceptor-plugin/** -text
