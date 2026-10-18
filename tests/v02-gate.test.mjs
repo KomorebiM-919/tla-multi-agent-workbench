@@ -23,7 +23,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createBudgetGate, GateError } from '../orchestration/gate/gate.mjs';
 import {
@@ -35,6 +35,9 @@ import {
   normalizeBaseUrl,
   parseDumpConfigStrict,
   REVIEWED_PLUGIN_EVIDENCE,
+  fingerprintPluginDir,
+  verifyInstalledPlugin,
+  verifyPluginAgainst,
 } from '../orchestration/gate/preflight.mjs';
 import { parseArgs, UsageError, EXIT_OK, EXIT_PROTECTION_UNVERIFIED, terminateHost } from '../tools/gated-run.mjs';
 
@@ -1071,6 +1074,79 @@ async function scenarioReviewedPluginEvidence() {
   check(allowed.allow === true, 'reviewed: registered plugin alone does not block', allowed);
   rmSync(dir, { recursive: true, force: true });
 }
+// 插件身份：登记的版本号必须与**实际安装包**一致，且构建内容未变。
+// 这里不看配置里写的 version（那只是文本）；四个分支都要有反例。
+async function scenarioPluginIdentity() {
+  const dir = mkdtempSync(join(tmpdir(), 'gate-identity-'));
+  const pkgDir = join(dir, 'plugin');
+  mkdirSync(join(pkgDir, 'lib'), { recursive: true });
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '0.1.23' }) + '\n');
+  writeFileSync(join(pkgDir, 'lib', 'a.js'), 'export const a = 1;\n');
+  writeFileSync(join(pkgDir, 'lib', 'b.js'), 'export const b = 2;\n');
+
+  const fingerprint = fingerprintPluginDir(pkgDir);
+  check(fingerprint.ok === true, 'identity: fixture fingerprint reads', fingerprint);
+  check(fingerprint.version === '0.1.23' && fingerprint.fileCount === 3, 'identity: fingerprint covers package.json and lib files', fingerprint);
+  const expected = { version: '0.1.23', buildDigest: fingerprint.buildDigest };
+
+  const verified = verifyPluginAgainst({ name: 'demo-plugin', pkgDir, expected });
+  check(verified.status === 'verified', 'identity: matching build verifies', verified);
+  check(verified.installedVersion === '0.1.23', 'identity: reports installed version', verified);
+
+  // 同名不同版本
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '0.1.24' }) + '\n');
+  const newer = verifyPluginAgainst({ name: 'demo-plugin', pkgDir, expected });
+  check(newer.status === 'version-mismatch', 'identity: same name newer version is refused', newer);
+  check(newer.installedVersion === '0.1.24' && newer.expectedVersion === '0.1.23', 'identity: mismatch names both versions', newer);
+
+  // 同版本但构建内容被改
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '0.1.23' }) + '\n');
+  writeFileSync(join(pkgDir, 'lib', 'b.js'), 'export const b = 3;\n');
+  const tampered = verifyPluginAgainst({ name: 'demo-plugin', pkgDir, expected });
+  check(tampered.status === 'build-mismatch', 'identity: same version with changed bytes is refused', tampered);
+  check(tampered.buildDigest !== tampered.expectedBuildDigest, 'identity: build mismatch shows two digests', tampered);
+
+  // 身份读不出 / 包不存在
+  const missing = verifyInstalledPlugin({ name: '@nanmicoder/dsh-agent-teams', pkgDir: join(dir, 'nope') });
+  check(missing.status === 'identity-unreadable', 'identity: missing package is unreadable', missing);
+  const unregistered = verifyInstalledPlugin({ name: '@acme/router', pkgDir });
+  check(unregistered.status === 'unregistered', 'identity: unregistered name has no evidence', unregistered);
+
+  // 登记表里也必须有指纹，否则等于"只登记名字"
+  for (const [name, entry] of Object.entries(REVIEWED_PLUGIN_EVIDENCE)) {
+    check(/^[0-9a-f]{64}$/.test(String(entry.buildDigest)), 'identity: ' + name + ' carries a build digest', entry.buildDigest);
+    check(Number.isInteger(entry.fileCount) && entry.fileCount > 0, 'identity: ' + name + ' carries a file count', entry.fileCount);
+  }
+
+  // 未通过身份核对时，判定必须拒绝启动
+  const denied = decideStart({
+    gateReady: true,
+    baseUrl: { ok: true },
+    heartbeat: { ok: true },
+    coverage: { guarded: ['llm-deepseek'], unguarded: [], unknown: [], providers: [] },
+    pluginIdentities: [newer],
+  });
+  check(denied.allow === false, 'identity: mismatch blocks startup', denied);
+  check(denied.blockers.some((b) => b.code === 'PLUGIN_NOT_VERIFIED'), 'identity: blocker names PLUGIN_NOT_VERIFIED', denied.blockers);
+  const accepted = decideStart({
+    gateReady: true,
+    baseUrl: { ok: true },
+    heartbeat: { ok: true },
+    coverage: { guarded: ['llm-deepseek'], unguarded: [], unknown: [], providers: [] },
+    pluginIdentities: [verified],
+  });
+  check(accepted.allow === true, 'identity: verified plugin does not block', accepted);
+
+  // 真实安装包（若本机隔离 profile 还在）：直接核对绑定，而不是只信登记表
+  const realProfile = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'profiles', 'stage1', 'node_modules', '@nanmicoder', 'dsh-agent-teams');
+  if (existsSync(realProfile)) {
+    const real = verifyInstalledPlugin({ name: '@nanmicoder/dsh-agent-teams', pkgDir: realProfile });
+    check(real.status === 'verified', 'identity: installed agent-teams matches the reviewed build', real);
+    check(real.buildDigest === REVIEWED_PLUGIN_EVIDENCE['@nanmicoder/dsh-agent-teams'].buildDigest, 'identity: installed digest equals registered digest', real.buildDigest);
+  }
+  rmSync(dir, { recursive: true, force: true });
+}
+
 async function main() {
   const scenarios = [
     ['control plane is read-only', scenarioControlPlaneReadOnly],
@@ -1089,6 +1165,7 @@ async function main() {
     ['launcher rejects foreign proof', scenarioLauncherForeignProof],
     ['termination escalation', scenarioTerminationEscalation],
     ['reviewed plugin evidence', scenarioReviewedPluginEvidence],
+    ['plugin identity', scenarioPluginIdentity],
   ];
   for (const [label, scenario] of scenarios) {
     try {

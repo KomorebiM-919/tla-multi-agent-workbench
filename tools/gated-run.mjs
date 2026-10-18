@@ -35,8 +35,9 @@
 //        4 = 运行中保护失效（已撤销租约并终止宿主）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, closeSync, openSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, openSync, readFileSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
+import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { createBudgetGate } from '../orchestration/gate/gate.mjs';
 import {
@@ -44,6 +45,8 @@ import {
   checkProtectionHeartbeat,
   decideStart,
   extractProviderCoverage,
+  REVIEWED_PLUGIN_NAMES,
+  verifyInstalledPlugin,
   formatDecision,
   parseDumpConfigStrict,
   readGateStatus,
@@ -257,6 +260,32 @@ export function extractBaseUrlFromDump(dump) {
  *   CONFIG_SPAWN_FAILED / CONFIG_TIMEOUT / CONFIG_SIGNALED /
  *   CONFIG_EXIT_NONZERO / CONFIG_UNPARSEABLE / CONFIG_UNREADABLE
  */
+/**
+ * 从宿主 profile 的 node_modules 读已登记插件的真实身份（安装版本 + 构建指纹）。
+ * 配置里声明的 version 不参与判断：那只是文本，包被换掉也照样写着旧版本号。
+ */
+export function verifyPluginIdentities(entries, options) {
+  const names = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry.name !== 'string') continue;
+    if (!REVIEWED_PLUGIN_NAMES.has(entry.name)) continue;
+    if (!names.includes(entry.name)) names.push(entry.name);
+  }
+  const home = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME !== ''
+    ? process.env.DSH_HOME
+    : join(homedir(), '.dsh');
+  const modulesDir = join(home, 'profiles', String(options.profile), 'node_modules');
+  return names.map((name) => {
+    let pkgDir = null;
+    try {
+      pkgDir = realpathSync(join(modulesDir, name));
+    } catch (_missing) {
+      pkgDir = null;
+    }
+    return verifyInstalledPlugin({ name, pkgDir });
+  });
+}
+
 export function fetchEffectiveConfig(options, { runDir }) {
   const dumpPath = join(runDir, 'effective-config.yml');
   const errPath = join(runDir, 'effective-config.stderr.txt');
@@ -484,6 +513,10 @@ async function main() {
     if (extracted.ok !== true) baseUrlCheck.detail = extracted.reason + (extracted.detail === undefined ? '' : ' (' + extracted.detail + ')');
     const coverage = configProbe.ok && configProbe.entries ? extractProviderCoverage(configProbe.entries, baseUrl) : null;
     record.coverage = coverage;
+    // 已登记插件的"版本 + 构建指纹"必须从宿主实际解析到的包目录读出来核对，
+    // 配置里声明的版本不作数（那只是文本）。
+    const pluginIdentities = configProbe.ok && configProbe.entries ? verifyPluginIdentities(configProbe.entries, options) : [];
+    record.pluginIdentities = pluginIdentities;
 
     // ---- 步骤 3：判定。任一不成立就拒绝启动（宿主进程根本不存在） ----
     // 配置读不到/解析不出时只报这一个原因：把"缺输入"同时说成"地址错、覆盖率不明"
@@ -495,6 +528,7 @@ async function main() {
           baseUrl: baseUrlCheck,
           heartbeat: { ok: true, reason: null, note: 'checked after host start' },
           coverage,
+          pluginIdentities,
         });
     record.decision = {
       ...decision,

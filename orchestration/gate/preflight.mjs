@@ -28,7 +28,8 @@
 // 隔离 profile 的 node_modules 里也没有 yaml/js-yaml）；按"不新增依赖"的约束，
 // 这里实现受限子集解析器，并用"未知形态一律拒绝"来换取它的可审计性。
 
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
 import { GateError } from './gate.mjs';
 import { KNOWN_COMPONENT_NAMES } from './known-components.mjs';
 
@@ -40,6 +41,7 @@ export const PREFLIGHT_BLOCKERS = [
   'HEARTBEAT_STALE',
   'PROVIDER_NOT_GATED',
   'PROVIDER_UNKNOWN',
+  'PLUGIN_NOT_VERIFIED',
   'NO_GATED_PROVIDER',
   'COVERAGE_UNVERIFIABLE',
   'CONFIG_UNPARSEABLE',
@@ -60,11 +62,18 @@ export const KNOWN_NON_PROVIDER_ADAPTERS = new Set([
   '@deepseek-ai/dsh-llm',
 ]);
 // 已审查过、确认不会自行发起模型请求的第三方组件。每一项都必须带证据，
-// 而不是"名字里没有 llm"或"看起来像"。登记的是**固定版本**：升级、换包或
-// 换版本都要重新核对，不能沿用旧结论。
+// 而不是"名字里没有 llm"或"看起来像"。登记的是**固定版本 + 构建指纹**：
+// 名字和配置里声明的版本都不算证据，必须从宿主实际解析到的包目录读版本与
+// 文件指纹；版本不符、身份读不出、内容变了都要拒绝启动。指纹口径：
+// 包根下所有 .js/.mjs/.cjs/.json（跳过 node_modules/.git）按相对路径排序，
+// 取 sha256(Σ"<文件 sha256>  <相对路径>\n")。
+// 这是**本地完整性核对**，防的是"装错了版本/包被换过"，不是防恶意本机管理员
+// ——能被本机管理员同时改写包和本表的人可以绕过它。
 export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
   'tla-prelaunch-budget': Object.freeze({
     version: '0.0.0-local',
+    buildDigest: '6fb8a042876ce78f7b3150f57172ff98a7ab823687ddb23ea0b7fd049b316477',
+    fileCount: 3,
     reviewedFor: '本仓库的预算拦截器（profile overlay insert 挂载）',
     evidence: Object.freeze([
       'listener 只读 agent/request 的配置并在发起前同步预占额度，然后 return next()',
@@ -73,6 +82,8 @@ export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
   }),
   '@nanmicoder/dsh-agent-teams': Object.freeze({
     version: '0.1.23',
+    buildDigest: '4adb2b0c3c6281139f516c967f1caaae3cbd4670f08d2f33475d163c1385d752',
+    fileCount: 43,
     reviewedFor: '团队执行后端候选（隔离 profile `stage1` 内 0.1.23）',
     evidence: Object.freeze([
       '安装包 lib/ 22 个 js 全文扫描：0 处 baseURL、0 处 llm.stream、0 处 llm.prepareCall、0 处 apiKey、无 Authorization 头构造',
@@ -84,6 +95,140 @@ export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
 });
 // 升级到未登记版本时不能自动放行：名字在表里也要按登记的版本判断。
 export const REVIEWED_PLUGIN_NAMES = new Set(Object.keys(REVIEWED_PLUGIN_EVIDENCE));
+
+export const PLUGIN_IDENTITY_SCHEMA = 'tla.plugin-identity/v1';
+export const PLUGIN_IDENTITY_STATUSES = [
+  'verified',
+  'unregistered',
+  'identity-unreadable',
+  'version-mismatch',
+  'build-mismatch',
+];
+
+// 只读取文件内容算指纹；不执行包内代码。
+export function fingerprintPluginDir(pkgDir) {
+  const pkgFile = pkgDir + '/package.json';
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(pkgFile, 'utf8'));
+  } catch (error) {
+    return { ok: false, reason: 'PLUGIN_IDENTITY_UNREADABLE', detail: '读不出 ' + pkgFile + '：' + error.message };
+  }
+  if (manifest === null || typeof manifest !== 'object' || typeof manifest.version !== 'string') {
+    return { ok: false, reason: 'PLUGIN_IDENTITY_UNREADABLE', detail: pkgFile + ' 里没有 version 字段' };
+  }
+
+  const files = [];
+  const walk = (dir, rel) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+      throw new Error('读不出目录 ' + dir + '：' + error.message);
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (entry.name === 'node_modules' || entry.name === '.git') continue;
+      const childRel = rel === '' ? entry.name : rel + '/' + entry.name;
+      if (entry.isDirectory()) {
+        walk(dir + '/' + entry.name, childRel);
+      } else if (entry.isFile() && /\.(?:js|mjs|cjs|json)$/.test(entry.name)) {
+        const digest = createHash('sha256').update(readFileSync(dir + '/' + entry.name)).digest('hex');
+        files.push({ path: childRel, sha256: digest });
+      }
+    }
+  };
+
+  try {
+    walk(pkgDir, '');
+  } catch (error) {
+    return { ok: false, reason: 'PLUGIN_IDENTITY_UNREADABLE', detail: error.message };
+  }
+  if (files.length === 0) {
+    return { ok: false, reason: 'PLUGIN_IDENTITY_UNREADABLE', detail: '包内没有可核对的文件：' + pkgDir };
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const text = files.map((file) => file.sha256 + '  ' + file.path + '\n').join('');
+  return {
+    ok: true,
+    version: manifest.version,
+    fileCount: files.length,
+    buildDigest: createHash('sha256').update(text, 'utf8').digest('hex'),
+  };
+}
+
+// 从宿主实际解析到的包目录核对身份。配置里写的版本一律不采信。
+export function verifyInstalledPlugin({ name, pkgDir = null }) {
+  const expected = REVIEWED_PLUGIN_EVIDENCE[name];
+  if (expected === undefined) {
+    return {
+      schema: PLUGIN_IDENTITY_SCHEMA,
+      name,
+      status: 'unregistered',
+      installedVersion: null,
+      declaredVersion: null,
+      expectedVersion: null,
+      fileCount: null,
+      buildDigest: null,
+      expectedBuildDigest: null,
+      detail: '该组件没有登记过已审查的版本与构建指纹',
+    };
+  }
+  return verifyPluginAgainst({ name, pkgDir, expected });
+}
+
+// 与"登记表"解耦的核对函数（测试可以用合成证据验证四个分支）。
+export function verifyPluginAgainst({ name, pkgDir = null, expected }) {
+  if (typeof pkgDir !== 'string' || pkgDir === '') {
+    return {
+      schema: PLUGIN_IDENTITY_SCHEMA,
+      name,
+      status: 'identity-unreadable',
+      installedVersion: null,
+      declaredVersion: expected.version,
+      expectedVersion: expected.version,
+      fileCount: null,
+      buildDigest: null,
+      expectedBuildDigest: expected.buildDigest,
+      detail: '找不到该组件在宿主 profile 里的安装位置',
+    };
+  }
+  const fingerprint = fingerprintPluginDir(pkgDir);
+  if (fingerprint.ok !== true) {
+    return {
+      schema: PLUGIN_IDENTITY_SCHEMA,
+      name,
+      status: 'identity-unreadable',
+      installedVersion: null,
+      declaredVersion: expected.version,
+      expectedVersion: expected.version,
+      fileCount: null,
+      buildDigest: null,
+      expectedBuildDigest: expected.buildDigest,
+      detail: fingerprint.detail,
+    };
+  }
+  const base = {
+    schema: PLUGIN_IDENTITY_SCHEMA,
+    name,
+    installedVersion: fingerprint.version,
+    declaredVersion: expected.version,
+    expectedVersion: expected.version,
+    fileCount: fingerprint.fileCount,
+    buildDigest: fingerprint.buildDigest,
+    expectedBuildDigest: expected.buildDigest,
+  };
+  if (fingerprint.version !== expected.version) {
+    return { ...base, status: 'version-mismatch', detail: '审查版本 ' + expected.version + '，实际安装 ' + fingerprint.version };
+  }
+  if (fingerprint.buildDigest !== expected.buildDigest) {
+    return {
+      ...base,
+      status: 'build-mismatch',
+      detail: '版本相同但构建内容不同：' + fingerprint.fileCount + ' 个文件，指纹 ' + fingerprint.buildDigest.slice(0, 16) + '…，审查时为 ' + expected.buildDigest.slice(0, 16) + '…',
+    };
+  }
+  return { ...base, status: 'verified', detail: null };
+}
 
 // 随包组件里"名字不带 `dsh-llm-` 前缀、但自己持有模型端点配置"的特例。
 // 白名单只能证明组件在默认 profile 里存在，不能证明它不调用模型；下面两个
@@ -710,6 +855,14 @@ export function decideStart(input) {
     if (!Array.isArray(coverage.guarded) || coverage.guarded.length === 0) {
       blockers.push({ code: 'NO_GATED_PROVIDER', detail: '没有任何模型 provider 指向闸门' });
     }
+  }
+  const pluginIdentities = Array.isArray(input.pluginIdentities) ? input.pluginIdentities : [];
+  for (const identity of pluginIdentities) {
+    if (identity === null || identity.status === 'verified') continue;
+    blockers.push({
+      code: 'PLUGIN_NOT_VERIFIED',
+      detail: (identity.name || identity.id || '<unknown>') + '：' + identity.status + '（' + (identity.detail || '没有可核对的安装身份') + '）',
+    });
   }
   return { allow: blockers.length === 0, blockers };
 }
