@@ -110,6 +110,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 - 第三次受控启动尝试与判断统一（2026-10-18，零成本；用户按 `m23122` 任务书；**状态：待独立复核**）：外层拿到 Medium 令牌（`S-1-16-8192`）后，启动器在**宿主进程创建前**以 `PROVIDER_UNKNOWN: tla-prelaunch-budget` 拒绝——overlay 用 `insert:` 注入的预算插件没有 `name`，启动器把它当未知模型适配器，而生效配置检查器的另一套分类器把它当共享管线。闸门放行 0、插件预占 0（无挂载、无 `reserved` 事件）、上游模型请求 0、宿主进程 0 个；按"任何失败即停止本轮"结束，未重跑。修复（`26021ab`）：启动器按 id 认识自己的出勤插件、模板把包名写进 `insert:` 条目、生效配置检查新增第 9 项 `coverage:launcher-classifier`（用启动器自己的分类器判同一份 dump），并修正 fixture 里写错的适配器名 + 新增漂移守卫。净检出 `v02-run4` @ `26021ab` 上离线复验：`FIDELITY OK`、`STATIC PREFLIGHT OK`、9 项配置检查全过。成员真实写盘与完整返工闭环**仍未验证**（`docs/V0.2-B1-MATRIX.md` §16）。
 
+- 插件身份判定统一（2026-10-18，零成本；用户按 `m24003` 任务书；**状态：待独立复核**）：上一轮"按 id 放行"留下缺口——`{id:'tla-prelaunch-budget'}`（无 `name`）或 `{id:'tla-prelaunch-budget', name:'@acme/router'}` 都被分类成 `plumbing`，而身份核验只收集 `entry.name`，于是**空身份列表**也能"通过"。现在分类与核验消费同一个规范化实例（`resolveInstancePackages` + `judgePluginInstances`）：缺 `name` 只有在 profile 声明该包**且**安装字节等于审查 `buildDigest` 时才解析为自有插件；冲突名、同包多实例、身份结果缺失与身份不完整一律拒绝启动；检查器复用同一判定并输出逐实例表（`identity:per-instance`、`identity:no-conflict-or-duplicate`），身份证据缺失判 FAIL。新增 `tests/v02-plugin-identity.test.mjs` 33 项断言，`v02-effective-config` 8 项、`v02-gate` 18/187、`v02-experiment-package` 60 等回归全绿；同时更正第三次运行的 SHA 归属与四项计数口径（`docs/V0.2-B1-MATRIX.md` §17）。本轮未启动宿主、未申请升级。
+
 - **验收状态**：条件 1（至少两个不同模型在同一工作流中协作且可复现）**未满足**——本轮没有任何**真实外部**模型调用（阶段 2 只接本机假模型服务），只具备配置、计划与"请求前计数"能力；条件 2（跨轮次恢复）未开始。**不得**把本轮隔离原型当作 V0.2 验收通过。
 ### 功能规划
 

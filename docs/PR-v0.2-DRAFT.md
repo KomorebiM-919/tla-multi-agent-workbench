@@ -56,6 +56,12 @@ V0.2 的离线原型与安全基础设施，**不是**"多模型协作已验收"
   `MISSING_CREDENTIAL`（已加 `overlay:credentials` 预检）；③启动器把 overlay `insert:` 注入、
   宿主不补 `name` 的预算插件当成未知模型适配器（`PROVIDER_UNKNOWN`），而离线检查器用的是另一套
   分类器——两边判断分歧（已统一：`coverage:launcher-classifier`，见 `docs/V0.2-B1-MATRIX.md` §16）。
+- 随后又补齐了那次统一留下的身份缺口：分类与核验原先各写一半——`id` 等于预算插件名就被记成
+  `plumbing`，而身份核验只收集显式 `name`，于是**空身份列表**也能通过（`{id:'tla-prelaunch-budget'}`、
+  `{id:'tla-prelaunch-budget', name:'@acme/router'}` 两个反例都已固定成测试）。现在两者消费同一个
+  规范化实例：缺 `name` 只有在 profile 声明该包**且**安装字节等于审查 `buildDigest` 时才解析为自有插件，
+  冲突名、同包多实例、身份结果缺失、身份不完整一律拒绝启动，离线检查器复用同一判定并输出逐实例表
+  （`docs/V0.2-B1-MATRIX.md` §17）。这一轮同样**没有启动宿主**。
 - 全轮假模型请求（按原始日志去重复算）：13 次运行、**闸门放行 130 / 上游到达 130**（成功 115、
   错误 3、没答完 3、响应未知 9），**真实外部模型调用 0 次**。旧文案里的 `84/100` 只含
   repair3+repair4(+repair5)，漏了 B-1 四次运行的 9 次与 closure 的 21 次；更正见
