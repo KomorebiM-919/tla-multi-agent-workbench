@@ -306,6 +306,33 @@ try {
       rmSync(root, { recursive: true, force: true });
     }
   }
+
+  // 直接反例：同一状态、同一结果的重复请求，必须在无进展阈值处失败，而不是靠 maxUses
+  // 慢慢耗光。这层兜底之前只在文档里声明，没有断言。
+  {
+    const looping = {
+      schema: REACTIVE_SCHEMA,
+      rules: [{ name: 'idle-ack', role: 'any', state: 'new', maxUses: 10, match: { noToolResult: true }, reply: { text: 'again' } }],
+    };
+    const model = createReactiveModel(looping, { maxNoProgress: 2 });
+    const same = body({ turns: [] });
+    model.decide(same);
+    model.decide(same);
+    expectError(() => model.decide(same), 'NO_PROGRESS_LOOP', 'identical requests fail at the no-progress threshold instead of burning maxUses');
+    const fresh = createReactiveModel(looping, { maxNoProgress: 2 });
+    check(fresh.policy.rules.length === 1, 'the counterexample really has one looping rule');
+    // 有进展时不得触发：状态前进后，同一个请求体可以继续被回答。
+    const advancing = {
+      schema: REACTIVE_SCHEMA,
+      rules: [
+        { name: 'first', role: 'any', state: 'new', maxUses: 1, match: { noToolResult: true }, next: 'two', reply: { text: 'one' } },
+        { name: 'second', role: 'any', state: 'two', maxUses: 1, match: { noToolResult: true }, next: 'three', reply: { text: 'two' } },
+      ],
+    };
+    const moving = createReactiveModel(advancing, { maxNoProgress: 1 });
+    check(moving.decide(same).rule === 'first', 'a rule advances the state instead of repeating');
+    check(moving.decide(same).rule === 'second', 'the progressed state matches a different rule with the same request');
+  }
 } finally {
   console.log('v02-reactive-model: ' + checks + ' checks, ' + failures + ' failures');
   if (failures > 0) process.exitCode = 1;
