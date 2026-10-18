@@ -6,76 +6,398 @@
 // 保护生效。以下几种情况都会让闸门形同不存在：
 //   1. 宿主生效配置里的 baseURL 被改回真实端点；
 //   2. 拦截插件根本没挂上（apply 抛错 / 未安装 / 版本不兼容）；
-//   3. 插件挂上了但从不心跳（进程卡住、配置写错路径）。
-// 因此判定必须同时看三件事，而不是看某个布尔变量：
+//   3. 插件挂上了但从不心跳（进程卡住、配置写错路径）；
+//   4. 同一个宿主里还有别的模型 provider 实例没指向闸门。
+// 因此判定必须同时看四件事，而不是看某个布尔变量：
 //   - 闸门在监听（能连上 status 接口）；
-//   - 生效 baseURL 指向闸门；
-//   - 插件确实写过 mounted + 心跳事件（文件里有新鲜记录）。
+//   - **所有**已启用的模型 provider 实例的 baseURL 都指向闸门（且至少有一个）；
+//   - 本次运行（runId）写下了 mounted，且其后没有 unmounted；
+//   - 心跳新鲜（证明该运行实例还在活动）。
 //
 // 任何一项不成立都必须**阻止启动**（不是"先跑起来再看看"）。
+//
+// 配置解析策略（2026-10-18 审查 P0-4）：不使用正则逐行"找字符"，而是把
+// `--dump-config` 的输出当作结构化文档解析成一个**受限子集**：
+//   - 只支持块式 YAML：顶层是映射序列，`key: value`，缩进为 2 空格倍数的
+//     嵌套映射与序列，纯量支持引号字符串/布尔/null/数字；
+//   - 显式拒绝：制表符缩进、流式集合（`{...}`/`[...]`）、锚点/别名（`&`/`*`）、
+//     多文档分隔符（`---`）、重复键、无法归类的内容；
+//   - 拒绝即"不可验证"，调用方必须拒绝启动（fail-closed），不做"跳过坏行继续"。
+//
+// 本仓库未引入 YAML 解析依赖（离线核对：工作树内没有依赖 YAML 的 package.json，
+// 隔离 profile 的 node_modules 里也没有 yaml/js-yaml）；按"不新增依赖"的约束，
+// 这里实现受限子集解析器，并用"未知形态一律拒绝"来换取它的可审计性。
 
 import { readFileSync } from 'node:fs';
 import { GateError } from './gate.mjs';
+import { KNOWN_COMPONENT_NAMES } from './known-components.mjs';
 
 export const PREFLIGHT_SCHEMA = 'tla.gate-preflight/v1';
-export const PREFLIGHT_BLOCKERS = ['GATE_NOT_READY', 'BASE_URL_MISMATCH', 'HEARTBEAT_MISSING', 'HEARTBEAT_STALE', 'PROVIDER_NOT_GATED'];
+export const PREFLIGHT_BLOCKERS = [
+  'GATE_NOT_READY',
+  'BASE_URL_MISMATCH',
+  'HEARTBEAT_MISSING',
+  'HEARTBEAT_STALE',
+  'PROVIDER_NOT_GATED',
+  'PROVIDER_UNKNOWN',
+  'NO_GATED_PROVIDER',
+  'COVERAGE_UNVERIFIABLE',
+  'CONFIG_UNPARSEABLE',
+  'CONFIG_UNREADABLE',
+];
+
+// 受信任的模型 provider 适配器清单（保守识别）：
+// - 已知 provider：必须显式指向闸门才算受保护；
+// - 已知非 provider（共享管线）：不参与覆盖率判定；
+// - 其余 `@deepseek-ai/dsh-llm-*` 一律记为 unknown → 拒绝启动，绝不静默跳过。
+export const KNOWN_PROVIDER_ADAPTERS = {
+  '@deepseek-ai/dsh-llm-deepseek-api-key': { route: 'deepseek-official', aggregator: false },
+  '@deepseek-ai/dsh-llm-deepseek-account': { route: 'deepseek-account', aggregator: false },
+  '@deepseek-ai/dsh-llm-pi-ai': { route: 'pi-ai', aggregator: true },
+};
+export const KNOWN_NON_PROVIDER_ADAPTERS = new Set([
+  '@deepseek-ai/dsh-llm-retry',
+  '@deepseek-ai/dsh-llm',
+]);
+// 已审查过、确认不会发起模型请求的第三方组件。只有本仓库自己的预算拦截器
+// 在这里；它只读 agent/request 配置并同步预占额度，不调用任何 LLM。
+// 其它任何第三方插件都必须按 unknown 处理（拒绝启动），不能靠"看起来像"
+// 或"名字里没有 llm"就放过。
+export const REVIEWED_PLUGIN_NAMES = new Set(['tla-prelaunch-budget']);
+
+// 随包组件里"名字不带 `dsh-llm-` 前缀、但自己持有模型端点配置"的特例。
+// 白名单只能证明组件在默认 profile 里存在，不能证明它不调用模型；下面两个
+// 组件都持有可指向真实模型服务的端点是宿主源码里的事实：
+// - `@deepseek-ai/dsh-web-search-deepseek`：默认 baseURL 为
+//   `https://api.deepseek.com/anthropic/v1`，请求 `${baseURL}/messages`；
+// - `@deepseek-ai/dsh-deepseek-account-platform`：默认 `inferenceOrigin` 为
+//   `https://api.deepseek.com`，本机代理再把推理请求转发到该地址。
+// 因此它们只有在"端点显式指向闸门"或"被禁用"时才算受保护，否则一律 unguarded。
+export const MODEL_ENDPOINT_COMPONENTS = {
+  '@deepseek-ai/dsh-web-search-deepseek': ['baseURL'],
+  '@deepseek-ai/dsh-deepseek-account-platform': ['inferenceOrigin'],
+};
+
+const YAML_SCALAR_TRUE = new Set(['true', 'True', 'TRUE', 'yes', 'on']);
+const YAML_SCALAR_FALSE = new Set(['false', 'False', 'FALSE', 'no', 'off']);
+const YAML_SCALAR_NULL = new Set(['null', 'Null', 'NULL', '~']);
+
+export class PreflightError extends Error {
+  constructor(code, detail) {
+    super(code + ': ' + detail);
+    this.name = 'PreflightError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+function fail(code, detail) {
+  return { ok: false, code, detail };
+}
 
 /**
- * 生效配置里**所有**模型 provider 实例是否都指向闸门。
+ * 解析 `--dump-config` 输出（受限 YAML 子集）。
  *
- * 只校验一个 baseURL 是不够的：宿主可以同时装载多个 provider 实例
- * （例如 `llm-deepseek` = deepseek-official、`llm-deepseek-account` =
- * deepseek-account、`llm-pi-ai` = 第三方聚合）。overlay 只改其中一个时，
- * 走另一个实例的请求根本不经过闸门。这里按实例逐个判定，任何未指向闸门
- * 的实例都算"未受保护"，必须阻止启动。
+ * @param {string} text 原始输出
+ * @returns {{ok:true, entries:object[]} | {ok:false, code:string, detail:string}}
  */
-export function extractProviderCoverage(dumpText, gateBaseUrl) {
-  const gate = normalizeBaseUrl(gateBaseUrl);
-  const blocks = [];
-  let current = null;
-  for (const rawLine of String(dumpText).split('\n')) {
-    const line = rawLine.replace(/\s+$/, '');
-    const idMatch = /^-\s+id:\s*(\S+)\s*$/.exec(line);
-    if (idMatch) {
-      current = { id: idMatch[1], name: null, disabled: false, baseURL: null, hasProviders: false };
-      blocks.push(current);
-      continue;
+export function parseDumpConfigStrict(text) {
+  if (typeof text !== 'string') return fail('CONFIG_UNPARSEABLE', '输出不是字符串');
+  const stripped = text.replace(/^\uFEFF/, '');
+  const trimmed = stripped.trim();
+  if (trimmed === '') return fail('CONFIG_UNPARSEABLE', '输出为空');
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    // 结构化 JSON 也接受（同一份数据，另一种序列化），但只接受数组根。
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      return fail('CONFIG_UNPARSEABLE', 'JSON 解析失败：' + String(error && error.message));
     }
-    if (current === null) continue;
-    const nameMatch = /^\s+name:\s*['"]?([^'"\s]+)['"]?\s*$/.exec(line);
-    if (nameMatch && current.name === null) {
-      current.name = nameMatch[1];
-      continue;
-    }
-    if (/^\s+disabled:\s*true\s*$/.test(line)) {
-      current.disabled = true;
-      continue;
-    }
-    const urlMatch = /^\s+baseURL:\s*(\S+)\s*$/.exec(line);
-    if (urlMatch) {
-      current.baseURL = urlMatch[1].replace(/^['"]|['"]$/g, '');
-      continue;
-    }
-    if (/^\s+providers:\s*$/.test(line) || /^\s+providers:\s*\[/.test(line)) {
-      current.hasProviders = true;
-    }
+    if (!Array.isArray(parsed)) return fail('CONFIG_SHAPE_INVALID', '配置根必须是条目数组');
+    return validateEntries(parsed);
   }
 
+  const rawLines = stripped.split(/\r?\n/);
+  const lines = [];
+  const BLOCK_SCALAR = /:\s*(?:!!([A-Za-z0-9_-]+)\s+)?([|>])([+-]?)\s*$/;
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const raw = rawLines[index];
+    if (raw.trim() === '') continue;
+    if (/^\s*#/.test(raw)) continue;
+    if (/^\t/.test(raw) || /(^|[^ ])\t/.test(raw)) return fail('CONFIG_UNPARSEABLE', '第 ' + (index + 1) + ' 行含制表符缩进');
+    if (/^\s*---\s*$/.test(raw) || /^\s*\.\.\.\s*$/.test(raw)) return fail('CONFIG_UNPARSEABLE', '不支持多文档 YAML');
+    const indent = raw.length - raw.trimStart().length;
+    if (indent % 2 !== 0) return fail('CONFIG_UNPARSEABLE', '第 ' + (index + 1) + ' 行缩进不是 2 的倍数');
+    let text = raw.trim();
+    const blockScalar = BLOCK_SCALAR.exec(text);
+    if (blockScalar !== null) {
+      // 多行块标量（例如 `desktopPlatform: !!js >-` 后跟两行表达式）。
+      // 内容无法静态求值 → 折叠成"不可信标签值"，由覆盖率判定保守处理。
+      const parts = [];
+      let lookahead = index + 1;
+      while (lookahead < rawLines.length) {
+        const next = rawLines[lookahead];
+        if (next.trim() === '') { lookahead += 1; continue; }
+        const nextIndent = next.length - next.trimStart().length;
+        if (nextIndent <= indent) break;
+        parts.push(next.trim());
+        lookahead += 1;
+      }
+      const tag = blockScalar[1] === undefined ? 'text' : blockScalar[1];
+      text = text.slice(0, blockScalar.index) + ': !!' + tag + ' ' + parts.join(' ');
+      index = lookahead - 1;
+    }
+    lines.push({ indent, text, line: index + 1 });
+  }
+  if (lines.length === 0) return fail('CONFIG_UNPARSEABLE', '输出没有有效行');
+  if (!lines[0].text.startsWith('- ')) return fail('CONFIG_SHAPE_INVALID', '配置根必须是条目数组');
+
+  let cursor = 0;
+  const parseBlock = (indent) => {
+    // 决定块类型：映射序列（`- `）还是映射（`key:`）。
+    if (cursor >= lines.length) return fail('CONFIG_UNPARSEABLE', '意外的文档结束');
+    const first = lines[cursor];
+    if (first.indent !== indent) return fail('CONFIG_UNPARSEABLE', '第 ' + first.line + ' 行缩进与预期不符');
+    if (first.text.startsWith('- ')) {
+      const items = [];
+      while (cursor < lines.length && lines[cursor].indent === indent && lines[cursor].text.startsWith('- ')) {
+        const item = lines[cursor];
+        const inline = item.text.slice(2).trim();
+        cursor += 1;
+        if (inline === '') {
+          // `-` 单独一行，后面是更深缩进的块。
+          if (cursor >= lines.length || lines[cursor].indent <= indent) return fail('CONFIG_UNPARSEABLE', '第 ' + item.line + ' 行的条目没有内容');
+          const child = parseBlock(lines[cursor].indent);
+          if (child.ok !== true) return child;
+          items.push(child.value);
+          continue;
+        }
+        if (/^["'[{&*|>]/.test(inline)) return fail('CONFIG_UNPARSEABLE', '第 ' + item.line + ' 行使用了不支持的标量/集合写法');
+        const entry = {};
+        if (inline.includes(':')) {
+          // `- key: value` 形式：把这一行当作映射的第一项。
+          const parsedPair = parsePair(inline, item.line);
+          if (parsedPair.ok !== true) return parsedPair;
+          entry[parsedPair.key] = parsedPair.value;
+          while (cursor < lines.length && lines[cursor].indent === indent + 2 && !lines[cursor].text.startsWith('- ')) {
+            const line = lines[cursor];
+            const pair = parsePair(line.text, line.line);
+            if (pair.ok !== true) return pair;
+            if (Object.prototype.hasOwnProperty.call(entry, pair.key)) return fail('CONFIG_DUPLICATE_KEY', '第 ' + line.line + ' 行重复键 ' + pair.key);
+            cursor += 1;
+            if (pair.value === undefined) {
+              if (cursor >= lines.length || lines[cursor].indent <= indent + 2) return fail('CONFIG_UNPARSEABLE', '第 ' + line.line + ' 行的键没有嵌套内容');
+              const child = parseBlock(lines[cursor].indent);
+              if (child.ok !== true) return child;
+              entry[pair.key] = child.value;
+            } else {
+              entry[pair.key] = pair.value;
+            }
+          }
+        } else {
+          entry.value = decodeScalar(inline, item.line);
+          if (entry.value instanceof Error) return fail('CONFIG_UNPARSEABLE', entry.value.message);
+        }
+        items.push(entry);
+      }
+      return { ok: true, value: items };
+    }
+
+    const mapping = {};
+    while (cursor < lines.length && lines[cursor].indent === indent && !lines[cursor].text.startsWith('- ')) {
+      const line = lines[cursor];
+      const pair = parsePair(line.text, line.line);
+      if (pair.ok !== true) return pair;
+      if (Object.prototype.hasOwnProperty.call(mapping, pair.key)) return fail('CONFIG_DUPLICATE_KEY', '第 ' + line.line + ' 行重复键 ' + pair.key);
+      cursor += 1;
+      if (pair.value === undefined) {
+        if (cursor >= lines.length || lines[cursor].indent <= indent) return fail('CONFIG_UNPARSEABLE', '第 ' + line.line + ' 行的键没有嵌套内容');
+        const child = parseBlock(lines[cursor].indent);
+        if (child.ok !== true) return child;
+        mapping[pair.key] = child.value;
+      } else {
+        mapping[pair.key] = pair.value;
+      }
+    }
+    return { ok: true, value: mapping };
+  };
+
+  const root = parseBlock(lines[0].indent);
+  if (root.ok !== true) return root;
+  if (cursor !== lines.length) return fail('CONFIG_UNPARSEABLE', '第 ' + lines[cursor].line + ' 行之后还有无法归类的剩余内容');
+  if (!Array.isArray(root.value)) return fail('CONFIG_SHAPE_INVALID', '配置根必须是条目数组');
+  return validateEntries(root.value);
+}
+
+function parsePair(text, line) {
+  const match = /^([A-Za-z0-9_][A-Za-z0-9_.-]*):(?:\s+(.*))?$/.exec(text);
+  if (!match) return fail('CONFIG_UNPARSEABLE', '第 ' + line + ' 行不是 `key: value` 形态：' + text);
+  const rawValue = match[2];
+  if (rawValue === undefined || rawValue === '') {
+    return { ok: true, key: match[1], value: undefined };
+  }
+  // 空的流式集合（`[]` / `{}`）没有内容，不隐藏 provider，可以接受；
+  // 非空流式集合可能藏着一个未受保护的 provider 实例，继续拒绝。
+  if (rawValue === '[]') return { ok: true, key: match[1], value: [] };
+  if (rawValue === '{}') return { ok: true, key: match[1], value: {} };
+  if (/^[\[{]/.test(rawValue)) return fail('CONFIG_UNPARSEABLE', '第 ' + line + ' 行使用了流式集合');
+  if (/^[&*]/.test(rawValue)) return fail('CONFIG_UNPARSEABLE', '第 ' + line + ' 行使用了锚点/别名');
+  const value = decodeScalar(rawValue, line);
+  if (value instanceof Error) return fail('CONFIG_UNPARSEABLE', value.message);
+  return { ok: true, key: match[1], value };
+}
+
+function decodeScalar(raw, line) {
+  const text = raw.trim();
+  // 宿主配置里存在 `!!js <表达式>` 形式的标签值（例如 `disabled: !!js process.platform === 'win32'`）。
+  // 它无法被静态求值，也不能当作普通字符串：一律解析成不可信标记，
+  // 由覆盖率判定保守处理（禁用标记不可信 → 视为启用；baseURL 不可信 → 视为未受保护）。
+  if (text.startsWith('!!')) {
+    const tagged = /^!!([A-Za-z0-9_-]+)\s+(.*)$/.exec(text);
+    if (!tagged) return new Error('第 ' + line + ' 行的标签缺少内容');
+    return { __tagged: tagged[1], raw: tagged[2] };
+  }
+  if (text.startsWith('"') || text.startsWith("'")) {
+    const quote = text[0];
+    if (text.length < 2 || !text.endsWith(quote)) return new Error('第 ' + line + ' 行的引号没有闭合');
+    const inner = text.slice(1, -1);
+    if (quote === "'" && inner.includes("'")) return new Error('第 ' + line + ' 行的单引号字符串含未转义引号');
+    return inner;
+  }
+  if (text.includes("'") || text.includes('"')) return new Error('第 ' + line + ' 行的引号位置不合法');
+  if (/#/.test(text)) return new Error('第 ' + line + ' 行含内联注释，无法可靠解析');
+  if (YAML_SCALAR_TRUE.has(text)) return true;
+  if (YAML_SCALAR_FALSE.has(text)) return false;
+  if (YAML_SCALAR_NULL.has(text)) return null;
+  if (/^-?\d+$/.test(text)) {
+    const value = Number(text);
+    if (!Number.isSafeInteger(value)) return new Error('第 ' + line + ' 行的整数超出安全范围');
+    return value;
+  }
+  if (/^-?\d+\.\d+$/.test(text)) return Number(text);
+  return text;
+}
+
+function validateEntries(entries) {
+  const ids = new Set();
+  const normalized = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return fail('CONFIG_SHAPE_INVALID', '第 ' + (index + 1) + ' 个条目不是映射');
+    if (typeof entry.id !== 'string' || entry.id.length === 0) return fail('CONFIG_SHAPE_INVALID', '第 ' + (index + 1) + ' 个条目缺少 id');
+    if (ids.has(entry.id)) return fail('CONFIG_DUPLICATE_ID', '条目 id 重复：' + entry.id);
+    ids.add(entry.id);
+    if (entry.name !== undefined && typeof entry.name !== 'string') return fail('CONFIG_SHAPE_INVALID', '条目 ' + entry.id + ' 的 name 不是字符串');
+    normalized.push({
+      id: entry.id,
+      name: entry.name === undefined ? null : entry.name,
+      disabled: entry.disabled === true,
+      config: entry.config === undefined ? null : entry.config,
+      source: 'parsed',
+    });
+  }
+  return { ok: true, entries: normalized };
+}
+
+function isAggregatorConfigured(config) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) return false;
+  const providers = config.providers;
+  if (Array.isArray(providers)) return providers.length > 0;
+  if (providers !== undefined && providers !== null) return true;
+  return false;
+}
+
+function readBaseUrl(config) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) return null;
+  const value = config.baseURL;
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+// 读取任意一个"端点"键（例如 `inferenceOrigin`），语义与 readBaseUrl 相同。
+function readEndpoint(config, key) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) return null;
+  const value = config[key];
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+/**
+ * 逐个 provider 实例判断是否指向闸门。
+ *
+ * @param {object[]} entries 结构化配置条目
+ * @param {string} gateBaseUrl 本次闸门地址
+ */
+export function extractProviderCoverage(entries, gateBaseUrl) {
+  const gate = normalizeBaseUrl(gateBaseUrl);
   const providers = [];
-  for (const block of blocks) {
-    if (typeof block.name !== 'string') continue;
-    if (!block.name.startsWith('@deepseek-ai/dsh-llm-')) continue;
-    if (block.id === 'llm' || block.id === 'llm-retry') continue;
-    if (block.disabled) {
-      providers.push({ id: block.id, name: block.name, status: 'disabled', baseURL: block.baseURL });
+  for (const entry of entries) {
+    const id = typeof entry.id === 'string' ? entry.id : null;
+    const name = typeof entry.name === 'string' ? entry.name : null;
+    // 缺 name：无法判断这个组件会不会发模型请求，按 unknown 处理（绝不静默跳过）。
+    if (name === null) {
+      providers.push({ id, name: null, status: 'unknown', baseURL: null });
       continue;
     }
-    if (block.name.includes('pi-ai')) {
-      providers.push({ id: block.id, name: block.name, status: block.hasProviders ? 'unguarded' : 'not-configured', baseURL: block.baseURL });
+    if (!name.startsWith('@deepseek-ai/dsh-llm-')) {
+      const nestedDisabled = entry.config && typeof entry.config === 'object' ? entry.config.disabled === true || entry.config.enabled === false : false;
+      if (entry.disabled === true || nestedDisabled) {
+        providers.push({ id, name, status: 'disabled', baseURL: readBaseUrl(entry.config) });
+        continue;
+      }
+      // 自带模型端点的随包组件：不看白名单，只看端点是否指向闸门。
+      const endpointKeys = MODEL_ENDPOINT_COMPONENTS[name];
+      if (endpointKeys !== undefined) {
+        const endpoints = endpointKeys.map((key) => ({ key, url: readEndpoint(entry.config, key) }));
+        const allGated = endpoints.length > 0
+          && endpoints.every(({ url }) => url !== null && checkBaseUrl({ effectiveBaseUrl: url, gateBaseUrl: gate }).ok);
+        providers.push({
+          id,
+          name,
+          status: allGated ? 'guarded' : 'unguarded',
+          baseURL: endpoints.length === 1 ? endpoints[0].url : null,
+          modelEndpointKeys: endpointKeys.slice(),
+        });
+        continue;
+      }
+      // 非模型适配器：只有登记在受信任组件白名单里的才算"与覆盖率无关"。
+      // 白名单外的名字可能具备模型请求能力（第三方 router / proxy），
+      // 记 unknown 由 decideStart 拒绝启动。
+      const reviewedPlugin = REVIEWED_PLUGIN_NAMES.has(name);
+      providers.push({
+        id,
+        name,
+        status: reviewedPlugin || KNOWN_COMPONENT_NAMES.has(name) ? 'plumbing' : 'unknown',
+        baseURL: readBaseUrl(entry.config),
+      });
       continue;
     }
-    const check = gate === null ? { ok: false } : checkBaseUrl({ effectiveBaseUrl: block.baseURL, gateBaseUrl });
-    providers.push({ id: block.id, name: block.name, status: check.ok ? 'guarded' : 'unguarded', baseURL: block.baseURL });
+    if (KNOWN_NON_PROVIDER_ADAPTERS.has(entry.name)) {
+      providers.push({ id: entry.id, name: entry.name, status: 'plumbing', baseURL: null });
+      continue;
+    }
+    const known = KNOWN_PROVIDER_ADAPTERS[entry.name];
+    if (known === undefined) {
+      // 不认识的模型适配器：不能默默跳过，记为 unknown 并要求拒绝启动。
+      providers.push({ id: entry.id, name: entry.name, status: 'unknown', baseURL: readBaseUrl(entry.config) });
+      continue;
+    }
+    const nestedDisabled = entry.config && typeof entry.config === 'object' ? entry.config.disabled === true || entry.config.enabled === false : false;
+    if (entry.disabled === true || nestedDisabled) {
+      providers.push({ id: entry.id, name: entry.name, status: 'disabled', baseURL: readBaseUrl(entry.config) });
+      continue;
+    }
+    if (known.aggregator) {
+      providers.push({
+        id: entry.id,
+        name: entry.name,
+        status: isAggregatorConfigured(entry.config) ? 'unguarded' : 'not-configured',
+        baseURL: readBaseUrl(entry.config),
+      });
+      continue;
+    }
+    const baseURL = readBaseUrl(entry.config);
+    const check = baseURL === null ? { ok: false } : checkBaseUrl({ effectiveBaseUrl: baseURL, gateBaseUrl: gate });
+    providers.push({ id: entry.id, name: entry.name, status: check.ok ? 'guarded' : 'unguarded', baseURL });
   }
 
   const pick = (status) => providers.filter((provider) => provider.status === status).map((provider) => provider.id);
@@ -87,9 +409,10 @@ export function extractProviderCoverage(dumpText, gateBaseUrl) {
     unguarded: pick('unguarded'),
     notConfigured: pick('not-configured'),
     disabled: pick('disabled'),
+    unknown: pick('unknown'),
+    plumbing: pick('plumbing'),
   };
 }
-
 
 export function normalizeBaseUrl(value) {
   if (typeof value !== 'string' || value.trim() === '') return null;
@@ -121,54 +444,228 @@ export function checkBaseUrl({ effectiveBaseUrl, gateBaseUrl }) {
 
 /** 读取事件日志里最后一条指定类型的事件；没有则返回 null。 */
 export function readLastEvent(eventLogPath, kinds) {
+  const read = readRunEvents(eventLogPath, { runId: null });
+  if (read.ok !== true) return null;
+  for (let index = read.events.length - 1; index >= 0; index -= 1) {
+    const event = read.events[index];
+    if (kinds === undefined || kinds.includes(event.event)) return event;
+  }
+  return null;
+}
+
+/**
+ * 严格读取运行事件日志。
+ *
+ * @param {string} eventLogPath
+ * @param {{runId: (string|null), allowForeign: boolean}} options
+ *   runId 为 null 时不做运行过滤（只用于调试读最后一条）。
+ */
+export function readRunEvents(eventLogPath, { runId = null, allowForeign = false } = {}) {
   let text;
   try {
     text = readFileSync(eventLogPath, 'utf8');
   } catch (_missing) {
-    return null;
+    return { ok: false, reason: 'PROOF_MISSING', detail: '事件文件不存在：' + String(eventLogPath), events: [] };
   }
-  const lines = text.split('\n');
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
+  const events = [];
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
     if (line === '') continue;
     let parsed;
     try {
       parsed = JSON.parse(line);
     } catch (_badLine) {
+      // 损坏行绝不跳过：跳过会让"证明"变成"挑着看"。
+      return { ok: false, reason: 'PROOF_UNREADABLE', detail: '第 ' + (index + 1) + ' 行不是合法 JSON', events };
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, reason: 'PROOF_UNREADABLE', detail: '第 ' + (index + 1) + ' 行不是对象', events };
+    }
+    if (typeof parsed.event !== 'string' || parsed.event === '') {
+      return { ok: false, reason: 'PROOF_UNREADABLE', detail: '第 ' + (index + 1) + ' 行缺少 event 字段', events };
+    }
+    if (runId !== null && parsed.runId !== runId) {
+      if (allowForeign !== true) return { ok: false, reason: 'PROOF_FOREIGN_RUN', detail: '第 ' + (index + 1) + ' 行属于其他运行：' + String(parsed.runId), events };
       continue;
     }
-    if (kinds === undefined || kinds.includes(parsed.event)) return parsed;
+    events.push(parsed);
   }
-  return null;
+  if (runId !== null && events.length === 0) {
+    return { ok: false, reason: 'PROOF_MISSING', detail: '没有属于本次运行的事件', events };
+  }
+  return { ok: true, events };
+}
+
+const PROOF_ACTIVE_EVENTS = new Set(['mounted', 'heartbeat', 'reserved', 'rejected']);
+
+function proofKindAllowed(event) {
+  return PROOF_ACTIVE_EVENTS.has(event.event) || event.event === 'unmounted';
 }
 
 /**
- * 插件挂载 + 心跳是否成立。
+ * 走一遍本次运行的生命周期事件，输出"身份/终态"结论。
  *
- * @param {object} options
- * @param {string} options.eventLog 插件事件日志
- * @param {number} options.now 当前时间（毫秒）
- * @param {number} options.maxAgeMs 心跳允许的最大年龄
+ * 这是 P0-3 的核心：只看"首条 mounted"和"最后一条事件"会漏掉两类真实问题——
+ *   1. `mounted → unmounted → heartbeat`：卸载是终态，迟到心跳不能复活它；
+ *   2. 同一 runId 内重复 `mounted`：那是另一个实例，必须走新的运行身份授权。
+ *
+ * 判定规则（全部失败即拒绝，没有"跳过坏行继续"）：
+ *   - 第一条事件必须是本次运行的 `mounted`；
+ *   - 只接受 mounted/heartbeat/reserved/rejected/unmounted；
+ *   - 时间戳必须可解析且不回退（允许相等）；
+ *   - `mounted` 只能出现一次（重复 → PROOF_DUPLICATE_MOUNT）；
+ *   - `unmounted` 之后出现任何事件 → PROOF_AFTER_UNMOUNT（不复活）；
+ *   - `mounted` 早于宿主启动时刻 → PROOF_PRE_START；
+ *   - `mounted` 时间在未来 → PROOF_FUTURE。
+ *
+ * 注意：这里**不判定"mounted 有多旧"**。长跑任务的 mounted 本来就会越来越旧，
+ * 把它的年龄当作掉线会让正常运行在若干个窗口后被误杀。运行期的新鲜度由
+ * `checkProtectionHeartbeat` 用**最新心跳**单独判定。
+ *
+ * @returns {{ok:boolean, reason:(string|null), detail:(string|undefined), mountedAt:(number|null),
+ *   ended:boolean, latestHeartbeatAt:(number|null), lastActivityAt:(number|null), lastEvent:(string|null)}}
  */
-export function checkProtectionHeartbeat({ eventLog, now, maxAgeMs, requireMounted = true }) {
-  if (requireMounted) {
-    const mounted = readLastEvent(eventLog, ['mounted']);
-    if (mounted === null) return { ok: false, reason: 'HEARTBEAT_MISSING', mountedAt: null, lastEvent: null };
+export function walkRunLifecycle({ eventLog, runId, now, notBefore, clockSkewMs = 2000, requireHeartbeat = false }) {
+  const empty = { ok: false, reason: null, mountedAt: null, ended: false, latestHeartbeatAt: null, lastActivityAt: null, lastEvent: null };
+  if (typeof runId !== 'string' || runId === '') return { ...empty, reason: 'PROOF_NO_RUN_ID' };
+  const read = readRunEvents(eventLog, { runId });
+  if (read.ok !== true) return { ...empty, reason: read.reason, detail: read.detail };
+  const events = read.events;
+  if (events[0].event !== 'mounted') {
+    return { ...empty, reason: 'PROOF_UNORDERED', detail: '本次运行的第一条事件不是 mounted', lastEvent: events[0].event };
   }
-  const heartbeat = readLastEvent(eventLog, ['mounted', 'reserved', 'rejected', 'heartbeat']);
-  if (heartbeat === null) return { ok: false, reason: 'HEARTBEAT_MISSING', lastEvent: null };
-  const at = Date.parse(heartbeat.at);
-  if (!Number.isFinite(at)) return { ok: false, reason: 'HEARTBEAT_STALE', detail: '事件缺少可解析的 at', lastEvent: heartbeat.event };
-  const age = now - at;
-  if (age > maxAgeMs) return { ok: false, reason: 'HEARTBEAT_STALE', ageMs: age, maxAgeMs, lastEvent: heartbeat.event };
-  if (age < -60_000) return { ok: false, reason: 'HEARTBEAT_STALE', detail: '心跳时间在未来（时钟异常）', ageMs: age, lastEvent: heartbeat.event };
-  return { ok: true, reason: null, ageMs: age, lastEvent: heartbeat.event };
+  let mountedAt = null;
+  let mountCount = 0;
+  let ended = false;
+  let latestHeartbeatAt = null;
+  let lastActivityAt = null;
+  let lastEvent = null;
+  let previousAt = null;
+  for (const event of events) {
+    const eventAt = Date.parse(event.at);
+    if (!Number.isFinite(eventAt)) {
+      return { ...empty, reason: 'PROOF_UNREADABLE', detail: '事件 ' + String(event.event) + ' 缺少可解析的 at', lastEvent: String(event.event) };
+    }
+    if (previousAt !== null && eventAt < previousAt) {
+      return { ...empty, reason: 'PROOF_TIME_ORDER', detail: '事件时间倒退：' + String(event.event) + ' 早于上一条', lastEvent: String(event.event) };
+    }
+    previousAt = eventAt;
+    if (!proofKindAllowed(event)) {
+      return { ...empty, reason: 'PROOF_UNKNOWN_EVENT', detail: String(event.event), lastEvent: String(event.event) };
+    }
+    if (ended) {
+      // unmounted 是本次运行的终态：之后的心跳/预占一律视为"试图复活"。
+      return { ...empty, reason: 'PROOF_AFTER_UNMOUNT', detail: 'unmounted 之后仍有事件：' + String(event.event), ended: true, lastEvent: String(event.event) };
+    }
+    if (event.event === 'mounted') {
+      mountCount += 1;
+      if (mountCount > 1) {
+        return { ...empty, reason: 'PROOF_DUPLICATE_MOUNT', detail: '同一运行里出现了第二次 mounted（需要新的运行身份）', ended: false, lastEvent: 'mounted' };
+      }
+      mountedAt = eventAt;
+      lastActivityAt = eventAt;
+    } else if (event.event === 'unmounted') {
+      ended = true;
+      lastEvent = 'unmounted';
+    } else if (event.event === 'heartbeat') {
+      latestHeartbeatAt = eventAt;
+      lastActivityAt = eventAt;
+      lastEvent = 'heartbeat';
+    } else {
+      lastActivityAt = eventAt;
+      lastEvent = event.event;
+    }
+  }
+  if (mountedAt === null) {
+    return { ...empty, reason: 'PROOF_UNORDERED', detail: '没有可用的 mounted 时间', lastEvent };
+  }
+  const age = now - mountedAt;
+  if (age < -60_000) {
+    return { ...empty, reason: 'PROOF_FUTURE', detail: 'mounted 时间在未来', lastEvent };
+  }
+  if (Number.isFinite(notBefore) && mountedAt < notBefore - Math.max(0, clockSkewMs)) {
+    return { ...empty, reason: 'PROOF_PRE_START', detail: 'mounted 早于本次宿主启动 ' + (notBefore - mountedAt) + 'ms', lastEvent };
+  }
+  if (ended) {
+    return { ...empty, reason: 'RUN_ENDED', detail: '本次运行已 unmounted', ended: true, mountedAt, latestHeartbeatAt, lastActivityAt, lastEvent: 'unmounted' };
+  }
+  if (requireHeartbeat === true && latestHeartbeatAt === null) {
+    return { ...empty, reason: 'PROOF_NO_HEARTBEAT', detail: '本次运行只有 mounted，没有心跳', mountedAt, ended: false, latestHeartbeatAt: null, lastActivityAt, lastEvent };
+  }
+  return { ok: true, reason: null, mountedAt, ended: false, latestHeartbeatAt, lastActivityAt, lastEvent };
 }
 
 /**
- * 纯判定：三项全部成立才允许启动。
+ * 运行级挂载证明（启动/授权用）：身份有效、没有卸载终态、且（可选）出现心跳。
  *
- * @param {{gateReady:boolean, baseUrl:{ok:boolean, reason:(string|null)}, heartbeat:{ok:boolean, reason:(string|null)}}} input
+ * 这里刻意不看 mounted 的年龄——长跑运行的 mounted 会一直变旧。运行期是否还活着
+ * 由 `checkProtectionHeartbeat` 用最新心跳判定。
+ *
+ * @returns {{ok:boolean, reason:(string|null), at:(string|null), lastEvent:(string|null)}}
+ */
+export function evaluateMountProof({ eventLog, runId, now, notBefore, requireHeartbeat = false, clockSkewMs = 2000 }) {
+  const lifecycle = walkRunLifecycle({ eventLog, runId, now, notBefore, clockSkewMs, requireHeartbeat });
+  if (lifecycle.ok !== true) {
+    return { ok: false, reason: lifecycle.reason, detail: lifecycle.detail, at: null, lastEvent: lifecycle.lastEvent === undefined ? null : lifecycle.lastEvent };
+  }
+  return { ok: true, reason: null, at: new Date(lifecycle.mountedAt).toISOString(), lastEvent: lifecycle.lastEvent };
+}
+
+/**
+ * 运行期活性判定：用**最新心跳**的新鲜度，而不是 mounted 的年龄。
+ *
+ * - 卸载终态（含 unmounted 之后的迟到事件）→ RUN_ENDED / PROOF_AFTER_UNMOUNT；
+ * - 从未出现心跳 → HEARTBEAT_MISSING；
+ * - 最新心跳超过 maxAgeMs → HEARTBEAT_STALE（停止心跳要及时撤销）；
+ * - 时间在未来 → HEARTBEAT_STALE。
+ */
+export function checkProtectionHeartbeat({ eventLog, runId, now, maxAgeMs }) {
+  const lifecycle = walkRunLifecycle({ eventLog, runId, now });
+  if (lifecycle.ok !== true) {
+    const map = {
+      RUN_ENDED: 'RUN_ENDED',
+      PROOF_AFTER_UNMOUNT: 'RUN_ENDED',
+      PROOF_NO_HEARTBEAT: 'HEARTBEAT_MISSING',
+      PROOF_DUPLICATE_MOUNT: 'HEARTBEAT_MISSING',
+      PROOF_TIME_ORDER: 'HEARTBEAT_STALE',
+      PROOF_UNREADABLE: 'HEARTBEAT_STALE',
+    };
+    const reason = map[lifecycle.reason] || 'HEARTBEAT_MISSING';
+    return { ok: false, reason, detail: lifecycle.detail || lifecycle.reason, lastEvent: lifecycle.lastEvent === undefined ? null : lifecycle.lastEvent };
+  }
+  if (lifecycle.latestHeartbeatAt === null) {
+    return { ok: false, reason: 'HEARTBEAT_MISSING', detail: '本次运行没有心跳事件', lastEvent: lifecycle.lastEvent };
+  }
+  const age = now - lifecycle.latestHeartbeatAt;
+  if (age < -60_000) return { ok: false, reason: 'HEARTBEAT_STALE', detail: '心跳时间在未来', ageMs: age, maxAgeMs, lastEvent: lifecycle.lastEvent };
+  if (age > maxAgeMs) return { ok: false, reason: 'HEARTBEAT_STALE', ageMs: age, maxAgeMs, lastEvent: lifecycle.lastEvent };
+  return { ok: true, reason: null, ageMs: age, lastEvent: lifecycle.lastEvent };
+}
+
+/**
+ * 本次运行是否已经卸载结束。
+ *
+ * 语义修正（复审问题 2）：旧实现只看"最后一条事件是不是 unmounted"，
+ * 于是 `mounted → unmounted → heartbeat` 会被判成"仍在运行"。
+ * 现在只要出现过 unmounted 就是终态；损坏/无法读取的日志按"已结束"处理
+ * （fail-closed：宁可撤销租约，也不放行来路不明的运行）。
+ */
+export function runEndedByLastEvent(eventLogPath, runId) {
+  try {
+    const read = readRunEvents(eventLogPath, { runId });
+    if (read.ok !== true) return true;
+    return read.events.some((event) => event.event === 'unmounted');
+  } catch (_error) {
+    return true;
+  }
+}
+
+/**
+ * 纯判定：全部条件成立才允许启动。
+ *
+ * 覆盖率必须是"可验证"的：有结构化的 provider 清单、没有未受保护实例、
+ * 没有不认识的适配器、至少有一个确实指向闸门的 provider。
  */
 export function decideStart(input) {
   const blockers = [];
@@ -180,13 +677,30 @@ export function decideStart(input) {
     const reason = (input.heartbeat && input.heartbeat.reason) || 'HEARTBEAT_MISSING';
     blockers.push({ code: reason === 'HEARTBEAT_STALE' ? 'HEARTBEAT_STALE' : 'HEARTBEAT_MISSING', detail: reason });
   }
-  if (input.coverage !== undefined && input.coverage !== null && input.coverage.unguarded.length > 0) {
-    blockers.push({ code: 'PROVIDER_NOT_GATED', detail: '未指向闸门的 provider 实例：' + input.coverage.unguarded.join(',') });
+  const coverage = input.coverage === undefined ? null : input.coverage;
+  if (coverage === null || coverage === undefined) {
+    blockers.push({ code: 'COVERAGE_UNVERIFIABLE', detail: '没有可验证的 provider 覆盖信息' });
+  } else {
+    if (Array.isArray(coverage.unguarded) && coverage.unguarded.length > 0) {
+      blockers.push({ code: 'PROVIDER_NOT_GATED', detail: '未指向闸门的 provider 实例：' + coverage.unguarded.join(',') });
+    }
+    if (Array.isArray(coverage.unknown) && coverage.unknown.length > 0) {
+      blockers.push({ code: 'PROVIDER_UNKNOWN', detail: '无法识别的模型适配器（不能声称覆盖率完整）：' + coverage.unknown.join(',') });
+    }
+    if (!Array.isArray(coverage.guarded) || coverage.guarded.length === 0) {
+      blockers.push({ code: 'NO_GATED_PROVIDER', detail: '没有任何模型 provider 指向闸门' });
+    }
   }
   return { allow: blockers.length === 0, blockers };
 }
 
-/** 通过回环 HTTP 读取闸门状态；连不上即视为未就绪。 */
+/** 把判定结果写成给人看的一段话（也用于启动失败的错误反馈）。 */
+export function formatDecision(decision) {
+  if (decision.allow) return 'protection verified: gate reachable, baseURL points at gate, heartbeat fresh, providers covered';
+  return 'protection NOT verified -> refuse to start: ' + decision.blockers.map((b) => b.code + ' (' + b.detail + ')').join('; ');
+}
+
+/** 通过回环 HTTP 读取闸门状态（只读）；连不上即视为未就绪。 */
 export async function readGateStatus(gateBaseUrl, { timeoutMs = 2_000 } = {}) {
   const url = normalizeBaseUrl(gateBaseUrl);
   if (url === null) throw new GateError('GATE_URL_INVALID', '闸门地址不可解析：' + String(gateBaseUrl));
@@ -201,10 +715,4 @@ export async function readGateStatus(gateBaseUrl, { timeoutMs = 2_000 } = {}) {
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** 把判定结果写成给人看的一段话（也用于启动失败的错误反馈）。 */
-export function formatDecision(decision) {
-  if (decision.allow) return 'protection verified: gate reachable, baseURL points at gate, heartbeat fresh';
-  return 'protection NOT verified -> refuse to start: ' + decision.blockers.map((b) => b.code + ' (' + b.detail + ')').join('; ');
 }

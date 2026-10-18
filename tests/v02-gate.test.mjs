@@ -1,56 +1,69 @@
 // tests/v02-gate.test.mjs
 //
-// 启动闸门（budget gate）与"保护未验证即拒绝启动"的离线测试。
+// 闸门（gate.mjs）+ 启动前判定（preflight.mjs）+ 启动器（tools/gated-run.mjs）的
+// 离线测试。
 //
-// 这组测试回答的是 2026-10-18 那次事故：预算插件的 apply 抛错时，宿主只打印
-// `warning: 1 entry did not activate` 然后继续无预算运行。测试断言的不是"插件的
-// 某个变量为真"，而是**真实请求有没有被挡住**——计数取自假上游服务端，而不是
-// 取自闸门自己的状态字段。
+// 边界声明（必须与代码一致）：
+// - 这里的"宿主"是**本地夹具进程**（stub），不是真实 DSH；"上游"是本地回环假服务；
+//   因此这些测试证明的是"闸门的判定与拒绝路径"，**不等于宿主级验收**。
+// - 闸门只在"宿主真的把请求发给它"时才算保护生效；测试里由 stub 主动连闸门来模拟。
+// - 不访问任何真实模型端点、不读凭据、不开公网端口。
 //
-// 边界（必须写在测试里，避免被误读）：
-// - 这里的"宿主"是本地桩进程与夹具，不代表 DSH 真实宿主验收；
-// - 上游是回环假服务，全程没有真实模型端点；
-// - 闸门只在"宿主确实把请求发给它"时才算生效，所以每个拒绝场景都同时断言
-//   假上游收到 0 条。
+// 2026-10-18 独立审查（P0-1/P0-2/P0-3/P0-4/P0-5、P1）后的反例覆盖：
+//   A 未经认证的 /lease 不能获得租约；B revoke 后不能再 grant；
+//   C 过期租约不能被迟到心跳复活；D 撤销后状态不得显示为 leased；
+//   E 已 unmounted 时旧 mounted 不能放行；F 其他运行预写的 mounted 不能授权；
+//   G runId 不匹配/日志损坏/事件顺序冲突默认拒绝；
+//   H 配置输出不完整（半截 YAML）时启动器拒绝启动；
+//   I 未知 provider / 嵌套 disabled / 异常 YAML 不得误判为覆盖率完整；
+//   J 宿主存活但无心跳时 --timeout-ms 必须生效（不能无限等）；
+//   K 子进程无响应时不能无限挂起（SIGKILL 升级）；
+//   M 10 并发争 1 个额度只放行一次；N 正常路径在预算内完成请求。
 
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createBudgetGate } from '../orchestration/gate/gate.mjs';
+import { join, resolve } from 'node:path';
+import { createBudgetGate, GateError } from '../orchestration/gate/gate.mjs';
 import {
   checkBaseUrl,
   checkProtectionHeartbeat,
   decideStart,
+  evaluateMountProof,
   extractProviderCoverage,
+  normalizeBaseUrl,
+  parseDumpConfigStrict,
 } from '../orchestration/gate/preflight.mjs';
-import { extractBaseUrlFromDump } from '../tools/gated-run.mjs';
+import { parseArgs, UsageError, EXIT_OK, EXIT_PROTECTION_UNVERIFIED, terminateHost } from '../tools/gated-run.mjs';
 
 const failures = [];
 let checks = 0;
 function check(condition, label, detail) {
   checks += 1;
-  if (!condition) failures.push({ label, detail: detail === undefined ? null : detail });
+  if (condition !== true) failures.push(label + (detail === undefined ? '' : ' -> ' + JSON.stringify(detail)));
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, '..');
-const gatedRun = join(repoRoot, 'tools', 'gated-run.mjs');
-
-function scratchDir(name) {
-  const dir = mkdtempSync(join(tmpdir(), 'tla-gate-' + name + '-'));
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
+const scratch = mkdtempSync(join(tmpdir(), 'tla-gate-'));
+const scratchDir = scratch;
 function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8');
 }
-
 function appendEvent(path, entry) {
-  writeFileSync(path, JSON.stringify(entry) + '\n', { encoding: 'utf8', flag: 'a' });
+  appendFileSync(path, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', 'utf8');
+}
+function sleep(ms) {
+  return new Promise((done) => setTimeout(done, ms));
+}
+function freePort() {
+  return new Promise((done, fail) => {
+    const server = createServer();
+    server.once('error', fail);
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      server.close(() => done(port));
+    });
+  });
 }
 
 async function startUpstream() {
@@ -59,628 +72,1009 @@ async function startUpstream() {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
-      hits.push({ path: req.url, bytes: Buffer.concat(chunks).length });
-      const text = JSON.stringify({ ok: true, from: 'fake-upstream', count: hits.length });
-      res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) });
-      res.end(text);
+      hits.push({ method: req.method, url: req.url, bytes: Buffer.concat(chunks).length });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
     });
   });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  const address = server.address();
+  const port = server.address().port;
   return {
-    url: 'http://127.0.0.1:' + address.port,
+    url: 'http://127.0.0.1:' + port,
     hits,
-    count: () => hits.length,
-    async close() {
-      await new Promise((done) => server.close(done));
-    },
+    close: () => new Promise((done) => server.close(done)),
   };
 }
 
-async function freePort() {
-  const server = createServer(() => {});
-  await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  const port = server.address().port;
-  await new Promise((done) => server.close(done));
-  return port;
-}
-
-async function postMessage(baseUrl, index) {
-  try {
-    const response = await fetch(baseUrl + '/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ index }),
-    });
-    const text = await response.text();
-    let body = null;
-    try {
-      body = JSON.parse(text);
-    } catch (_notJson) {
-      body = { raw: text };
-    }
-    return { status: response.status, body };
-  } catch (error) {
-    return { status: 0, body: { transport: String(error && error.message) } };
-  }
-}
-
-function runLauncher(args, { timeoutMs = 20_000, env } = {}) {
-  // 受限沙箱下 Node 子进程不能用 pipe 捕获输出（EPERM / 命名管道），因此这里
-  // 用 ignore，判据全部取自闸门写下的 JSON 证据文件。
-  return new Promise((done) => {
-    const child = spawn(process.execPath, [gatedRun, ...args], {
-      stdio: 'ignore',
-      env: env === undefined ? process.env : { ...process.env, ...env },
-    });
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-    child.on('exit', (code) => {
-      clearTimeout(timer);
-      done({ code, stdout: '', stderr: '' });
-    });
-  });
-}
-
-/**
- * 夹具宿主同时扮演两个角色，因为启动器现在**自己**去问 `--dump-config`：
- *   - 带 `--dump-config` 时把 `STUB_DUMP_FILE` 的内容打到 stdout（模拟 CLI 输出）；
- *   - 否则按 `./gate.json` 里的闸门地址连发 5 次请求。
- * 这样"被检查的配置"和"真正启动的实例"由启动器同源派生，而不是外部文件。
- */
-const STUB_HOST = `import { readFileSync, writeFileSync } from 'node:fs';
-
-const argv = process.argv.slice(2);
-if (argv.includes('--dump-config')) {
-  const source = process.env.STUB_DUMP_FILE;
-  process.stdout.write(source === undefined ? '' : readFileSync(source, 'utf8'));
-  process.exit(0);
-}
-
-const handshake = JSON.parse(readFileSync('./gate.json', 'utf8'));
-const results = [];
-for (let index = 0; index < 5; index += 1) {
-  const response = await fetch(handshake.baseUrl + '/v1/messages', {
+async function postMessage(baseUrl, path = '/v1/messages') {
+  const response = await fetch(baseUrl + path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ index }),
+    body: JSON.stringify({ model: 'deepseek-flash', messages: [] }),
   });
-  const text = await response.text();
   let body = null;
   try {
-    body = JSON.parse(text);
+    body = await response.json();
   } catch (_notJson) {
-    body = { raw: text };
+    body = null;
   }
-  results.push({ index, status: response.status, body });
+  return { status: response.status, body };
 }
-writeFileSync('./host-results.json', JSON.stringify(results, null, 2) + '\\n', 'utf8');
+
+async function postControl(baseUrl, path, method = 'POST') {
+  const response = await fetch(baseUrl + path, { method });
+  let body = null;
+  try {
+    body = await response.json();
+  } catch (_notJson) {
+    body = null;
+  }
+  return { status: response.status, body };
+}
+
+// ---------------------------------------------------------------------------
+// 夹具：宿主 stub 两种角色
+//   1) `--dump-config` 在 argv 里 → 把 STUB_DUMP_FILE 的内容写到 stdout 后退出；
+//      也可用 STUB_DUMP_MODE=missing|partial|sleep|crash 模拟探测异常。
+//   2) 否则扮演宿主：按 STUB_EVENTS_MODE 写运行事件（或什么都不写），连发 5 次请求，
+//      把结果写到 ./host-results.json。
+// 事件里的 runId 从启动器写的 ./gate.json 读——这样"证明"绑定的是**本次**运行。
+// ---------------------------------------------------------------------------
+const STUB_HOST = `
+import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+const argv = process.argv.slice(2);
+const dumpMode = process.env.STUB_DUMP_MODE || 'file';
+if (argv.includes('--dump-config')) {
+  if (dumpMode === 'missing') process.exit(0);
+  if (dumpMode === 'sleep') { await new Promise((d) => setTimeout(d, 30000)); process.exit(0); }
+  if (dumpMode === 'crash') process.exit(3);
+  if (dumpMode === 'partial') { process.stdout.write("- id: llm-deepseek\\n  name: '@deepseek-ai/dsh-llm-deepseek-api-key'\\n  config:\\n"); process.exit(0); }
+  process.stdout.write(readFileSync(process.env.STUB_DUMP_FILE, 'utf8'));
+  process.exit(0);
+}
+const runDir = process.cwd();
+const gate = JSON.parse(readFileSync(join(runDir, 'gate.json'), 'utf8'));
+const mode = process.env.STUB_EVENTS_MODE || 'ok';
+const events = process.env.STUB_EVENTS;
+const writeEvent = (entry) => appendFileSync(events, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\\n', 'utf8');
+if (mode === 'ok') { writeEvent({ event: 'mounted', runId: gate.runId }); writeEvent({ event: 'heartbeat', runId: gate.runId }); }
+if (mode === 'probe-leak') { writeEvent({ event: 'mounted', runId: gate.runId + '-probe' }); writeEvent({ event: 'heartbeat', runId: gate.runId + '-probe' }); }
+if (mode === 'foreign') writeEvent({ event: 'mounted', runId: 'other-run' });
+if (mode === 'unmounted') { writeEvent({ event: 'mounted', runId: gate.runId }); writeEvent({ event: 'unmounted', runId: gate.runId }); }
+if (mode === 'corrupt') { writeEvent({ event: 'mounted', runId: gate.runId }); appendFileSync(events, 'this is not json\\n', 'utf8'); }
+if (mode === 'unordered') { writeEvent({ event: 'heartbeat', runId: gate.runId }); }
+if (mode === 'stale') { writeEvent({ event: 'mounted', runId: gate.runId, at: new Date(Date.now() - 600000).toISOString() }); }
+if (process.env.STUB_IGNORE_SIGTERM === '1') process.on('SIGTERM', () => {});
+const beat = setInterval(() => { if (mode === 'ok') writeEvent({ event: 'heartbeat', runId: gate.runId }); }, 200);
+if (typeof beat.unref === 'function') beat.unref();
+if (mode === 'silent-long' || mode === 'ignore-sigterm') { await new Promise((d) => setTimeout(d, 20000)); process.exit(0); }
+const results = [];
+for (let i = 0; i < 5; i += 1) {
+  const res = await fetch(gate.baseUrl + '/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  results.push(res.status);
+}
+writeFileSync(join(runDir, 'host-results.json'), JSON.stringify({ results }) + '\\n', 'utf8');
 process.exit(0);
 `;
+const stubPath = join(scratch, 'stub-host.mjs');
+writeFileSync(stubPath, STUB_HOST, 'utf8');
 
-/** 写一份 YAML 形态的生效配置（`--dump-config` 的真实输出就是 YAML）。 */
 function writeDumpYaml(path, providers) {
   const lines = [];
   for (const provider of providers) {
     lines.push('- id: ' + provider.id);
-    lines.push("  name: '@deepseek-ai/dsh-llm-" + provider.adapter + "'");
-    if (provider.baseURL === undefined) {
-      lines.push('  config: {}');
-    } else {
+    lines.push("  name: '" + provider.name + "'");
+    if (provider.disabled === true) lines.push('  disabled: true');
+    if (provider.config !== undefined) {
       lines.push('  config:');
-      lines.push('    baseURL: ' + provider.baseURL);
+      for (const [key, value] of Object.entries(provider.config)) {
+        lines.push('    ' + key + ': ' + value);
+      }
     }
   }
   writeFileSync(path, lines.join('\n') + '\n', 'utf8');
+  return path;
 }
 
-// ---------------------------------------------------------------------------
-// 1. 默认拒绝：没有租约时，闸门必须一条都不转发。
-// ---------------------------------------------------------------------------
-async function scenarioDenyByDefault() {
-  const dir = scratchDir('deny');
-  const upstream = await startUpstream();
-  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 3, logPath: join(dir, 'gate.jsonl') });
-  const { baseUrl } = await gate.listen(0);
-
-  const results = [];
-  for (let index = 0; index < 3; index += 1) results.push(await postMessage(baseUrl, index));
-
-  check(results.every((result) => result.status === 403), 'deny-by-default: every request is refused', results.map((r) => r.status));
-  check(results.every((result) => result.body.error.code === 'TLA_GATE_DENIED'), 'deny-by-default: typed error code');
-  check(results.every((result) => result.body.error.reason === 'NO_LEASE'), 'deny-by-default: reason is NO_LEASE', results.map((r) => r.body.error.reason));
-  check(upstream.count() === 0, 'deny-by-default: upstream received 0 requests', upstream.count());
-  check(gate.status().used === 0, 'deny-by-default: no budget consumed', gate.status().used);
-  check(gate.status().rejects === 3, 'deny-by-default: rejects counted', gate.status().rejects);
-
-  await gate.close();
-  await upstream.close();
+function runLauncher(args, { timeoutMs = 40000, env = {} } = {}) {
+  return new Promise((done) => {
+    const child = spawn(process.execPath, [resolve('tools/gated-run.mjs'), ...args], {
+      stdio: 'ignore',
+      env: { ...process.env, ...env },
+    });
+    const startedAt = Date.now();
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch (_gone) {
+        // 已经退出。
+      }
+    }, timeoutMs);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      done({ code, elapsedMs: Date.now() - startedAt });
+    });
+  });
 }
 
-// ---------------------------------------------------------------------------
-// 2. 正常挂载：租约内放行 N 次，第 N+1 次在转发前被拒。
-// ---------------------------------------------------------------------------
-async function scenarioLeasedBudget() {
-  const dir = scratchDir('leased');
-  const upstream = await startUpstream();
-  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 2, logPath: join(dir, 'gate.jsonl') });
-  const { baseUrl } = await gate.listen(0);
-  gate.grantLease();
-
-  const first = await postMessage(baseUrl, 1);
-  const second = await postMessage(baseUrl, 2);
-  const third = await postMessage(baseUrl, 3);
-
-  check(first.status === 200 && second.status === 200, 'leased: first two requests allowed', [first.status, second.status]);
-  check(third.status === 403, 'leased: third request refused', third.status);
-  check(third.body.error.reason === 'BUDGET_EXHAUSTED', 'leased: reason is BUDGET_EXHAUSTED', third.body.error.reason);
-  check(upstream.count() === 2, 'leased: upstream received exactly the allowed count', upstream.count());
-  check(gate.status().remaining === 0, 'leased: remaining is 0', gate.status().remaining);
-
-  await gate.close();
-  await upstream.close();
-}
-
-// ---------------------------------------------------------------------------
-// 3. 心跳超时（运行中保护失效）：租约过期后必须重新拒绝。
-// ---------------------------------------------------------------------------
-async function scenarioLeaseExpiry() {
-  const dir = scratchDir('expiry');
-  const upstream = await startUpstream();
-  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 5, leaseTtlMs: 150, logPath: join(dir, 'gate.jsonl') });
-  const { baseUrl } = await gate.listen(0);
-  const lease = gate.grantLease();
-
-  const before = await postMessage(baseUrl, 1);
-  gate.heartbeat(lease.id);
-  await new Promise((done) => setTimeout(done, 250));
-  const afterExpiry = await postMessage(baseUrl, 2);
-  const renewed = gate.heartbeat(lease.id);
-  const afterRenew = await postMessage(baseUrl, 3);
-
-  check(before.status === 200, 'expiry: request inside lease allowed', before.status);
-  check(afterExpiry.status === 403, 'expiry: request after TTL refused', afterExpiry.status);
-  check(afterExpiry.body.error.reason === 'LEASE_EXPIRED', 'expiry: reason is LEASE_EXPIRED', afterExpiry.body.error.reason);
-  check(renewed.ok === true && afterRenew.status === 200, 'expiry: heartbeat renewal restores the lease', renewed);
-  check(upstream.count() === 2, 'expiry: upstream saw only allowed requests', upstream.count());
-
-  await gate.close();
-  await upstream.close();
-}
-
-// ---------------------------------------------------------------------------
-// 4. 运行中撤销 + 闸门消失：之后的请求要么被拒，要么连不上，绝不外发。
-// ---------------------------------------------------------------------------
-async function scenarioRuntimeLoss() {
-  const dir = scratchDir('loss');
-  const upstream = await startUpstream();
-  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 9, logPath: join(dir, 'gate.jsonl') });
-  const { baseUrl } = await gate.listen(0);
-  const lease = gate.grantLease();
-
-  const allowed = await postMessage(baseUrl, 1);
-  gate.revoke('HEARTBEAT_LOST');
-  const afterRevoke = await postMessage(baseUrl, 2);
-  const statusBeforeClose = gate.status();
-  await gate.close();
-  const afterClose = await postMessage(baseUrl, 3);
-  await new Promise((done) => setTimeout(done, 100));
-
-  check(allowed.status === 200, 'runtime-loss: request before loss allowed', allowed.status);
-  check(afterRevoke.status === 403, 'runtime-loss: request after revoke refused', afterRevoke.status);
-  check(afterRevoke.body.error.reason === 'REVOKED', 'runtime-loss: reason is REVOKED', afterRevoke.body.error.reason);
-  check(statusBeforeClose.state === 'leased' && statusBeforeClose.used === 1, 'runtime-loss: state visible before close', statusBeforeClose.state);
-  check(afterClose.status === 0, 'runtime-loss: request after gate closed fails to connect', afterClose.status);
-  check(upstream.count() === 1, 'runtime-loss: upstream saw only the one allowed request', upstream.count());
-
-  await upstream.close();
-}
-
-// ---------------------------------------------------------------------------
-// 5. 判定函数：三项必须同时成立。
-// ---------------------------------------------------------------------------
-async function scenarioDecisionFunctions() {
-  const dir = scratchDir('decision');
-  const emptyLog = join(dir, 'events-empty.jsonl');
-  const freshLog = join(dir, 'events-fresh.jsonl');
-  const staleLog = join(dir, 'events-stale.jsonl');
-  writeFileSync(emptyLog, '', 'utf8');
-  appendEvent(freshLog, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
-  appendEvent(staleLog, { event: 'mounted', at: new Date(Date.now() - 600_000).toISOString(), limit: 2, used: 0 });
-
-  const missing = checkProtectionHeartbeat({ eventLog: emptyLog, now: Date.now(), maxAgeMs: 30_000 });
-  const stale = checkProtectionHeartbeat({ eventLog: staleLog, now: Date.now(), maxAgeMs: 30_000 });
-  const fresh = checkProtectionHeartbeat({ eventLog: freshLog, now: Date.now(), maxAgeMs: 30_000 });
-
-  check(missing.ok === false && missing.reason === 'HEARTBEAT_MISSING', 'decide: missing heartbeat rejected', missing.reason);
-  check(stale.ok === false && stale.reason === 'HEARTBEAT_STALE', 'decide: stale heartbeat rejected', stale.reason);
-  check(fresh.ok === true, 'decide: fresh heartbeat accepted', fresh);
-
-  const match = checkBaseUrl({ effectiveBaseUrl: 'http://127.0.0.1:18881/', gateBaseUrl: 'http://127.0.0.1:18881' });
-  const prefixTrap = checkBaseUrl({ effectiveBaseUrl: 'http://127.0.0.1:18881', gateBaseUrl: 'http://127.0.0.1:1888' });
-  const mismatch = checkBaseUrl({ effectiveBaseUrl: 'https://api.deepseek.com/anthropic', gateBaseUrl: 'http://127.0.0.1:18881' });
-  check(match.ok === true, 'decide: trailing slash counts as the same baseURL', match);
-  check(prefixTrap.ok === false, 'decide: host prefix must not match a longer port', prefixTrap);
-  check(mismatch.ok === false && mismatch.reason === 'BASE_URL_MISMATCH', 'decide: real endpoint is not the gate', mismatch.reason);
-
-  const blocked = decideStart({ gateReady: true, baseUrl: match, heartbeat: missing });
-  const open = decideStart({ gateReady: true, baseUrl: match, heartbeat: fresh });
-  check(blocked.allow === false && blocked.blockers[0].code === 'HEARTBEAT_MISSING', 'decide: any failing check blocks start', blocked.blockers);
-  check(open.allow === true, 'decide: all checks pass -> start allowed', open);
-
-  const dump = JSON.stringify([{ id: 'llm-deepseek', config: { baseURL: 'http://127.0.0.1:18881' } }]);
-  const extracted = extractBaseUrlFromDump(dump);
-  check(extracted.ok === true && extracted.baseURL === 'http://127.0.0.1:18881', 'decide: baseURL read from effective config', extracted);
-  const noUrl = extractBaseUrlFromDump(JSON.stringify([{ id: 'llm-deepseek', config: {} }]));
-  check(noUrl.ok === false && noUrl.reason === 'BASE_URL_NOT_SET', 'decide: default endpoint means no gate', noUrl.reason);
-  const ambiguous = extractBaseUrlFromDump(JSON.stringify([
-    { id: 'llm-deepseek', config: { baseURL: 'http://127.0.0.1:1' } },
-    { id: 'llm-deepseek-account', config: { baseURL: 'http://127.0.0.1:2' } },
-  ]));
-  check(ambiguous.ok === true, 'decide: unrelated provider entry does not create ambiguity', ambiguous);
-  const realAmbiguous = extractBaseUrlFromDump(JSON.stringify([
-    { id: 'llm-deepseek', config: { baseURL: 'http://127.0.0.1:1' } },
-    { id: 'llm-deepseek', config: { baseURL: 'http://127.0.0.1:2' } },
-  ]));
-  check(realAmbiguous.ok === false && realAmbiguous.reason === 'BASE_URL_AMBIGUOUS', 'decide: two baseURLs is ambiguous -> refuse', realAmbiguous.reason);
-}
-
-// ---------------------------------------------------------------------------
-// 6. 运行器集成：baseURL 不在闸门上 → 连宿主都不启动；
-//    插件缺失 / 心跳陈旧（apply 抛错的后果）→ 宿主启动但请求全被拒（0 外发），
-//    运行器随后终止宿主并返回 3。
-// ---------------------------------------------------------------------------
-async function scenarioLauncherRefusals() {
-  const upstream = await startUpstream();
-
-  // 6a baseURL 指向真实端点：闸门不在路径上，必须在启动前拒绝。
-  {
-    const dir = scratchDir('launcher-realurl');
-    const port = await freePort();
-    const dump = join(dir, 'dump.yml');
-    writeDumpYaml(dump, [{ id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'https://api.deepseek.com/anthropic' }]);
-    const log = join(dir, 'events.jsonl');
-    appendEvent(log, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
-    const stub = join(dir, 'stub-host.mjs');
-    writeFileSync(stub, STUB_HOST, 'utf8');
-    const result = await runLauncher([
-      '--upstream', upstream.url,
-      '--model-requests', '2',
-      '--gate-port', String(port),
-      '--run-dir', dir,
-      '--heartbeat-file', log,
-      '--dsh-exe', process.execPath,
-      '--dsh-cli', stub,
-      '--profile', 'stage1',
-      '--prompt', 'stub prompt',
-      '--timeout-ms', '800',
-    ], { env: { STUB_DUMP_FILE: dump } });
-    const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
-    check(result.code === 3, 'launcher-realurl: exit 3', result.code);
-    check(summary.hostStarted === false, 'launcher-realurl: host never started');
-    check(existsSync(join(dir, 'host-results.json')) === false, 'launcher-realurl: stub host never ran');
-    check(summary.decision.blockers.some((blocker) => blocker.code === 'BASE_URL_MISMATCH'), 'launcher-realurl: BASE_URL_MISMATCH');
-    check(summary.config.source === 'launcher-fetched', 'launcher-realurl: config came from the launcher probe', summary.config.source);
-    check(typeof summary.config.sha256 === 'string' && summary.config.sha256.length === 64, 'launcher-realurl: probe digest recorded');
-  }
-
-  // 6b 插件缺失：没有 event log。宿主照常启动，但每条请求都被闸门拒绝。
-  // 6c apply 抛错：event log 里只有更早那次的陈旧 mounted。
-  const afterStart = [
-    { name: 'plugin-missing', heartbeat: 'absent', expect: 'HEARTBEAT_MISSING' },
-    { name: 'apply-throw-stale-heartbeat', heartbeat: 'stale', expect: 'HEARTBEAT_STALE' },
-  ];
-  for (const testCase of afterStart) {
-    const dir = scratchDir('launcher-' + testCase.name);
-    const port = await freePort();
-    const dump = join(dir, 'dump.yml');
-    writeDumpYaml(dump, [{ id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'http://127.0.0.1:' + port }]);
-    const log = join(dir, 'events.jsonl');
-    if (testCase.heartbeat === 'absent') {
-      // 不创建文件：模拟插件根本没挂载。
-    } else {
-      appendEvent(log, { event: 'mounted', at: new Date(Date.now() - 600_000).toISOString(), limit: 2, used: 0 });
-    }
-    const stub = join(dir, 'stub-host.mjs');
-    writeFileSync(stub, STUB_HOST, 'utf8');
-    const result = await runLauncher([
-      '--upstream', upstream.url,
-      '--model-requests', '2',
-      '--gate-port', String(port),
-      '--run-dir', dir,
-      '--heartbeat-file', log,
-      '--dsh-exe', process.execPath,
-      '--dsh-cli', stub,
-      '--profile', 'stage1',
-      '--prompt', 'stub prompt',
-      '--timeout-ms', '1200',
-    ], { env: { STUB_DUMP_FILE: dump } });
-    const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
-    const hostResults = existsSync(join(dir, 'host-results.json')) ? JSON.parse(readFileSync(join(dir, 'host-results.json'), 'utf8')) : null;
-    check(result.code === 3, 'launcher-unprotected (' + testCase.name + '): exit 3', result.code);
-    check(summary.hostStarted === true, 'launcher-unprotected (' + testCase.name + '): host did start');
-    check(summary.decision.allow === false, 'launcher-unprotected (' + testCase.name + '): decision blocks');
-    check(summary.decision.blockers.some((blocker) => blocker.code === testCase.expect), 'launcher-unprotected (' + testCase.name + '): blocker ' + testCase.expect, summary.decision.blockers);
-    check(hostResults !== null && hostResults.every((entry) => entry.status === 403), 'launcher-unprotected (' + testCase.name + '): every host request was refused', hostResults && hostResults.map((entry) => entry.status));
-    check(summary.gate.used === 0, 'launcher-unprotected (' + testCase.name + '): no budget consumed', summary.gate.used);
-  }
-
-  check(upstream.count() === 0, 'launcher-refusal: upstream received 0 requests across all unprotected runs', upstream.count());
-  await upstream.close();
-}
-
-// ---------------------------------------------------------------------------
-// 7. 运行器集成：保护成立 → 放行预算内请求，超出即拒，且宿主能读到拒绝原因。
-// ---------------------------------------------------------------------------
-async function scenarioLauncherLeased() {
-  const dir = scratchDir('launcher-ok');
-  const upstream = await startUpstream();
-  const port = await freePort();
-  const dump = join(dir, 'dump.yml');
-  writeDumpYaml(dump, [{ id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'http://127.0.0.1:' + port }]);
-  const heartbeat = join(dir, 'events.jsonl');
-  appendEvent(heartbeat, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
-  const stub = join(dir, 'stub-host.mjs');
-  writeFileSync(stub, STUB_HOST, 'utf8');
-
-  const result = await runLauncher([
-    '--upstream', upstream.url,
-    '--model-requests', '2',
-    '--gate-port', String(port),
-    '--run-dir', dir,
-    '--heartbeat-file', heartbeat,
+function baseLauncherArgs({ upstream, runDir, modelRequests, dumpFile, patch, extra = [] }) {
+  return [
+    '--upstream', upstream,
+    '--model-requests', String(modelRequests),
+    '--run-dir', runDir,
+    '--heartbeat-file', join(runDir, 'plugin-events.jsonl'),
+    '--heartbeat-max-age-ms', '3000',
+    '--timeout-ms', '4000',
     '--dsh-exe', process.execPath,
-    '--dsh-cli', stub,
+    '--dsh-cli', stubPath,
     '--profile', 'stage1',
+    '--patch', patch,
     '--prompt', 'stub prompt',
-    '--lease-ttl-ms', '5000',
-    '--timeout-ms', '5000',
-  ], { env: { STUB_DUMP_FILE: dump } });
-
-  const results = JSON.parse(readFileSync(join(dir, 'host-results.json'), 'utf8'));
-  const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
-  const statuses = results.map((entry) => entry.status);
-
-  check(result.code === 0, 'launcher-leased: launcher exits 0', { code: result.code, stderr: result.stderr.slice(0, 400) });
-  check(statuses.join(',') === '200,200,403,403,403', 'launcher-leased: stub host sees 2 allowed then 3 denied', statuses);
-  check(results[2].body.error.reason === 'BUDGET_EXHAUSTED', 'launcher-leased: denial reason reaches the host', results[2].body.error.reason);
-  check(upstream.count() === 2, 'launcher-leased: upstream received exactly the budget', upstream.count());
-  check(summary.result === 'host-ok' && summary.hostStarted === true, 'launcher-leased: summary records a started host', summary.result);
-  check(summary.gate.used === 2 && summary.gate.rejects === 3, 'launcher-leased: gate counters match the server log', summary.gate);
-  check(summary.config.source === 'launcher-fetched' && summary.config.reason === null, 'launcher-leased: effective config was probed by the launcher', summary.config);
-  check(summary.invocation.sameCommandAsProbe === true && summary.invocation.sameProfileAsProbe === true && summary.invocation.samePatchesAsProbe === true && summary.invocation.cwdIsRunDir === true, 'launcher-leased: probe and host invocation are derived from the same parameters', summary.invocation);
-
-  await upstream.close();
+    ...extra,
+  ];
 }
 
 // ---------------------------------------------------------------------------
-// 8. 生效配置的可信绑定：启动器自己取配置；取不到、覆盖率不明、存在未指向闸门的
-//    provider 实例时一律拒绝启动；放宽开关与外部配置文件被明确禁用。
-// ---------------------------------------------------------------------------
-async function scenarioLauncherConfigBinding() {
+
+async function scenarioControlPlaneReadOnly() {
   const upstream = await startUpstream();
+  const log = join(scratch, 'control-gate.jsonl');
+  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 3, leaseTtlMs: 5000, logPath: log });
+  const { baseUrl } = await gate.listen(0);
+  try {
+    // A：HTTP 上没有任何"发租约"的入口，也不存在"回环即授权"。
+    const leaseAttempt = await postControl(baseUrl, '/__tla/gate/lease');
+    check(leaseAttempt.status === 405, 'control: POST /lease is not an endpoint', leaseAttempt);
+    check(leaseAttempt.body && leaseAttempt.body.error && leaseAttempt.body.error.code === 'GATE_CONTROL_READ_ONLY', 'control: /lease answers READ_ONLY', leaseAttempt.body);
+    const heartbeatAttempt = await postControl(baseUrl, '/__tla/gate/heartbeat');
+    check(heartbeatAttempt.status === 405, 'control: POST /heartbeat is not an endpoint', heartbeatAttempt.status);
+    const revokeAttempt = await postControl(baseUrl, '/__tla/gate/revoke');
+    check(revokeAttempt.status === 405, 'control: POST /revoke is not an endpoint', revokeAttempt.status);
+    const statusAfter = await postControl(baseUrl, '/__tla/gate/status', 'GET');
+    check(statusAfter.status === 200, 'control: status remains readable', statusAfter.status);
+    check(statusAfter.body && statusAfter.body.lease === null, 'control: unauthenticated control calls granted no lease', statusAfter.body && statusAfter.body.lease);
 
-  function launcherArgs(dir, port, log) {
-    return [
-      '--upstream', upstream.url,
-      '--model-requests', '2',
-      '--gate-port', String(port),
-      '--run-dir', dir,
-      '--heartbeat-file', log,
-      '--dsh-exe', process.execPath,
-      '--dsh-cli', join(dir, 'stub-host.mjs'),
-      '--profile', 'stage1',
-      '--prompt', 'stub prompt',
-      '--timeout-ms', '900',
-    ];
+    const denied = [];
+    for (let i = 0; i < 3; i += 1) denied.push(await postMessage(baseUrl));
+    check(denied.every((result) => result.status === 403), 'control: no lease -> every request denied', denied.map((r) => r.status));
+    check(denied.every((result) => result.body.error.reason === 'NO_LEASE'), 'control: deny reason is NO_LEASE', denied[1].body.error);
+    check(upstream.hits.length === 0, 'control: upstream received nothing', upstream.hits.length);
+  } finally {
+    await gate.close();
+    await upstream.close();
   }
-
-  // 8a 另一个 provider 实例（账户额度路由）没有指向闸门 → 存在绕过路径，拒绝启动。
-  {
-    const dir = scratchDir('binding-ungated');
-    const port = await freePort();
-    const dump = join(dir, 'dump.yml');
-    writeDumpYaml(dump, [
-      { id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'http://127.0.0.1:' + port },
-      { id: 'llm-deepseek-account', adapter: 'deepseek-account' },
-    ]);
-    const log = join(dir, 'events.jsonl');
-    appendEvent(log, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
-    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
-    const result = await runLauncher(launcherArgs(dir, port, log), { env: { STUB_DUMP_FILE: dump } });
-    const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
-    check(result.code === 3, 'binding-ungated: exit 3', result.code);
-    check(summary.hostStarted === false, 'binding-ungated: host never started');
-    check(summary.decision.blockers.some((blocker) => blocker.code === 'PROVIDER_NOT_GATED'), 'binding-ungated: PROVIDER_NOT_GATED');
-    check(summary.coverage.unguarded.join(',') === 'llm-deepseek-account', 'binding-ungated: names the ungated instance', summary.coverage.unguarded);
-  }
-
-  // 8b 取不到生效配置（宿主什么都不输出）→ 不能声称"和启动实例一致"，拒绝启动。
-  {
-    const dir = scratchDir('binding-unreadable');
-    const port = await freePort();
-    const log = join(dir, 'events.jsonl');
-    appendEvent(log, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
-    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
-    const result = await runLauncher(launcherArgs(dir, port, log), { env: { STUB_DUMP_FILE: join(dir, 'does-not-exist.yml') } });
-    const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
-    check(result.code === 3, 'binding-unreadable: exit 3', result.code);
-    check(summary.hostStarted === false, 'binding-unreadable: host never started');
-    check(summary.config.reason === 'CONFIG_UNREADABLE', 'binding-unreadable: reason recorded', summary.config.reason);
-    check(summary.config.sha256 === null, 'binding-unreadable: no digest claimed');
-    check(summary.decision.blockers.some((blocker) => blocker.code === 'CONFIG_UNREADABLE'), 'binding-unreadable: blocker CONFIG_UNREADABLE');
-    // 回归：读不到配置时不能顺带声称"baseURL 也不对"，那会把缺输入说成地址错。
-    check(summary.decision.blockers.map((blocker) => blocker.code).join(',') === 'CONFIG_UNREADABLE', 'binding-unreadable: unreadable config is not reported as a baseURL mismatch', summary.decision.blockers.map((blocker) => blocker.code));
-  }
-
-  // 8c 放宽开关被禁用（本实验不允许把覆盖率校验关掉）。
-  {
-    const dir = scratchDir('binding-override-flag');
-    const port = await freePort();
-    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
-    const result = await runLauncher([
-      '--upstream', upstream.url,
-      '--model-requests', '1',
-      '--gate-port', String(port),
-      '--run-dir', dir,
-      '--dsh-exe', process.execPath,
-      '--dsh-cli', join(dir, 'stub-host.mjs'),
-      '--profile', 'stage1',
-      '--prompt', 'stub prompt',
-      '--allow-ungated-providers',
-    ]);
-    check(result.code === 2, 'binding-override-flag: rejected as a usage error', result.code);
-    check(existsSync(join(dir, 'gate-summary.json')) === false, 'binding-override-flag: gate never started');
-  }
-
-  // 8d 手工预生成的配置文件被拒绝（无法证明与被启动实例一致）。
-  {
-    const dir = scratchDir('binding-external-dump');
-    const port = await freePort();
-    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
-    const result = await runLauncher([
-      '--upstream', upstream.url,
-      '--model-requests', '1',
-      '--gate-port', String(port),
-      '--run-dir', dir,
-      '--dsh-exe', process.execPath,
-      '--dsh-cli', join(dir, 'stub-host.mjs'),
-      '--profile', 'stage1',
-      '--prompt', 'stub prompt',
-      '--dump-config-from', join(dir, 'dump.yml'),
-    ]);
-    check(result.code === 2, 'binding-external-dump: rejected as a usage error', result.code);
-    check(existsSync(join(dir, 'gate-summary.json')) === false, 'binding-external-dump: gate never started');
-  }
-
-  check(upstream.count() === 0, 'binding: upstream received 0 requests across all refused runs', upstream.count());
-  await upstream.close();
 }
 
-async function scenarioProviderCoverage() {
-  const gate = 'http://127.0.0.1:18778';
-  const single = [
+async function scenarioLeasedBudget() {
+  const upstream = await startUpstream();
+  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 2, leaseTtlMs: 5000, logPath: join(scratch, 'budget-gate.jsonl') });
+  const { baseUrl } = await gate.listen(0);
+  try {
+    gate.grantLease();
+    const first = await postMessage(baseUrl);
+    const second = await postMessage(baseUrl);
+    const third = await postMessage(baseUrl);
+    check(first.status === 200 && second.status === 200, 'budget: two leased requests forwarded', [first.status, second.status]);
+    check(third.status === 403 && third.body.error.reason === 'BUDGET_EXHAUSTED', 'budget: third denied as BUDGET_EXHAUSTED', third.status);
+    check(upstream.hits.length === 2, 'budget: upstream saw exactly the allowed requests', upstream.hits.length);
+    check(gate.status().used === 2 && gate.status().remaining === 0, 'budget: usage accounted', gate.status());
+  } finally {
+    await gate.close();
+    await upstream.close();
+  }
+}
+
+async function scenarioExpiryCannotBeRevived() {
+  const upstream = await startUpstream();
+  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 5, leaseTtlMs: 120, logPath: join(scratch, 'expiry-gate.jsonl') });
+  const { baseUrl } = await gate.listen(0);
+  try {
+    const lease = gate.grantLease();
+    await sleep(220);
+    // C：迟到的续期不能复活已过期的租约。
+    const late = gate.heartbeat(lease.id);
+    check(late.ok === false && late.reason === 'LEASE_EXPIRED', 'expiry: late heartbeat is rejected', late);
+    const status = gate.status();
+    check(status.lease && status.lease.state === 'expired', 'expiry: status reports expired', status.lease);
+    const denied = await postMessage(baseUrl);
+    check(denied.status === 403 && denied.body.error.reason === 'LEASE_EXPIRED', 'expiry: request denied with LEASE_EXPIRED', denied.status);
+    // 过期后可以显式换新租约，但已消耗的计数不重置。
+    const before = gate.status().used;
+    const fresh = gate.grantLease();
+    check(typeof fresh.id === 'string' && gate.status().used === before, 'expiry: new lease does not reset the counter', gate.status());
+    check((await postMessage(baseUrl)).status === 200, 'expiry: new lease works again');
+    check(upstream.hits.length === 1, 'expiry: only the authorized request reached upstream', upstream.hits.length);
+  } finally {
+    await gate.close();
+    await upstream.close();
+  }
+}
+
+async function scenarioRevokeIsPermanent() {
+  const upstream = await startUpstream();
+  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 5, leaseTtlMs: 5000, logPath: join(scratch, 'revoke-gate.jsonl') });
+  const { baseUrl } = await gate.listen(0);
+  try {
+    const lease = gate.grantLease();
+    gate.revoke('TEST_REVOKE');
+    // D：撤销后状态必须如实显示，且不能再被当作正常 leased。
+    const status = gate.status();
+    check(status.lease && status.lease.state === 'revoked', 'revoke: status reports revoked', status.lease);
+    check(status.state === 'revoked', 'revoke: gate state reports revoked', status.state);
+    // B：撤销是永久的，即使调用同进程的收租入口也不能恢复。
+    let thrown = null;
+    try {
+      gate.grantLease();
+    } catch (error) {
+      thrown = error;
+    }
+    check(thrown !== null && thrown.code === 'GATE_REVOKED', 'revoke: grantLease throws GATE_REVOKED', thrown && thrown.code);
+    const renewed = gate.heartbeat(lease.id);
+    check(renewed.ok === false && renewed.reason === 'REVOKED', 'revoke: heartbeat rejected after revoke', renewed);
+    const denied = await postMessage(baseUrl);
+    check(denied.status === 403 && denied.body.error.reason === 'REVOKED', 'revoke: request denied with REVOKED', denied.status);
+    check(upstream.hits.length === 0, 'revoke: nothing forwarded', upstream.hits.length);
+    await gate.close();
+    // 关闭后既不发租约，也不再接受连接。
+    let closedThrown = null;
+    try {
+      gate.grantLease();
+    } catch (error) {
+      closedThrown = error;
+    }
+    check(closedThrown !== null && (closedThrown.code === 'GATE_CLOSING' || closedThrown.code === 'GATE_REVOKED'), 'revoke: no lease after close', closedThrown && closedThrown.code);
+    let connectFailed = false;
+    try {
+      await postMessage(baseUrl);
+    } catch (_refused) {
+      connectFailed = true;
+    }
+    check(connectFailed, 'revoke: closed gate refuses connections');
+  } finally {
+    await upstream.close();
+  }
+}
+
+async function scenarioMountProofRunBinding() {
+  const upstream = await startUpstream();
+  const runDir = join(scratch, 'mount-binding');
+  mkdirSync(runDir, { recursive: true });
+  const events = join(runDir, 'plugin-events.jsonl');
+  const gate = createBudgetGate({
+    upstream: upstream.url,
+    modelRequests: 3,
+    leaseTtlMs: 5000,
+    logPath: join(runDir, 'gate.jsonl'),
+    mountProof: { eventLog: events, runId: 'run-A', maxAgeMs: 3000 },
+  });
+  const { baseUrl } = await gate.listen(0);
+  try {
+    // F（纯判定）：别的运行预先写下的 mounted（即使新鲜）不得授权本次运行。
+    const foreignFile = join(runDir, 'foreign.jsonl');
+    appendEvent(foreignFile, { event: 'mounted', runId: 'run-OLD' });
+    const foreignProof = evaluateMountProof({ eventLog: foreignFile, runId: 'run-A', now: Date.now(), maxAgeMs: 3000 });
+    check(foreignProof.ok === false && foreignProof.reason === 'PROOF_FOREIGN_RUN', 'mount: foreign runId proof rejected', foreignProof.reason);
+
+    // G：事件顺序冲突（第一条不是 mounted）默认拒绝。
+    const outOfOrder = join(runDir, 'unordered.jsonl');
+    appendEvent(outOfOrder, { event: 'heartbeat', runId: 'run-A' });
+    const outOfOrderProof = evaluateMountProof({ eventLog: outOfOrder, runId: 'run-A', now: Date.now(), maxAgeMs: 3000 });
+    check(outOfOrderProof.ok === false && outOfOrderProof.reason === 'PROOF_UNORDERED', 'mount: unordered proof rejected', outOfOrderProof.reason);
+
+    // G：损坏行默认拒绝（不跳过）。
+    const corrupt = join(runDir, 'corrupt.jsonl');
+    appendEvent(corrupt, { event: 'mounted', runId: 'run-A' });
+    appendFileSync(corrupt, 'not json\n', 'utf8');
+    const corruptProof = evaluateMountProof({ eventLog: corrupt, runId: 'run-A', now: Date.now(), maxAgeMs: 3000 });
+    check(corruptProof.ok === false && corruptProof.reason === 'PROOF_UNREADABLE', 'mount: corrupt log rejected', corruptProof.reason);
+
+    // F2（配置探测泄漏）：探测阶段写下的 mounted 带 `<runId>-probe`，正式运行不认。
+    const probeFile = join(runDir, 'probe-leak.jsonl');
+    appendEvent(probeFile, { event: 'mounted', runId: 'run-A-probe' });
+    appendEvent(probeFile, { event: 'heartbeat', runId: 'run-A-probe' });
+    const probeProof = evaluateMountProof({ eventLog: probeFile, runId: 'run-A', now: Date.now(), maxAgeMs: 60000 });
+    check(probeProof.ok === false && probeProof.reason === 'PROOF_FOREIGN_RUN', 'mount: probe-phase proof cannot authorize the host run', probeProof.reason);
+
+    // F3（启动前预写）：同 runId 的 mounted 若早于本次宿主启动时刻，也不授权。
+    const prestartFile = join(runDir, 'prestart.jsonl');
+    appendEvent(prestartFile, { event: 'mounted', runId: 'run-A' });
+    appendEvent(prestartFile, { event: 'heartbeat', runId: 'run-A' });
+    const prestartProof = evaluateMountProof({ eventLog: prestartFile, runId: 'run-A', now: Date.now(), maxAgeMs: 60000, notBefore: Date.now() + 5_000 });
+    check(prestartProof.ok === false && prestartProof.reason === 'PROOF_PRE_START', 'mount: proof written before host start is rejected', prestartProof.reason);
+
+    // F4（只有 mounted、没有心跳）：说明写事件的东西没有持续运行，不授权。
+    const mountOnly = join(runDir, 'mount-only.jsonl');
+    appendEvent(mountOnly, { event: 'mounted', runId: 'run-A' });
+    const mountOnlyProof = evaluateMountProof({ eventLog: mountOnly, runId: 'run-A', now: Date.now(), maxAgeMs: 6000, requireHeartbeat: true });
+    check(mountOnlyProof.ok === false && mountOnlyProof.reason === 'PROOF_NO_HEARTBEAT', 'mount: a mount without a heartbeat is rejected', mountOnlyProof.reason);
+
+    // 本次运行的 mounted → 允许一次（共享给后续请求），随后 E：unmounted 终止证明。
+    appendEvent(events, { event: 'mounted', runId: 'run-A' });
+    const allowed = await postMessage(baseUrl);
+    check(allowed.status === 200, 'mount: fresh run-bound mount authorizes the first request', allowed.status);
+    const second = await postMessage(baseUrl);
+    check(second.status === 200, 'mount: lease continues after mount grant', second.status);
+    appendEvent(events, { event: 'unmounted', runId: 'run-A' });
+    const ended = await postMessage(baseUrl);
+    check(ended.status === 403, 'mount: unmounted ends the proof', ended.status);
+    check(upstream.hits.length === 2, 'mount: upstream only saw the two authorized requests', upstream.hits.length);
+
+    // 心跳判定：陈旧事件不新鲜、缺失即缺失。
+    // 注意 mounted 的年龄不再参与运行期判定——这里构造的是"心跳本身陈旧"。
+    const staleFile = join(runDir, 'stale.jsonl');
+    appendEvent(staleFile, { event: 'mounted', runId: 'run-A', at: new Date(Date.now() - 60000).toISOString() });
+    appendEvent(staleFile, { event: 'heartbeat', runId: 'run-A', at: new Date(Date.now() - 30000).toISOString() });
+    const stale = checkProtectionHeartbeat({ eventLog: staleFile, runId: 'run-A', now: Date.now(), maxAgeMs: 2000 });
+    check(stale.ok === false && stale.reason === 'HEARTBEAT_STALE', 'heartbeat: staleness detected', stale.reason);
+
+    // 长期健康运行：mounted 很旧，但最新心跳很新 → 仍应判活（复审问题 1）。
+    const longRunFile = join(runDir, 'long-run.jsonl');
+    appendEvent(longRunFile, { event: 'mounted', runId: 'run-long', at: new Date(Date.now() - 60_000).toISOString() });
+    appendEvent(longRunFile, { event: 'heartbeat', runId: 'run-long', at: new Date(Date.now() - 5).toISOString() });
+    const longRunBeat = checkProtectionHeartbeat({ eventLog: longRunFile, runId: 'run-long', now: Date.now(), maxAgeMs: 2000 });
+    check(longRunBeat.ok === true, 'heartbeat: old mount with fresh heartbeat stays alive', longRunBeat);
+    const longRunProof = evaluateMountProof({ eventLog: longRunFile, runId: 'run-long', now: Date.now(), requireHeartbeat: true });
+    check(longRunProof.ok === true, 'heartbeat: mount proof does not expire with the mount age', longRunProof);
+
+    // 卸载终态：unmounted 之后迟到的心跳不能复活（复审问题 2）。
+    const revivedFile = join(runDir, 'revived.jsonl');
+    const t0 = Date.now();
+    appendEvent(revivedFile, { event: 'mounted', runId: 'run-revived', at: new Date(t0 - 3000).toISOString() });
+    appendEvent(revivedFile, { event: 'unmounted', runId: 'run-revived', at: new Date(t0 - 2000).toISOString() });
+    appendEvent(revivedFile, { event: 'heartbeat', runId: 'run-revived', at: new Date(t0 - 5).toISOString() });
+    const revivedBeat = checkProtectionHeartbeat({ eventLog: revivedFile, runId: 'run-revived', now: Date.now(), maxAgeMs: 2000 });
+    check(revivedBeat.ok === false && revivedBeat.reason === 'RUN_ENDED', 'heartbeat: late heartbeat after unmount is rejected', revivedBeat);
+    const revivedProof = evaluateMountProof({ eventLog: revivedFile, runId: 'run-revived', now: Date.now(), requireHeartbeat: true });
+    check(revivedProof.ok === false && revivedProof.reason === 'PROOF_AFTER_UNMOUNT', 'heartbeat: unmount is terminal for the mount proof', revivedProof);
+
+    // 重复 mounted：同一 runId 内第二次挂载需要新的运行身份。
+    const dupFile = join(runDir, 'dup.jsonl');
+    appendEvent(dupFile, { event: 'mounted', runId: 'run-dup', at: new Date(t0 - 3000).toISOString() });
+    appendEvent(dupFile, { event: 'heartbeat', runId: 'run-dup', at: new Date(t0 - 2500).toISOString() });
+    appendEvent(dupFile, { event: 'mounted', runId: 'run-dup', at: new Date(t0 - 1000).toISOString() });
+    const dupProof = evaluateMountProof({ eventLog: dupFile, runId: 'run-dup', now: Date.now(), requireHeartbeat: false });
+    check(dupProof.ok === false && dupProof.reason === 'PROOF_DUPLICATE_MOUNT', 'heartbeat: duplicate mount is rejected', dupProof);
+
+    // 时间倒序：事件时间回退说明日志不可信。
+    const orderFile = join(runDir, 'reversed.jsonl');
+    appendEvent(orderFile, { event: 'mounted', runId: 'run-order', at: new Date(t0 - 1000).toISOString() });
+    appendEvent(orderFile, { event: 'heartbeat', runId: 'run-order', at: new Date(t0 - 2000).toISOString() });
+    const reversed = evaluateMountProof({ eventLog: orderFile, runId: 'run-order', now: Date.now() });
+    check(reversed.ok === false && reversed.reason === 'PROOF_TIME_ORDER', 'heartbeat: reversed timestamps are rejected', reversed);
+
+    // 损坏日志：一行坏 JSON 就让整份证明不可用。
+    const corruptFile = join(runDir, 'corrupt.jsonl');
+    appendEvent(corruptFile, { event: 'mounted', runId: 'run-corrupt', at: new Date(t0 - 1000).toISOString() });
+    appendFileSync(corruptFile, '{not json\n');
+    const corruptRead = checkProtectionHeartbeat({ eventLog: corruptFile, runId: 'run-corrupt', now: Date.now(), maxAgeMs: 2000 });
+    check(corruptRead.ok === false, 'heartbeat: corrupt log is rejected', corruptRead);
+    const missing = checkProtectionHeartbeat({ eventLog: join(runDir, 'nope.jsonl'), runId: 'run-A', now: Date.now(), maxAgeMs: 3000 });
+    check(missing.ok === false && missing.reason === 'HEARTBEAT_MISSING', 'heartbeat: missing log detected', missing.reason);
+  } finally {
+    await gate.close();
+    await upstream.close();
+  }
+}
+
+async function scenarioConcurrencyLastSlot() {
+  const upstream = await startUpstream();
+  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 1, leaseTtlMs: 5000, logPath: join(scratch, 'concurrent-gate.jsonl') });
+  const { baseUrl } = await gate.listen(0);
+  try {
+    gate.grantLease();
+    // M：10 个并发请求争 1 个额度。
+    const results = await Promise.all(Array.from({ length: 10 }, () => postMessage(baseUrl)));
+    const okCount = results.filter((result) => result.status === 200).length;
+    const deniedCount = results.filter((result) => result.status === 403).length;
+    check(okCount === 1, 'concurrency: exactly one request allowed', okCount);
+    check(deniedCount === 9, 'concurrency: the rest denied', deniedCount);
+    check(results.filter((r) => r.status === 403).every((r) => r.body.error.reason === 'BUDGET_EXHAUSTED'), 'concurrency: denials are BUDGET_EXHAUSTED');
+    check(upstream.hits.length === 1, 'concurrency: upstream saw exactly one request', upstream.hits.length);
+    check(gate.status().used === 1, 'concurrency: counter is one', gate.status().used);
+  } finally {
+    await gate.close();
+    await upstream.close();
+  }
+}
+
+function scenarioDecisionFunctions() {
+  const gateUrl = 'http://127.0.0.1:18778';
+  check(checkBaseUrl({ effectiveBaseUrl: gateUrl, gateBaseUrl: gateUrl }).ok === true, 'decision: exact baseURL matches');
+  check(checkBaseUrl({ effectiveBaseUrl: gateUrl + '/', gateBaseUrl: gateUrl }).ok === true, 'decision: trailing slash tolerated');
+  check(checkBaseUrl({ effectiveBaseUrl: 'http://127.0.0.1:1877', gateBaseUrl: gateUrl }).ok === false, 'decision: port prefix does not match');
+  check(checkBaseUrl({ effectiveBaseUrl: 'https://api.deepseek.com/anthropic', gateBaseUrl: gateUrl }).reason === 'BASE_URL_MISMATCH', 'decision: real endpoint rejected');
+  check(checkBaseUrl({ effectiveBaseUrl: null, gateBaseUrl: gateUrl }).reason === 'BASE_URL_INVALID', 'decision: missing baseURL rejected');
+  check(normalizeBaseUrl('http://127.0.0.1:18778/') === gateUrl, 'decision: normalize strips trailing slash');
+
+  const entries = parseDumpConfigStrict(
+    [
+      '- id: llm-deepseek',
+      "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+      '  config:',
+      '    baseURL: ' + gateUrl,
+      '- id: llm-deepseek-account',
+      "  name: '@deepseek-ai/dsh-llm-deepseek-account'",
+      '  config:',
+      '    baseURL: ' + gateUrl,
+    ].join('\n'),
+  );
+  check(entries.ok === true, 'decision: yaml parses', entries);
+  const coverage = extractProviderCoverage(entries.entries, gateUrl);
+  check(coverage.guarded.length === 2 && coverage.unguarded.length === 0, 'decision: both providers guarded', coverage);
+
+  const perfect = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage });
+  check(perfect.allow === true, 'decision: full coverage allows start', perfect.blockers);
+
+  const unguardedCoverage = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: llm-deepseek',
+        "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+        '  config:',
+        '    baseURL: ' + gateUrl,
+        '- id: llm-deepseek-account',
+        "  name: '@deepseek-ai/dsh-llm-deepseek-account'",
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  const unguardedDecision = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: unguardedCoverage });
+  check(unguardedDecision.allow === false && unguardedDecision.blockers.some((b) => b.code === 'PROVIDER_NOT_GATED'), 'decision: unguarded provider blocks start', unguardedDecision.blockers);
+
+  // 没有覆盖率信息不能启动（不能"默认当作没事"）。
+  const unknownCoverageDecision = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: null });
+  check(unknownCoverageDecision.allow === false && unknownCoverageDecision.blockers.some((b) => b.code === 'COVERAGE_UNVERIFIABLE'), 'decision: missing coverage blocks start', unknownCoverageDecision.blockers);
+
+  const noGuardDecision = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: { guarded: [], unguarded: [], unknown: [] } });
+  check(noGuardDecision.allow === false && noGuardDecision.blockers.some((b) => b.code === 'NO_GATED_PROVIDER'), 'decision: zero guarded providers blocks start', noGuardDecision.blockers);
+}
+
+function scenarioYamlStrictness() {
+  const gateUrl = 'http://127.0.0.1:18778';
+  const base = [
     '- id: llm-deepseek',
     "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
     '  config:',
-    '    baseURL: ' + gate,
+    '    baseURL: ' + gateUrl,
   ].join('\n');
-  const one = extractProviderCoverage(single, gate);
-  check(one.guarded.length === 1 && one.unguarded.length === 0, 'coverage: a single gated provider is guarded', one);
-  const allowed = decideStart({ gateReady: true, baseUrl: { ok: true, reason: null }, heartbeat: { ok: true, reason: null }, coverage: one });
-  check(allowed.allow === true, 'coverage: gated provider passes the start decision', allowed);
+  check(parseDumpConfigStrict(base).ok === true, 'yaml: baseline accepted');
 
-  const twoProviders = single + '\n' + [
-    '- id: llm-deepseek-account',
-    "  name: '@deepseek-ai/dsh-llm-deepseek-account'",
-  ].join('\n');
-  const two = extractProviderCoverage(twoProviders, gate);
-  check(two.unguarded.length === 1 && two.unguarded[0] === 'llm-deepseek-account', 'coverage: a second provider without a gate baseURL is unguarded', two);
-  const blocked = decideStart({ gateReady: true, baseUrl: { ok: true, reason: null }, heartbeat: { ok: true, reason: null }, coverage: two });
-  check(blocked.allow === false && blocked.blockers.some((b) => b.code === 'PROVIDER_NOT_GATED'), 'coverage: unguarded provider blocks the start', blocked);
-
-  const piAi = twoProviders + '\n' + [
-    '- id: llm-pi-ai',
-    "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+  // 缩进不同的列表、嵌套 disabled、重复 id、缺 name、未知 provider、pi-ai 聚合。
+  const nested = [
+    '- id: llm-deepseek',
+    "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
     '  config:',
-    '    providers:',
-    '      - id: openrouter',
+    '    baseURL: ' + gateUrl,
+    '    disabled: true',
   ].join('\n');
-  const pi = extractProviderCoverage(piAi, gate);
-  check(pi.unguarded.includes('llm-pi-ai'), 'coverage: a configured pi-ai aggregator is unguarded', pi);
+  const nestedParsed = parseDumpConfigStrict(nested);
+  check(nestedParsed.ok === true, 'yaml: nested block parses', nestedParsed);
+  const nestedCoverage = extractProviderCoverage(nestedParsed.entries, gateUrl);
+  check(nestedCoverage.disabled.length === 1 && nestedCoverage.guarded.length === 0, 'yaml: nested disabled not counted as guarded', nestedCoverage);
 
-  const piEmpty = twoProviders + '\n' + [
-    '- id: llm-pi-ai',
-    "  name: '@deepseek-ai/dsh-llm-pi-ai'",
-  ].join('\n');
-  const piNone = extractProviderCoverage(piEmpty, gate);
-  check(piNone.unguarded.length === 1 && piNone.notConfigured.includes('llm-pi-ai'), 'coverage: an unconfigured pi-ai aggregator registers no route', piNone);
+  const duplicateId = parseDumpConfigStrict(base + '\n' + base.split('\n').slice(0, 1).join('\n'));
+  check(duplicateId.ok === false && duplicateId.code === 'CONFIG_DUPLICATE_ID', 'yaml: duplicate id rejected', duplicateId.code);
 
-  const disabled = twoProviders + '\n' + [
-    '- id: llm-retry',
-    "  name: '@deepseek-ai/dsh-llm-retry'",
-  ].join('\n');
-  const withRetry = extractProviderCoverage(disabled, gate);
-  check(withRetry.providers.every((p) => p.id !== 'llm-retry'), 'coverage: shared llm plumbing is not counted as a provider', withRetry.providers);
+  const duplicateKey = parseDumpConfigStrict(
+    ['- id: llm-deepseek', "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'", '  config:', '    baseURL: ' + gateUrl, '    baseURL: ' + gateUrl].join('\n'),
+  );
+  check(duplicateKey.ok === false && duplicateKey.code === 'CONFIG_DUPLICATE_KEY', 'yaml: duplicate key rejected', duplicateKey.code);
+
+  const missingName = parseDumpConfigStrict(['- id: llm-deepseek', '  config:', '    baseURL: ' + gateUrl].join('\n'));
+  check(missingName.ok === true && missingName.entries[0].name === null, 'yaml: entry without name parses but is not a provider');
+  check(extractProviderCoverage(missingName.entries, gateUrl).guarded.length === 0, 'yaml: nameless entry cannot count as guarded');
+  // 缺 name 的条目不能"跳过"了事：它可能是会发请求的插件，必须记 unknown。
+  check(
+    extractProviderCoverage(missingName.entries, gateUrl).unknown.length === 1,
+    'yaml: nameless entry is classified unknown rather than skipped',
+    extractProviderCoverage(missingName.entries, gateUrl),
+  );
+
+  // 未知第三方组件（名字不带 dsh-llm 前缀，但完全可能自己发模型请求）不能被静默跳过。
+  const thirdPartyRouter = parseDumpConfigStrict(
+    [
+      '- id: llm-deepseek',
+      "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+      '  config:',
+      '    baseURL: ' + gateUrl,
+      '- id: acme-router',
+      "  name: '@acme/router'",
+      '  config:',
+      '    baseURL: https://router.example.com',
+    ].join('\n'),
+  );
+  const routerCoverage = extractProviderCoverage(thirdPartyRouter.entries, gateUrl);
+  check(routerCoverage.unknown.includes('acme-router'), 'yaml: unknown third-party component surfaced', routerCoverage);
+  check(routerCoverage.guarded.length === 1, 'yaml: only the gated provider counts as guarded', routerCoverage);
+  const routerDecision = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: routerCoverage });
+  check(routerDecision.allow === false && routerDecision.blockers.some((b) => b.code === 'PROVIDER_UNKNOWN'), 'yaml: unknown third-party component blocks start', routerDecision.blockers);
+
+  // 已审查的自家拦截器不算未知组件；其它插件仍算未知。
+  const reviewedPlugin = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: llm-deepseek',
+        "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+        '  config:',
+        '    baseURL: ' + gateUrl,
+        '- id: tla-prelaunch-budget',
+        "  name: 'tla-prelaunch-budget'",
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(reviewedPlugin.unknown.length === 0 && reviewedPlugin.plumbing.includes('tla-prelaunch-budget'), 'yaml: reviewed interceptor plugin is plumbing', reviewedPlugin);
+  check(
+    extractProviderCoverage(
+      parseDumpConfigStrict(['- id: other-plugin', "  name: '@acme/other-plugin'"].join('\n')).entries,
+      gateUrl,
+    ).unknown.includes('other-plugin'),
+    'yaml: other third-party plugin stays unknown',
+  );
+
+  const unknownProvider = parseDumpConfigStrict(
+    ['- id: mystery', "  name: '@deepseek-ai/dsh-llm-mystery'", '  config:', '    baseURL: ' + gateUrl].join('\n'),
+  );
+  const unknownCoverage = extractProviderCoverage(unknownProvider.entries, gateUrl);
+  check(unknownCoverage.unknown.length === 1, 'yaml: unknown adapter surfaced', unknownCoverage);
+  const unknownDecision = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: unknownCoverage });
+  check(unknownDecision.allow === false && unknownDecision.blockers.some((b) => b.code === 'PROVIDER_UNKNOWN'), 'yaml: unknown adapter blocks start', unknownDecision.blockers);
+
+  const aggregatorConfigured = extractProviderCoverage(
+    parseDumpConfigStrict(
+      ['- id: llm-pi-ai', "  name: '@deepseek-ai/dsh-llm-pi-ai'", '  config:', '    providers:', '      - id: openrouter'].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(aggregatorConfigured.unguarded.length === 1, 'yaml: configured aggregator is unguarded', aggregatorConfigured);
+
+  const aggregatorIdle = extractProviderCoverage(
+    parseDumpConfigStrict(['- id: llm-pi-ai', "  name: '@deepseek-ai/dsh-llm-pi-ai'"].join('\n')).entries,
+    gateUrl,
+  );
+  check(aggregatorIdle.notConfigured.length === 1, 'yaml: idle aggregator is not-configured', aggregatorIdle);
+
+  // 白名单只证明"组件在默认 profile 里存在"，不能证明"它不调用模型"。
+  // 随包里有两个自带模型端点的组件，默认指向真实 api.deepseek.com：
+  //   web-search-deepseek  → POST ${baseURL}/messages
+  //   deepseek-account-platform → inferenceOrigin（本机代理再转发）
+  // 它们必须按"端点是否指向闸门"判定，而不是按白名单放过。
+  const webSearchDefault = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: llm-deepseek',
+        "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+        '  config:',
+        '    baseURL: ' + gateUrl,
+        '- id: web-search-deepseek',
+        "  name: '@deepseek-ai/dsh-web-search-deepseek'",
+        '  config:',
+        '    apiKeyEnv: DEEPSEEK_API_KEY',
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(webSearchDefault.unguarded.includes('web-search-deepseek'), 'yaml: web search with default endpoint is unguarded', webSearchDefault);
+  const webSearchBlocked = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: webSearchDefault });
+  check(webSearchBlocked.allow === false && webSearchBlocked.blockers.some((b) => b.code === 'PROVIDER_NOT_GATED'), 'yaml: ungated web search blocks start', webSearchBlocked.blockers);
+
+  const webSearchGated = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: web-search-deepseek',
+        "  name: '@deepseek-ai/dsh-web-search-deepseek'",
+        '  config:',
+        '    baseURL: ' + gateUrl,
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(webSearchGated.guarded.includes('web-search-deepseek'), 'yaml: web search pointed at the gate counts as guarded', webSearchGated);
+
+  const accountUngated = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: deepseek-account',
+        "  name: '@deepseek-ai/dsh-deepseek-account-platform'",
+        '  config:',
+        '    platformOrigin: https://platform.deepseek.com',
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(accountUngated.unguarded.includes('deepseek-account'), 'yaml: account platform is unguarded while inferenceOrigin is default', accountUngated);
+
+  const accountGated = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: deepseek-account',
+        "  name: '@deepseek-ai/dsh-deepseek-account-platform'",
+        '  config:',
+        '    inferenceOrigin: ' + gateUrl,
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(accountGated.guarded.includes('deepseek-account'), 'yaml: account platform pointed at the gate counts as guarded', accountGated);
+
+  const webSearchDisabled = extractProviderCoverage(
+    parseDumpConfigStrict(
+      [
+        '- id: web-search-deepseek',
+        "  name: '@deepseek-ai/dsh-web-search-deepseek'",
+        '  config:',
+        '    apiKeyEnv: DEEPSEEK_API_KEY',
+        '  disabled: true',
+      ].join('\n'),
+    ).entries,
+    gateUrl,
+  );
+  check(webSearchDisabled.disabled.includes('web-search-deepseek'), 'yaml: disabled web search neither guarded nor unguarded', webSearchDisabled);
+
+  // I：异常 YAML 不能被"跳过坏行"当成覆盖率完整。
+  const tab = parseDumpConfigStrict('- id: llm-deepseek\n\tname: x\n');
+  check(tab.ok === false, 'yaml: tab indentation rejected', tab.code);
+  const flow = parseDumpConfigStrict('- id: llm-deepseek\n  name: x\n  config: {baseURL: ' + gateUrl + '}\n');
+  check(flow.ok === false, 'yaml: flow style rejected', flow.code);
+  const trailing = parseDumpConfigStrict(base + '\nthis trailing line is not yaml\n');
+  check(trailing.ok === false, 'yaml: trailing garbage rejected', trailing.code);
+  const partial = parseDumpConfigStrict('- id: llm-deepseek\n  name: x\n  config:\n');
+  check(partial.ok === false, 'yaml: partial config rejected', partial.code);
+  const dup = parseDumpConfigStrict(base + '\n- id: llm-deepseek\n');
+  check(dup.ok === false && dup.code === 'CONFIG_DUPLICATE_ID', 'yaml: duplicate id rejected (repeat)', dup.code);
 }
 
-async function scenarioConcurrentLastSlot() {
+function scenarioArgsValidation() {
+  const bad = (args) => {
+    try {
+      parseArgs(args);
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+  check(bad(['--dump-config-from', 'x']) instanceof UsageError, 'args: --dump-config-from rejected');
+  check(bad(['--allow-ungated-providers']) instanceof UsageError, 'args: --allow-ungated-providers rejected');
+  check(bad(['--on-loss', 'ignore']) instanceof UsageError, 'args: --on-loss rejected');
+  check(bad(['--', 'x']) instanceof UsageError, 'args: free-form host args rejected');
+  check(bad(['--nope']) instanceof UsageError, 'args: unknown flag rejected');
+  const parsed = parseArgs(['--upstream', 'http://127.0.0.1:1', '--model-requests', '1', '--patch', 'a', '--patch', 'b']);
+  check(parsed.patches.length === 2, 'args: --patch is repeatable', parsed.patches);
+}
+
+async function scenarioLifecycleAtGate() {
   const upstream = await startUpstream();
-  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 1 });
-  const { baseUrl } = await gate.listen(0);
-  const lease = gate.grantLease();
-  check(typeof lease.id === 'string', 'concurrency: lease issued', lease.id);
+  const runDir = join(scratch, 'lifecycle-gate');
+  mkdirSync(runDir, { recursive: true });
+  const nowIso = (ms) => new Date(ms).toISOString();
 
-  const results = await Promise.all(Array.from({ length: 10 }, (_unused, index) => postMessage(baseUrl, index)));
-  const allowed = results.filter((result) => result.status === 200);
-  const denied = results.filter((result) => result.status === 403 && result.body?.error?.reason === 'BUDGET_EXHAUSTED');
-  check(allowed.length === 1, 'concurrency: exactly one of ten parallel requests wins the last slot', { allowed: allowed.length, denied: denied.length });
-  check(denied.length === 9, 'concurrency: the other nine are denied as BUDGET_EXHAUSTED', denied.length);
-  check(upstream.count() === 1, 'concurrency: upstream received exactly one request', upstream.count());
-  check(gate.status().used === 1 && gate.status().remaining === 0, 'concurrency: gate counters equal the served request', gate.status());
+  // 1) 长跑健康：mounted 是 2 分钟前，心跳是 5 毫秒前。
+  //    闸门必须仍然放行，并用上游请求数证明"真的转发了"，而不只是判定函数说 ok。
+  const longRun = join(runDir, 'long.jsonl');
+  appendEvent(longRun, { event: 'mounted', runId: 'run-long', at: nowIso(Date.now() - 120_000) });
+  appendEvent(longRun, { event: 'heartbeat', runId: 'run-long', at: nowIso(Date.now() - 5) });
+  const longGate = createBudgetGate({
+    upstream: upstream.url,
+    modelRequests: 2,
+    leaseTtlMs: 5000,
+    logPath: join(runDir, 'long-gate.jsonl'),
+    mountProof: { eventLog: longRun, runId: 'run-long', maxAgeMs: 5000, requireHeartbeat: true },
+  });
+  const longBase = (await longGate.listen(0)).baseUrl;
+  try {
+    const allowed = await postMessage(longBase);
+    check(allowed.status === 200, 'lifecycle: long run with fresh heartbeat is authorized at the gate', allowed.status);
+    check(upstream.hits.length === 1, 'lifecycle: long run request actually reached upstream', upstream.hits.length);
 
-  await gate.close();
+    // 2) 卸载后迟到心跳：闸门必须拒绝，且上游计数不变（区分"判定被误接受"与"真的转发"）。
+    const revived = join(runDir, 'revived.jsonl');
+    appendEvent(revived, { event: 'mounted', runId: 'run-revived', at: nowIso(Date.now() - 3000) });
+    appendEvent(revived, { event: 'unmounted', runId: 'run-revived', at: nowIso(Date.now() - 2000) });
+    appendEvent(revived, { event: 'heartbeat', runId: 'run-revived', at: nowIso(Date.now() - 5) });
+    const revivedGate = createBudgetGate({
+      upstream: upstream.url,
+      modelRequests: 2,
+      leaseTtlMs: 5000,
+      logPath: join(runDir, 'revived-gate.jsonl'),
+      mountProof: { eventLog: revived, runId: 'run-revived', maxAgeMs: 5000, requireHeartbeat: true },
+    });
+    const revivedBase = (await revivedGate.listen(0)).baseUrl;
+    try {
+      const denied = await postMessage(revivedBase);
+      check(denied.status === 403, 'lifecycle: unmounted run cannot be revived at the gate', denied.status);
+      check(upstream.hits.length === 1, 'lifecycle: revived request never reached upstream', upstream.hits.length);
+      // 拒绝原因允许 NO_LEASE 或 REVOKED：闸门读到 unmounted 会直接永久撤销，
+      // 两条路径的结果都是"不发请求"，这里只断言"被拒"这一事实。
+      check(
+        denied.body && denied.body.error && (denied.body.error.reason === 'NO_LEASE' || denied.body.error.reason === 'REVOKED'),
+        'lifecycle: revival denial is NO_LEASE or REVOKED',
+        denied.body,
+      );
+
+      // 3) 同一 runId 重复 mounted：同样不授权（需要新的运行身份）。
+      const dup = join(runDir, 'dup.jsonl');
+      appendEvent(dup, { event: 'mounted', runId: 'run-dup', at: nowIso(Date.now() - 3000) });
+      appendEvent(dup, { event: 'heartbeat', runId: 'run-dup', at: nowIso(Date.now() - 2500) });
+      appendEvent(dup, { event: 'mounted', runId: 'run-dup', at: nowIso(Date.now() - 10) });
+      const dupGate = createBudgetGate({
+        upstream: upstream.url,
+        modelRequests: 2,
+        leaseTtlMs: 5000,
+        logPath: join(runDir, 'dup-gate.jsonl'),
+        mountProof: { eventLog: dup, runId: 'run-dup', maxAgeMs: 5000 },
+      });
+      const dupBase = (await dupGate.listen(0)).baseUrl;
+      try {
+        const dupDenied = await postMessage(dupBase);
+        check(dupDenied.status === 403, 'lifecycle: duplicate mount does not authorize a lease', dupDenied.status);
+        check(upstream.hits.length === 1, 'lifecycle: duplicate-mount request never reached upstream', upstream.hits.length);
+      } finally {
+        await dupGate.close();
+      }
+    } finally {
+      await revivedGate.close();
+    }
+  } finally {
+    await longGate.close();
+    await upstream.close();
+  }
+}
+
+async function scenarioLauncherConfigBinding() {
+  const upstream = await startUpstream();
+  const gateUrl = 'http://127.0.0.1:18778';
+  const runDir = join(scratch, 'launcher-binding');
+  mkdirSync(runDir, { recursive: true });
+  const patch = join(runDir, 'overlay.yml');
+  writeFileSync(patch, '- insert:\n    - id: tla-prelaunch-budget\n      name: tla-prelaunch-budget\n      config: {}\n', 'utf8');
+
+  // I：存在未指向闸门的 provider 实例 → 拒绝启动（宿主根本没起来）。
+  const unguardedDump = writeDumpYaml(join(runDir, 'dump-unguarded.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: gateUrl } },
+    { id: 'llm-deepseek-account', name: '@deepseek-ai/dsh-llm-deepseek-account' },
+  ]);
+  const unguardedRun = join(scratch, 'run-unguarded');
+  mkdirSync(unguardedRun, { recursive: true });
+  const unguardedResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: unguardedRun, modelRequests: 2, dumpFile: unguardedDump, patch, extra: ['--gate-port', String(await freePort())] }),
+    { env: { STUB_DUMP_FILE: unguardedDump } },
+  );
+  const unguardedSummary = JSON.parse(readFileSync(join(unguardedRun, 'gate-summary.json'), 'utf8'));
+  check(unguardedResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: unguarded provider -> exit 3', unguardedResult.code);
+  check(unguardedSummary.decision.blockers.some((b) => b.code === 'PROVIDER_NOT_GATED'), 'launcher: blocker names PROVIDER_NOT_GATED', unguardedSummary.decision.blockers);
+  check(existsSync(join(unguardedRun, 'host-results.json')) === false, 'launcher: host never started', existsSync(join(unguardedRun, 'host-results.json')));
+  check(unguardedSummary.result === 'refused-before-host-start', 'launcher: summary says refused-before-host-start', unguardedSummary.result);
+  check(unguardedSummary.config.source === 'launcher-fetched', 'launcher: config was fetched by the launcher', unguardedSummary.config.source);
+
+  // H：探测输出不完整（半截 YAML）→ 拒绝启动，且不能谎报 baseURL 错。
+  const partialRun = join(scratch, 'run-partial');
+  mkdirSync(partialRun, { recursive: true });
+  const partialResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: partialRun, modelRequests: 2, dumpFile: unguardedDump, patch, extra: ['--gate-port', String(await freePort())] }),
+    { env: { STUB_DUMP_FILE: unguardedDump, STUB_DUMP_MODE: 'partial' } },
+  );
+  const partialSummary = JSON.parse(readFileSync(join(partialRun, 'gate-summary.json'), 'utf8'));
+  check(partialResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: partial config -> exit 3', partialResult.code);
+  check(partialSummary.config.reason === 'CONFIG_UNPARSEABLE', 'launcher: partial config reported as CONFIG_UNPARSEABLE', partialSummary.config.reason);
+  check(partialSummary.decision.blockers.length === 1 && partialSummary.decision.blockers[0].code === 'CONFIG_UNPARSEABLE', 'launcher: only the real blocker is reported', partialSummary.decision.blockers);
+
+  // P0-5：探测超时（宿主卡住）→ 拒绝启动。
+  const timeoutRun = join(scratch, 'run-probe-timeout');
+  mkdirSync(timeoutRun, { recursive: true });
+  const timeoutResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: timeoutRun, modelRequests: 2, dumpFile: unguardedDump, patch, extra: ['--gate-port', String(await freePort()), '--config-timeout-ms', '1500'] }),
+    { env: { STUB_DUMP_FILE: unguardedDump, STUB_DUMP_MODE: 'sleep' }, timeoutMs: 40000 },
+  );
+  const timeoutSummary = JSON.parse(readFileSync(join(timeoutRun, 'gate-summary.json'), 'utf8'));
+  check(timeoutResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: probe timeout -> exit 3', timeoutResult.code);
+  check(timeoutSummary.config.reason === 'CONFIG_TIMEOUT', 'launcher: probe timeout reported', timeoutSummary.config.reason);
+
+  // P0-5：探测进程异常退出 → 拒绝启动。
+  const crashRun = join(scratch, 'run-probe-crash');
+  mkdirSync(crashRun, { recursive: true });
+  const crashResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: crashRun, modelRequests: 2, dumpFile: unguardedDump, patch, extra: ['--gate-port', String(await freePort())] }),
+    { env: { STUB_DUMP_FILE: unguardedDump, STUB_DUMP_MODE: 'crash' } },
+  );
+  const crashSummary = JSON.parse(readFileSync(join(crashRun, 'gate-summary.json'), 'utf8'));
+  check(crashResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: probe crash -> exit 3', crashResult.code);
+  check(crashSummary.config.reason === 'CONFIG_EXIT_NONZERO', 'launcher: nonzero probe exit reported', crashSummary.config.reason);
+
   await upstream.close();
 }
 
-async function scenarioMountProofAndLeaseIsolation() {
+async function scenarioLauncherLeased() {
   const upstream = await startUpstream();
-  const dir = scratchDir('mount');
-  const staleLog = join(dir, 'stale.jsonl');
-  appendEvent(staleLog, { event: 'mounted', at: new Date(Date.now() - 600_000).toISOString(), limit: 5 });
-  const staleGate = createBudgetGate({ upstream: upstream.url, modelRequests: 5, mountProof: { eventLog: staleLog, maxAgeMs: 5_000 } });
-  const stale = await staleGate.listen(0);
-  const staleResult = await postMessage(stale.baseUrl, 1);
-  check(staleResult.status === 403 && staleResult.body?.error?.reason === 'NO_LEASE', 'mount: an old mounted event cannot authorize a new run', staleResult.body);
-  check(upstream.count() === 0, 'mount: no upstream connection was opened for the stale proof', upstream.count());
-  await staleGate.close();
+  const runDir = join(scratch, 'launcher-ok');
+  mkdirSync(runDir, { recursive: true });
+  const patch = join(runDir, 'overlay.yml');
+  writeFileSync(patch, '- insert:\n    - id: tla-prelaunch-budget\n      name: tla-prelaunch-budget\n      config: {}\n', 'utf8');
+  const port = await freePort();
+  const dumpFile = writeDumpYaml(join(runDir, 'dump-ok.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: 'http://127.0.0.1:' + port } },
+  ]);
+  const result = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile, patch, extra: ['--gate-port', String(port)] }),
+    { env: { STUB_DUMP_FILE: dumpFile, STUB_EVENTS: join(runDir, 'plugin-events.jsonl'), STUB_EVENTS_MODE: 'ok' } },
+  );
+  const summary = JSON.parse(readFileSync(join(runDir, 'gate-summary.json'), 'utf8'));
+  const hostResults = JSON.parse(readFileSync(join(runDir, 'host-results.json'), 'utf8'));
+  // N：正常路径——有效挂载 + 租约，预算内请求放行。
+  check(result.code === EXIT_OK, 'launcher: normal run exits 0', result.code);
+  check(summary.result === 'host-ok', 'launcher: summary host-ok', summary.result);
+  check(hostResults.results.slice(0, 2).every((status) => status === 200), 'launcher: first two requests allowed', hostResults.results);
+  check(hostResults.results.slice(2).every((status) => status === 403), 'launcher: later requests denied by budget', hostResults.results);
+  check(upstream.hits.length === 2, 'launcher: upstream saw exactly the budgeted requests', upstream.hits.length);
+  check(summary.invocation.sameCommandAsProbe === true, 'launcher: probe and host use the same command', summary.invocation);
+  check(summary.invocation.sameProfileAsProbe === true, 'launcher: same profile', summary.invocation.sameProfileAsProbe);
+  check(summary.invocation.samePatchesAsProbe === true, 'launcher: same patch content', summary.invocation.samePatchesAsProbe);
+  check(summary.invocation.sameEnvAsProbe === true, 'launcher: same environment', summary.invocation.sameEnvAsProbe);
+  check(summary.invocation.runIdSeparatedFromProbe === true, 'launcher: probe and host use different runIds', summary.invocation);
+  check(typeof summary.runId === 'string' && summary.runId.startsWith('tla-run-'), 'launcher: runId recorded', summary.runId);
+  check(summary.coverage.guarded.length === 1, 'launcher: coverage recorded', summary.coverage);
+  await upstream.close();
+}
 
-  const freshLog = join(dir, 'fresh.jsonl');
-  appendEvent(freshLog, { event: 'mounted', at: new Date().toISOString(), limit: 2 });
-  const freshGate = createBudgetGate({ upstream: upstream.url, modelRequests: 2, mountProof: { eventLog: freshLog, maxAgeMs: 5_000 } });
-  const fresh = await freshGate.listen(0);
-  const first = await postMessage(fresh.baseUrl, 1);
-  const second = await postMessage(fresh.baseUrl, 2);
-  check(first.status === 200 && second.status === 200, 'mount: a fresh mounted event authorizes the run', { first: first.status, second: second.status });
-  check(upstream.count() === 2, 'mount: two allowed requests reached upstream', upstream.count());
-  freshGate.revoke('HEARTBEAT_LOST');
-  const third = await postMessage(fresh.baseUrl, 3);
-  check(third.status === 403 && third.body?.error?.reason === 'REVOKED', 'mount: after revocation the same mount proof cannot re-authorize', third.body);
-  check(upstream.count() === 2, 'mount: the revoked request never reached upstream', upstream.count());
-  await freshGate.close();
+async function scenarioLauncherWithoutProof() {
+  const upstream = await startUpstream();
+  const gateUrl = 'http://127.0.0.1:18778';
+  const patchRun = join(scratch, 'launcher-noproof');
+  mkdirSync(patchRun, { recursive: true });
+  const patch = join(patchRun, 'overlay.yml');
+  writeFileSync(patch, '- insert:\n    - id: tla-prelaunch-budget\n      name: tla-prelaunch-budget\n      config: {}\n', 'utf8');
+  const port = await freePort();
+  const dumpFile = writeDumpYaml(join(patchRun, 'dump.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: 'http://127.0.0.1:' + port } },
+  ]);
 
-  const otherGate = createBudgetGate({ upstream: upstream.url, modelRequests: 2 });
-  const other = await otherGate.listen(0);
-  const borrowed = otherGate.heartbeat('lease-from-another-run');
-  check(borrowed.ok === false && borrowed.reason === 'LEASE_UNKNOWN', 'mount: a lease id from another run is rejected', borrowed);
-  const crossResult = await postMessage(other.baseUrl, 4);
-  check(crossResult.status === 403 && crossResult.body?.error?.reason === 'NO_LEASE', 'mount: another run cannot borrow a lease', crossResult.body);
-  check(upstream.count() === 2, 'mount: the cross-run attempt opened no upstream connection', upstream.count());
-  await otherGate.close();
+  // J：宿主存活但从不写心跳 → --timeout-ms 生效，宿主被终止，退出码 3。
+  const silentRun = join(scratch, 'run-silent');
+  mkdirSync(silentRun, { recursive: true });
+  const silentResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: silentRun, modelRequests: 2, dumpFile, patch, extra: ['--gate-port', String(port)] }),
+    { env: { STUB_DUMP_FILE: dumpFile, STUB_EVENTS: join(silentRun, 'plugin-events.jsonl'), STUB_EVENTS_MODE: 'silent-long' }, timeoutMs: 40000 },
+  );
+  const silentSummary = JSON.parse(readFileSync(join(silentRun, 'gate-summary.json'), 'utf8'));
+  check(silentResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: no heartbeat -> exit 3', silentResult.code);
+  check(silentResult.elapsedMs < 15000, 'launcher: timeout enforced (did not hang)', silentResult.elapsedMs);
+  check(silentSummary.result === 'protection-not-established', 'launcher: summary names protection-not-established', silentSummary.result);
+  check(upstream.hits.length === 0, 'launcher: no proof -> upstream 0', upstream.hits.length);
+  check(silentSummary.termination && silentSummary.termination.exited === true, 'launcher: host terminated', silentSummary.termination);
+
+  // K：子进程忽略 SIGTERM → 必须升级到 SIGKILL，不能无限挂起。
+  const killRun = join(scratch, 'run-kill');
+  mkdirSync(killRun, { recursive: true });
+  const killResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: killRun, modelRequests: 2, dumpFile, patch, extra: ['--gate-port', String(port)] }),
+    { env: { STUB_DUMP_FILE: dumpFile, STUB_EVENTS: join(killRun, 'plugin-events.jsonl'), STUB_EVENTS_MODE: 'ignore-sigterm', STUB_IGNORE_SIGTERM: '1' }, timeoutMs: 60000 },
+  );
+  const killSummary = JSON.parse(readFileSync(join(killRun, 'gate-summary.json'), 'utf8'));
+  check(killResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: ignoring SIGTERM still exits 3', killResult.code);
+  check(killResult.elapsedMs < 40000, 'launcher: escalation bounded in time', killResult.elapsedMs);
+  check(killSummary.termination && killSummary.termination.exited === true, 'launcher: escalation kill ended the host', killSummary.termination);
+  // Windows 上 Node 的 child.kill('SIGTERM') 直接走 TerminateProcess，进程一定死，
+  // 观察不到"忽略 SIGTERM"的情形；升级逻辑本身由 scenarioTerminationEscalation 覆盖。
+  if (process.platform !== 'win32') {
+    check(killSummary.termination.escalated === true, 'launcher: SIGKILL escalation recorded', killSummary.termination);
+  }
+  check(killSummary.termination.waitedMs <= 20_000, 'launcher: termination wait is bounded', killSummary.termination.waitedMs);
+
+  // F2（端到端）：探测阶段泄漏写下的 `<runId>-probe` 挂载证明，不能授权正式运行。
+  const upstreamHitsBeforeLeak = upstream.hits.length;
+  const leakRun = join(scratch, 'run-probe-leak');
+  mkdirSync(leakRun, { recursive: true });
+  const leakPort = await freePort();
+  const leakDump = writeDumpYaml(join(leakRun, 'dump.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: 'http://127.0.0.1:' + leakPort } },
+  ]);
+  const leakResult = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir: leakRun, modelRequests: 2, dumpFile: leakDump, patch, extra: ['--gate-port', String(leakPort)] }),
+    { env: { STUB_DUMP_FILE: leakDump, STUB_EVENTS: join(leakRun, 'plugin-events.jsonl'), STUB_EVENTS_MODE: 'probe-leak' }, timeoutMs: 40000 },
+  );
+  const leakSummary = JSON.parse(readFileSync(join(leakRun, 'gate-summary.json'), 'utf8'));
+  check(leakResult.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: probe-phase proof does not authorize the host run', leakResult.code);
+  check(leakSummary.result === 'host-exited-before-protection', 'launcher: probe leak ends as protection-not-established', leakSummary.result);
+  check(upstream.hits.length === upstreamHitsBeforeLeak, 'launcher: upstream saw no request from the probe-leak run', upstream.hits.length - upstreamHitsBeforeLeak);
+  await upstream.close();
+}
+
+/** K：终止升级逻辑本身（平台无关）。真实宿主在 Windows 上观察不到"忽略 SIGTERM"。 */
+async function scenarioTerminationEscalation() {
+  const stubborn = simulateChild({ exitOn: 'SIGKILL' });
+  const escalated = await terminateHost(stubborn, { graceMs: 50, killWaitMs: 300, win32: false });
+  check(escalated.escalated === true, 'termination: stubborn child escalates to SIGKILL', escalated);
+  check(escalated.exited === true, 'termination: escalation ends the child', escalated);
+  check(stubborn.signals.join(',') === 'SIGTERM,SIGKILL', 'termination: signal order is TERM then KILL', stubborn.signals.join(','));
+
+  const polite = simulateChild({ exitOn: 'SIGTERM' });
+  const graceful = await terminateHost(polite, { graceMs: 300, killWaitMs: 300, win32: false });
+  check(graceful.exited === true && graceful.escalated === false, 'termination: cooperative child needs no escalation', graceful);
+  check(polite.signals.join(',') === 'SIGTERM', 'termination: cooperative child gets only SIGTERM', polite.signals.join(','));
+
+  const gone = await terminateHost(null, {});
+  check(gone.exited === false, 'termination: null child is a no-op', gone);
+  const alreadyExited = await terminateHost({ exitCode: 0, kill() { throw new Error('must not be called'); } }, {});
+  check(alreadyExited.exited === true && alreadyExited.escalated === false, 'termination: already-exited child is not signalled', alreadyExited);
+}
+
+function simulateChild({ exitOn }) {
+  let resolveExit;
+  const exited = new Promise((done) => { resolveExit = done; });
+  const child = {
+    exitCode: null,
+    pid: undefined,
+    signals: [],
+    kill(signal) {
+      child.signals.push(signal);
+      if (signal === exitOn) {
+        setTimeout(() => { child.exitCode = 1; resolveExit(1); }, 5);
+      }
+    },
+    onceExit() { return exited; },
+  };
+  return child;
+}
+
+async function scenarioLauncherForeignProof() {  const upstream = await startUpstream();
+  const runDir = join(scratch, 'launcher-foreign');
+  mkdirSync(runDir, { recursive: true });
+  const patch = join(runDir, 'overlay.yml');
+  writeFileSync(patch, '- insert:\n    - id: tla-prelaunch-budget\n      name: tla-prelaunch-budget\n      config: {}\n', 'utf8');
+  const port = await freePort();
+  const dumpFile = writeDumpYaml(join(runDir, 'dump.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: 'http://127.0.0.1:' + port } },
+  ]);
+  // F：旧会话（别的 runId）的 mounted 即使新鲜也不能授权本次运行。
+  const pre = join(runDir, 'plugin-events.jsonl');
+  appendEvent(pre, { event: 'mounted', runId: 'tla-run-previous' });
+  const result = await runLauncher(
+    baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile, patch, extra: ['--gate-port', String(port)] }),
+    { env: { STUB_DUMP_FILE: dumpFile, STUB_EVENTS: pre, STUB_EVENTS_MODE: 'foreign' }, timeoutMs: 40000 },
+  );
+  const summary = JSON.parse(readFileSync(join(runDir, 'gate-summary.json'), 'utf8'));
+  check(result.code === EXIT_PROTECTION_UNVERIFIED, 'launcher: foreign mount -> exit 3', result.code);
+  check(upstream.hits.length === 0, 'launcher: foreign mount -> upstream 0', upstream.hits.length);
+  check(summary.heartbeat && summary.heartbeat.ok === false, 'launcher: heartbeat not accepted for this run', summary.heartbeat);
   await upstream.close();
 }
 
 async function main() {
-  await scenarioDenyByDefault();
-  await scenarioLeasedBudget();
-  await scenarioLeaseExpiry();
-  await scenarioRuntimeLoss();
-  await scenarioDecisionFunctions();
-  await scenarioLauncherRefusals();
-  await scenarioLauncherLeased();
-  await scenarioLauncherConfigBinding();
-  await scenarioProviderCoverage();
-  await scenarioConcurrentLastSlot();
-  await scenarioMountProofAndLeaseIsolation();
-
-  const scenarios = 11;
-  for (const failure of failures) {
-    process.stdout.write('FAIL ' + failure.label + (failure.detail === null ? '' : ' :: ' + JSON.stringify(failure.detail)) + '\n');
+  const scenarios = [
+    ['control plane is read-only', scenarioControlPlaneReadOnly],
+    ['leased budget', scenarioLeasedBudget],
+    ['lease expiry is final', scenarioExpiryCannotBeRevived],
+    ['revoke is permanent', scenarioRevokeIsPermanent],
+    ['mount proof is run-bound', scenarioMountProofRunBinding],
+    ['concurrent last slot', scenarioConcurrencyLastSlot],
+    ['decision functions', scenarioDecisionFunctions],
+    ['yaml strictness and coverage', scenarioYamlStrictness],
+    ['run lifecycle at the gate', scenarioLifecycleAtGate],
+    ['argument validation', scenarioArgsValidation],
+    ['launcher config binding', scenarioLauncherConfigBinding],
+    ['launcher normal run', scenarioLauncherLeased],
+    ['launcher without proof', scenarioLauncherWithoutProof],
+    ['launcher rejects foreign proof', scenarioLauncherForeignProof],
+    ['termination escalation', scenarioTerminationEscalation],
+  ];
+  for (const [label, scenario] of scenarios) {
+    try {
+      await scenario();
+    } catch (error) {
+      failures.push('scenario "' + label + '" threw: ' + String(error && error.stack ? error.stack : error));
+    }
   }
-  process.stdout.write('v02-gate: ' + scenarios + ' scenarios, ' + checks + ' checks, ' + failures.length + ' failed\n');
-  process.exit(failures.length === 0 ? 0 : 1);
+  try {
+    rmSync(scratch, { recursive: true, force: true });
+  } catch (_cleanupFailed) {
+    // 清理失败不影响结论。
+  }
+  if (failures.length > 0) {
+    console.error(failures.length + ' check(s) failed:');
+    for (const failure of failures) console.error('  - ' + failure);
+    process.exit(1);
+  }
+  console.log('v02-gate: ' + scenarios.length + ' scenarios, ' + checks + ' checks, 0 failures');
 }
 
-main().catch((error) => {
-  process.stdout.write('FAIL uncaught :: ' + String(error && error.stack ? error.stack : error) + '\n');
-  process.exit(1);
-});
+await main();
