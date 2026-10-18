@@ -528,103 +528,264 @@ function readEndpoint(config, key) {
 }
 
 /**
- * 逐个 provider 实例判断是否指向闸门。
+ * 一个配置实例的规范化身份。
+ *
+ * 规则（用户 m24003）：
+ *   - `id` 只是实例标识，不能证明"加载的是哪个包"；
+ *   - `name` 是包名，是唯一可用于身份核验的声明；同一个 id 配一个冲突的 name 必须拒绝；
+ *   - 缺 `name` 时，只有当 id 恰好是已登记包名、且**安装包身份被实际核验**通过时才可解析为自有插件；
+ *     绝不因为 id 长得像自己的插件就直接算 plumbing。
+ */
+export const PLUGIN_INSTANCE_SCHEMA = 'tla.plugin-instance/v1';
+
+function isDisabledInstance(entry) {
+  const config = entry.config;
+  const nested = config !== null && typeof config === 'object' && !Array.isArray(config)
+    ? config.disabled === true || config.enabled === false
+    : false;
+  return entry.disabled === true || nested;
+}
+
+/**
+ * 把结构化配置条目规范化成"实例 + 候选包名 + 命名来源"，并记录无法求值的条目。
+ * 纯函数：不读文件系统，不判断覆盖率。
+ */
+export function resolveInstancePackages(entries) {
+  const instances = [];
+  const problems = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const id = typeof entry.id === 'string' && entry.id !== '' ? entry.id : null;
+    const config = entry.config === undefined ? null : entry.config;
+    const disabled = isDisabledInstance(entry);
+    const rawName = entry.name === undefined || entry.name === null ? null : entry.name;
+    if (rawName !== null && (typeof rawName !== 'string' || rawName.trim() === '')) {
+      problems.push({
+        code: 'PLUGIN_INSTANCE_UNEVALUABLE',
+        instance: id,
+        detail: 'name 不是非空字符串，无法确定它加载哪个包',
+      });
+      instances.push({ id, declaredName: null, candidate: null, nameSource: 'unevaluable', disabled, config });
+      continue;
+    }
+    const declared = rawName === null ? null : rawName.trim();
+    const idIsReviewedName = id !== null && REVIEWED_PLUGIN_NAMES.has(id);
+    if (declared !== null && idIsReviewedName && declared !== id) {
+      problems.push({
+        code: 'PLUGIN_IDENTITY_CONFLICT',
+        instance: id,
+        detail: '实例 id 是已登记包名 ' + id + '，name 却声明为 ' + declared + '：id 不能覆盖冲突的 name',
+      });
+      instances.push({ id, declaredName: declared, candidate: null, nameSource: 'conflict', disabled, config });
+      continue;
+    }
+    if (declared === null) {
+      instances.push({
+        id,
+        declaredName: null,
+        candidate: idIsReviewedName ? id : null,
+        nameSource: idIsReviewedName ? 'id-needs-installed-package' : 'missing',
+        disabled,
+        config,
+      });
+      continue;
+    }
+    instances.push({ id, declaredName: declared, candidate: declared, nameSource: 'name', disabled, config });
+  }
+  return { instances, problems };
+}
+
+/** 非"自有插件"的实例沿用原有 provider 判据（模型适配器 / 端点组件 / 白名单组件）。 */
+function classifyComponent({ id, name, config, gate }) {
+  if (name === null) {
+    return { status: 'unknown', baseURL: null, detail: '缺 name，无法判断它是否发模型请求' };
+  }
+  if (!name.startsWith('@deepseek-ai/dsh-llm-')) {
+    const endpointKeys = MODEL_ENDPOINT_COMPONENTS[name];
+    if (endpointKeys !== undefined) {
+      const endpoints = endpointKeys.map((key) => ({ key, url: readEndpoint(config, key) }));
+      const allGated = gate !== null && endpoints.length > 0
+        && endpoints.every(({ url }) => url !== null && checkBaseUrl({ effectiveBaseUrl: url, gateBaseUrl: gate }).ok);
+      return {
+        status: allGated ? 'guarded' : 'unguarded',
+        baseURL: endpoints.length === 1 ? endpoints[0].url : null,
+        modelEndpointKeys: endpointKeys.slice(),
+        detail: allGated ? null : '端点未全部指向闸门',
+      };
+    }
+    const trusted = REVIEWED_PLUGIN_NAMES.has(name) || KNOWN_COMPONENT_NAMES.has(name);
+    return {
+      status: trusted ? 'plumbing' : 'unknown',
+      baseURL: readBaseUrl(config),
+      detail: trusted ? null : '不在受信任组件白名单内，可能具备模型请求能力',
+    };
+  }
+  if (KNOWN_NON_PROVIDER_ADAPTERS.has(name)) {
+    return { status: 'plumbing', baseURL: null, detail: '登记的非模型适配器' };
+  }
+  const known = KNOWN_PROVIDER_ADAPTERS[name];
+  if (known === undefined) {
+    return { status: 'unknown', baseURL: readBaseUrl(config), detail: '不认识的模型适配器' };
+  }
+  if (known.aggregator) {
+    return {
+      status: isAggregatorConfigured(config) ? 'unguarded' : 'not-configured',
+      baseURL: readBaseUrl(config),
+      detail: isAggregatorConfigured(config) ? '聚合器渠道已配置，无法逐个证明都指向闸门' : '聚合器未配置渠道',
+    };
+  }
+  const baseURL = readBaseUrl(config);
+  const check = baseURL === null || gate === null
+    ? { ok: false, reason: 'BASE_URL_MISMATCH' }
+    : checkBaseUrl({ effectiveBaseUrl: baseURL, gateBaseUrl: gate });
+  return {
+    status: check.ok ? 'guarded' : 'unguarded',
+    baseURL,
+    detail: check.ok ? null : (check.reason === undefined ? 'baseURL 未指向闸门' : check.reason),
+  };
+}
+
+/**
+ * 统一判定：分类与身份核验使用**同一个**规范化结果。
+ *
+ * @param {object[]} entries 结构化配置条目
+ * @param {{gateBaseUrl?: string, identities?: object[]|null}} options
+ *   `identities` 为已核验的安装身份（来自 `verifyPluginIdentities`）；为 null 时是"纯分类"
+ *   模式，缺 name 的自有插件一律记为 unknown，不推断。
+ */
+export function judgePluginInstances(entries, options = {}) {
+  const gateUrl = options.gateBaseUrl === undefined ? null : options.gateBaseUrl;
+  const gate = normalizeBaseUrl(gateUrl);
+  const identities = Array.isArray(options.identities) ? options.identities : null;
+  const { instances, problems } = resolveInstancePackages(entries);
+  const rows = [];
+  for (const instance of instances) {
+    const { id, declaredName, candidate, disabled, config, nameSource } = instance;
+    const row = {
+      id,
+      name: declaredName,
+      resolvedName: candidate,
+      nameSource,
+      disabled,
+      kind: 'unknown',
+      detail: null,
+      identity: null,
+      baseURL: null,
+    };
+    if (disabled) {
+      row.kind = 'disabled';
+      row.baseURL = readBaseUrl(config);
+      rows.push(row);
+      continue;
+    }
+    if (nameSource === 'conflict') {
+      row.detail = 'PLUGIN_IDENTITY_CONFLICT：id 与 name 冲突，拒绝';
+      rows.push(row);
+      continue;
+    }
+    if (nameSource === 'unevaluable') {
+      row.detail = 'PLUGIN_INSTANCE_UNEVALUABLE：name 不可解析，拒绝';
+      rows.push(row);
+      continue;
+    }
+    const isReviewed = candidate !== null && REVIEWED_PLUGIN_NAMES.has(candidate);
+    if (isReviewed) {
+      if (identities === null) {
+        // 纯分类：显式 name 维持旧行为（登记过的包算 plumbing，身份另行核验）；
+        // 只有 id、没有名字的实例一律 unknown，避免"按 id 推断受信任代码"。
+        if (nameSource === 'name') {
+          row.kind = 'plumbing';
+          row.detail = '按 name 登记的自有插件（纯分类模式未核验身份）';
+        } else {
+          row.kind = 'unknown';
+          row.detail = 'PLUGIN_IDENTITY_UNPROVEN：缺 name，且没有安装包身份证据';
+        }
+        rows.push(row);
+        continue;
+      }
+      const match = identities.find((item) => item !== null && typeof item === 'object' && item.name === candidate);
+      row.identity = { name: candidate, status: match === undefined ? 'missing' : match.status };
+      if (match === undefined) {
+        row.kind = 'unknown';
+        row.detail = 'PLUGIN_IDENTITY_UNPROVEN：没有任何身份核验结果';
+        problems.push({ code: 'PLUGIN_IDENTITY_UNPROVEN', instance: id, detail: row.detail });
+      } else if (match.status !== 'verified') {
+        row.kind = 'unknown';
+        row.detail = 'PLUGIN_NOT_VERIFIED：' + String(match.status) + '（' + String(match.detail || '没有可核对的安装身份') + '）';
+        problems.push({ code: 'PLUGIN_NOT_VERIFIED', instance: id, detail: row.detail });
+      } else {
+        row.kind = 'plumbing';
+        row.detail = '已核验的安装包 ' + candidate;
+      }
+      rows.push(row);
+      continue;
+    }
+    const classified = classifyComponent({ id, name: candidate, config, gate });
+    row.kind = classified.status;
+    row.detail = classified.detail === undefined ? null : classified.detail;
+    row.baseURL = classified.baseURL === undefined ? null : classified.baseURL;
+    if (classified.modelEndpointKeys !== undefined) row.modelEndpointKeys = classified.modelEndpointKeys;
+    rows.push(row);
+  }
+
+  // 重复实例：同一个**需要身份核验的包**被启用两次时，"每个实例都有 verified 结果"就没有唯一含义。
+  // 宿主自带的组件包可以被合法地挂载两次（例如 tool-subagent 与 tool-subagent-fork 同包不同 id），
+  // 那些包不参与身份核验，因此不能拿它们当阻断项。
+  const counts = new Map();
+  for (const row of rows) {
+    if (row.kind === 'disabled' || row.resolvedName === null) continue;
+    if (!REVIEWED_PLUGIN_NAMES.has(row.resolvedName)) continue;
+    counts.set(row.resolvedName, (counts.get(row.resolvedName) ?? 0) + 1);
+  }
+  for (const [name, count] of counts) {
+    if (count > 1) {
+      problems.push({
+        code: 'PLUGIN_DUPLICATE_INSTANCE',
+        instance: name,
+        detail: '同一个包 ' + name + ' 被启用 ' + String(count) + ' 次，身份无法归属到单个实例',
+      });
+    }
+  }
+
+  const providers = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    status: row.kind,
+    baseURL: row.baseURL,
+    ...(row.modelEndpointKeys === undefined ? {} : { modelEndpointKeys: row.modelEndpointKeys }),
+    ...(row.identity === null ? {} : { identity: row.identity }),
+  }));
+  const pick = (status) => providers.filter((provider) => provider.status === status).map((provider) => provider.id);
+  const gateValue = gate === null ? null : gate;
+  return {
+    schema: PLUGIN_INSTANCE_SCHEMA,
+    gateBaseUrl: gateValue,
+    instances: rows,
+    problems,
+    identityComplete: problems.length === 0
+      && rows.every((row) => row.kind === 'disabled' || row.identity === null || row.identity.status === 'verified'),
+    coverage: {
+      schema: PREFLIGHT_SCHEMA,
+      gateBaseUrl: gateValue,
+      providers,
+      guarded: pick('guarded'),
+      unguarded: pick('unguarded'),
+      notConfigured: pick('not-configured'),
+      disabled: pick('disabled'),
+      unknown: pick('unknown'),
+      plumbing: pick('plumbing'),
+    },
+  };
+}
+
+/**
+ * 逐个 provider 实例判断是否指向闸门（纯分类，不含安装身份核验）。
  *
  * @param {object[]} entries 结构化配置条目
  * @param {string} gateBaseUrl 本次闸门地址
  */
 export function extractProviderCoverage(entries, gateBaseUrl) {
-  const gate = normalizeBaseUrl(gateBaseUrl);
-  const providers = [];
-  for (const entry of entries) {
-    const id = typeof entry.id === 'string' ? entry.id : null;
-    const name = typeof entry.name === 'string' ? entry.name : null;
-    // 本项目自己的闸门前置插件：它只注册一个 `agent/request` 监听器做预占，不创建任何模型
-    // 客户端、不打开网络连接（见 orchestration/interceptor-plugin/index.js）。overlay 用
-    // `insert:` 注入时宿主不会补 `name`，若按"缺 name 即 unknown"处理，闸门会拒绝自己。
-    if (id === ATTENDANCE_PLUGIN_ID || name === ATTENDANCE_PLUGIN_ID) {
-      providers.push({ id, name: name === null ? ATTENDANCE_PLUGIN_ID : name, status: 'plumbing', baseURL: null });
-      continue;
-    }
-    // 缺 name：无法判断这个组件会不会发模型请求，按 unknown 处理（绝不静默跳过）。
-    if (name === null) {
-      providers.push({ id, name: null, status: 'unknown', baseURL: null });
-      continue;
-    }
-    if (!name.startsWith('@deepseek-ai/dsh-llm-')) {
-      const nestedDisabled = entry.config && typeof entry.config === 'object' ? entry.config.disabled === true || entry.config.enabled === false : false;
-      if (entry.disabled === true || nestedDisabled) {
-        providers.push({ id, name, status: 'disabled', baseURL: readBaseUrl(entry.config) });
-        continue;
-      }
-      // 自带模型端点的随包组件：不看白名单，只看端点是否指向闸门。
-      const endpointKeys = MODEL_ENDPOINT_COMPONENTS[name];
-      if (endpointKeys !== undefined) {
-        const endpoints = endpointKeys.map((key) => ({ key, url: readEndpoint(entry.config, key) }));
-        const allGated = endpoints.length > 0
-          && endpoints.every(({ url }) => url !== null && checkBaseUrl({ effectiveBaseUrl: url, gateBaseUrl: gate }).ok);
-        providers.push({
-          id,
-          name,
-          status: allGated ? 'guarded' : 'unguarded',
-          baseURL: endpoints.length === 1 ? endpoints[0].url : null,
-          modelEndpointKeys: endpointKeys.slice(),
-        });
-        continue;
-      }
-      // 非模型适配器：只有登记在受信任组件白名单里的才算"与覆盖率无关"。
-      // 白名单外的名字可能具备模型请求能力（第三方 router / proxy），
-      // 记 unknown 由 decideStart 拒绝启动。
-      const reviewedPlugin = REVIEWED_PLUGIN_NAMES.has(name);
-      providers.push({
-        id,
-        name,
-        status: reviewedPlugin || KNOWN_COMPONENT_NAMES.has(name) ? 'plumbing' : 'unknown',
-        baseURL: readBaseUrl(entry.config),
-      });
-      continue;
-    }
-    if (KNOWN_NON_PROVIDER_ADAPTERS.has(entry.name)) {
-      providers.push({ id: entry.id, name: entry.name, status: 'plumbing', baseURL: null });
-      continue;
-    }
-    const known = KNOWN_PROVIDER_ADAPTERS[entry.name];
-    if (known === undefined) {
-      // 不认识的模型适配器：不能默默跳过，记为 unknown 并要求拒绝启动。
-      providers.push({ id: entry.id, name: entry.name, status: 'unknown', baseURL: readBaseUrl(entry.config) });
-      continue;
-    }
-    const nestedDisabled = entry.config && typeof entry.config === 'object' ? entry.config.disabled === true || entry.config.enabled === false : false;
-    if (entry.disabled === true || nestedDisabled) {
-      providers.push({ id: entry.id, name: entry.name, status: 'disabled', baseURL: readBaseUrl(entry.config) });
-      continue;
-    }
-    if (known.aggregator) {
-      providers.push({
-        id: entry.id,
-        name: entry.name,
-        status: isAggregatorConfigured(entry.config) ? 'unguarded' : 'not-configured',
-        baseURL: readBaseUrl(entry.config),
-      });
-      continue;
-    }
-    const baseURL = readBaseUrl(entry.config);
-    const check = baseURL === null ? { ok: false } : checkBaseUrl({ effectiveBaseUrl: baseURL, gateBaseUrl: gate });
-    providers.push({ id: entry.id, name: entry.name, status: check.ok ? 'guarded' : 'unguarded', baseURL });
-  }
-
-  const pick = (status) => providers.filter((provider) => provider.status === status).map((provider) => provider.id);
-  return {
-    schema: PREFLIGHT_SCHEMA,
-    gateBaseUrl: gate,
-    providers,
-    guarded: pick('guarded'),
-    unguarded: pick('unguarded'),
-    notConfigured: pick('not-configured'),
-    disabled: pick('disabled'),
-    unknown: pick('unknown'),
-    plumbing: pick('plumbing'),
-  };
+  return judgePluginInstances(entries, { gateBaseUrl }).coverage;
 }
 
 export function normalizeBaseUrl(value) {
@@ -912,7 +1073,33 @@ export function decideStart(input) {
       detail: (identity.name || identity.id || '<unknown>') + '：' + identity.status + '（' + (identity.detail || '没有可核对的安装身份') + '）',
     });
   }
-  return { allow: blockers.length === 0, blockers };
+  // 分类/身份判定阶段发现的问题（冲突 name、缺身份结果、重复实例、不可求值）直接成为阻断项：
+  // 这些是"覆盖率看起来完整但身份没被证明"的情形，不能只在覆盖率数组里体现。
+  const pluginProblems = Array.isArray(input.pluginProblems) ? input.pluginProblems : [];
+  for (const problem of pluginProblems) {
+    if (problem === null || typeof problem !== 'object' || typeof problem.code !== 'string') continue;
+    blockers.push({
+      code: problem.code,
+      detail: (problem.instance === undefined || problem.instance === null ? '' : '实例 ' + String(problem.instance) + '：')
+        + String(problem.detail === undefined ? '' : problem.detail),
+    });
+  }
+  if (input.identityComplete === false) {
+    blockers.push({
+      code: 'PLUGIN_IDENTITY_INCOMPLETE',
+      detail: '有启用的自有插件实例没有 verified 身份结果（身份列表为空或漏项不能算通过）',
+    });
+  }
+  // 同一原因可能从两条路径来（身份数组 + 判定问题），去重但保留首个说明。
+  const seen = new Set();
+  const unique = [];
+  for (const blocker of blockers) {
+    const key = blocker.code + '|' + blocker.detail;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(blocker);
+  }
+  return { allow: unique.length === 0, blockers: unique };
 }
 
 /** 把判定结果写成给人看的一段话（也用于启动失败的错误反馈）。 */

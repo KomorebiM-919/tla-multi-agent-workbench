@@ -44,7 +44,8 @@ import {
   checkBaseUrl,
   checkProtectionHeartbeat,
   decideStart,
-  extractProviderCoverage,
+  judgePluginInstances,
+  resolveInstancePackages,
   REVIEWED_PLUGIN_NAMES,
   verifyInstalledPlugin,
   formatDecision,
@@ -273,19 +274,72 @@ export function extractBaseUrlFromDump(dump) {
  * 从宿主 profile 的 node_modules 读已登记插件的真实身份（安装版本 + 构建指纹）。
  * 配置里声明的 version 不参与判断：那只是文本，包被换掉也照样写着旧版本号。
  */
-export function verifyPluginIdentities(entries, options) {
-  const names = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry.name !== 'string') continue;
-    if (!REVIEWED_PLUGIN_NAMES.has(entry.name)) continue;
-    if (!names.includes(entry.name)) names.push(entry.name);
+/**
+ * 读 profile 自己声明的包名（依赖 + bundle 列表）。
+ * 这是"宿主会不会加载这个包"的静态证据；读不到就返回空集合，让调用方按"未声明"处理。
+ */
+function readDeclaredProfileNames(profileRoot) {
+  const names = new Set();
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(join(profileRoot, 'package.json'), 'utf8'));
+  } catch (_unreadable) {
+    return names;
   }
-  const home = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME !== ''
-    ? process.env.DSH_HOME
-    : join(homedir(), '.dsh');
+  if (manifest === null || typeof manifest !== 'object') return names;
+  for (const key of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+    const block = manifest[key];
+    if (block === null || typeof block !== 'object') continue;
+    for (const name of Object.keys(block)) names.add(name);
+  }
+  const bundles = manifest.dsh !== null && typeof manifest.dsh === 'object'
+    && manifest.dsh.profile !== null && typeof manifest.dsh.profile === 'object'
+    ? manifest.dsh.profile.bundles
+    : undefined;
+  if (Array.isArray(bundles)) {
+    for (const name of bundles) {
+      if (typeof name === 'string' && name !== '') names.add(name);
+    }
+  }
+  return names;
+}
+
+export function verifyPluginIdentities(entries, options) {
+  // 候选包名来自与覆盖率分类相同的规范化结果：显式 name 优先；只有 id 时，
+  // id 恰是已登记包名才作为候选，**且必须由下面的安装包核验来证实**，
+  // 不能因为 id 长得像自己的插件就跳过核验（那样等于按 id 信任代码）。
+  const names = [];
+  const { instances } = resolveInstancePackages(entries);
+  for (const instance of instances) {
+    if (instance.disabled === true) continue;
+    if (instance.candidate === null) continue;
+    if (!REVIEWED_PLUGIN_NAMES.has(instance.candidate)) continue;
+    if (!names.includes(instance.candidate)) names.push(instance.candidate);
+  }
+  // 隔离家目录必须由调用方显式传入（启动器传 --dsh-home，检查器传 spec.dshHome）；
+  // 依赖 process.env.DSH_HOME 只是兜底，不能假设外层 shell 恰好导出了它。
+  const home = typeof options.home === 'string' && options.home !== ''
+    ? options.home
+    : (typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME !== ''
+      ? process.env.DSH_HOME
+      : join(homedir(), '.dsh'));
   const profileRoot = realpathSync(join(home, 'profiles', String(options.profile)));
   const modulesDir = join(profileRoot, 'node_modules');
+  // "缺 name、只有 id" 时，宿主能否加载到该包必须先由 profile 自己声明（依赖或 bundle 列表），
+  // 否则这只是一个 id 字符串，不能当成"实际加载对象"的证据。
+  const declaredNames = readDeclaredProfileNames(profileRoot);
   return names.map((name) => {
+    if (!declaredNames.has(name)) {
+      const base = verifyInstalledPlugin({ name, pkgDir: null });
+      return {
+        ...base,
+        status: 'not-declared',
+        resolvedRoot: null,
+        profileRoot,
+        insideProfileRoot: null,
+        detail: '该 profile 的 package.json 没有声明 ' + name + '（dependencies / bundles 都没有），无法证明宿主会加载它',
+      };
+    }
     let pkgDir = null;
     let insideProfileRoot = null;
     try {
@@ -553,12 +607,16 @@ async function main() {
     const effectiveBaseUrl = extracted.ok === true ? extracted.baseURL : null;
     const baseUrlCheck = checkBaseUrl({ effectiveBaseUrl, gateBaseUrl: baseUrl });
     if (extracted.ok !== true) baseUrlCheck.detail = extracted.reason + (extracted.detail === undefined ? '' : ' (' + extracted.detail + ')');
-    const coverage = configProbe.ok && configProbe.entries ? extractProviderCoverage(configProbe.entries, baseUrl) : null;
-    record.coverage = coverage;
-    // 已登记插件的"版本 + 构建指纹"必须从宿主实际解析到的包目录读出来核对，
-    // 配置里声明的版本不作数（那只是文本）。
+    // 覆盖率分类与安装身份核验必须来自同一个规范化结果（judgePluginInstances），
+    // 否则会出现"分类说没事、身份没核验"或两边判据漂移的缺口。
     const pluginIdentities = configProbe.ok && configProbe.entries ? verifyPluginIdentities(configProbe.entries, options) : [];
     record.pluginIdentities = pluginIdentities;
+    const pluginJudgement = configProbe.ok && configProbe.entries
+      ? judgePluginInstances(configProbe.entries, { gateBaseUrl: baseUrl, identities: pluginIdentities })
+      : null;
+    record.pluginInstances = pluginJudgement === null ? [] : pluginJudgement.instances;
+    const coverage = pluginJudgement === null ? null : pluginJudgement.coverage;
+    record.coverage = coverage;
 
     // ---- 步骤 3：判定。任一不成立就拒绝启动（宿主进程根本不存在） ----
     // 配置读不到/解析不出时只报这一个原因：把"缺输入"同时说成"地址错、覆盖率不明"
@@ -571,6 +629,8 @@ async function main() {
           heartbeat: { ok: true, reason: null, note: 'checked after host start' },
           coverage,
           pluginIdentities,
+          pluginProblems: pluginJudgement === null ? [] : pluginJudgement.problems,
+          identityComplete: pluginJudgement === null ? false : pluginJudgement.identityComplete,
         });
     record.decision = {
       ...decision,

@@ -8,8 +8,8 @@
 import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { fetchEffectiveConfig } from './gated-run.mjs';
-import { extractProviderCoverage } from '../orchestration/gate/preflight.mjs';
+import { fetchEffectiveConfig, verifyPluginIdentities } from './gated-run.mjs';
+import { judgePluginInstances } from '../orchestration/gate/preflight.mjs';
 import { ACCOUNT_PROVIDERS, BUDGET_PLUGIN_ID, DISABLED_PROVIDERS, FAKE_CREDENTIAL, GUARDED_PROVIDERS } from './overlay-template.mjs';
 
 export const INSPECTION_SCHEMA = 'tla.effective-config-inspection/v1';
@@ -83,7 +83,8 @@ export function inspectEffectiveConfig(spec) {
     };
   }
 
-  const evaluation = evaluateEffectiveConfig({ entries: config.entries, gateUrl: spec.gateUrl, env });
+  const identities = verifyPluginIdentities(config.entries, { profile: spec.profile, home: spec.dshHome });
+  const evaluation = evaluateEffectiveConfig({ entries: config.entries, gateUrl: spec.gateUrl, env, identities });
   const checks = [
     {
       name: 'config:readable',
@@ -98,6 +99,7 @@ export function inspectEffectiveConfig(spec) {
     checks,
     coverage: evaluation.coverage,
     providers: evaluation.providers,
+    instances: evaluation.instances === undefined ? [] : evaluation.instances,
     dump: { path: config.path, bytes: config.bytes, sha256: config.sha256, binding: config.binding },
     problems: checks.filter((check) => !check.ok).map((check) => check.name + ': ' + check.detail)
   };
@@ -112,9 +114,11 @@ function emptyCoverage() {
  * be exercised against synthetic dumps in tests and against the real dump before a launch.
  *
  * @param {{ entries: Array<{id: string, name?: string, disabled?: boolean, config?: object}>,
- *           gateUrl: string, env: Record<string, string|undefined> }} input
+ *           gateUrl: string, env: Record<string, string|undefined>,
+ *           identities?: Array<object>|null }} input
+ *   `identities` 是已核验的安装身份；传 null 表示没有安装证据（此时缺 name 的自有插件会被判失败）。
  */
-export function evaluateEffectiveConfig({ entries, gateUrl, env }) {
+export function evaluateEffectiveConfig({ entries, gateUrl, env, identities = null }) {
   const checks = [];
   const add = (name, ok, detail) => checks.push({ name, ok, detail });
 
@@ -234,26 +238,56 @@ export function evaluateEffectiveConfig({ entries, gateUrl, env }) {
   // The inspector and the launcher each decide "is every provider covered?", and on 2026-10-18
   // they disagreed: the inspector saw the inserted budget plugin as plumbing while the launcher
   // called the same entry an unknown model adapter and refused to start — after an approval had
-  // already been spent. Judge the dump with the launcher's own classifier so "pre-flight ok"
-  // means "the launcher will accept this".
+  // already been spent. Judge the dump with the launcher's own classifier, and with the same
+  // installation-identity evidence, so "pre-flight ok" means "the launcher will accept this".
 
-  // Run the launcher's classifier over the very same entries.
-  let launcherCoverage = null;
-  let launcherError = null;
+  // Run the launcher's full judgement over the very same entries and identities.
+  let judgement = null;
+  let judgementError = null;
   try {
-    launcherCoverage = extractProviderCoverage(entries, gateUrl);
+    judgement = judgePluginInstances(entries, { gateBaseUrl: gateUrl, identities });
   } catch (error) {
-    launcherError = error instanceof Error ? error.message : String(error);
+    judgementError = error instanceof Error ? error.message : String(error);
   }
+  const launcherCoverage = judgement === null ? null : judgement.coverage;
   add(
     'coverage:launcher-classifier',
-    launcherError === null && launcherCoverage.unknown.length === 0 && launcherCoverage.guarded.length > 0,
-    launcherError !== null
-      ? 'launcher classifier failed: ' + launcherError
+    judgementError === null && launcherCoverage.unknown.length === 0 && launcherCoverage.guarded.length > 0,
+    judgementError !== null
+      ? 'launcher classifier failed: ' + judgementError
       : 'launcher sees guarded [' + launcherCoverage.guarded.join(', ') + '], unknown [' + launcherCoverage.unknown.join(', ') + ']'
   );
 
-  return { checks, coverage, providers };
+  // 分类与身份核验必须落到同一个规范化结果：每个启用的自有插件实例都要有 verified 身份，
+  // 冲突 name、重复实例、缺结果都算失败（身份列表为空不能当作通过）。
+  const identityRows = judgement === null
+    ? []
+    : judgement.instances
+      .filter((row) => row.identity !== null)
+      .map((row) => row.id + ' → ' + String(row.identity.name) + ' (' + String(row.identity.status) + ')');
+  add(
+    'identity:per-instance',
+    judgementError === null && identities !== null && judgement.identityComplete === true,
+    judgementError !== null
+      ? 'identity judgement failed: ' + judgementError
+      : (identities === null
+        ? 'no installation identity evidence was supplied; an absent evidence list is not a pass'
+        : (identityRows.length === 0 ? 'no plugin instance needs identity verification' : identityRows.join('; ')))
+  );
+  const instanceProblems = judgement === null ? [] : judgement.problems;
+  add(
+    'identity:no-conflict-or-duplicate',
+    judgementError === null && identities !== null && instanceProblems.length === 0,
+    judgementError !== null
+      ? 'identity judgement failed: ' + judgementError
+      : (identities === null
+        ? 'no installation identity evidence was supplied; an absent evidence list is not a pass'
+        : (instanceProblems.length === 0
+          ? 'no conflicting names, duplicate instances or missing identity results'
+          : instanceProblems.map((problem) => problem.code + ' (' + String(problem.instance) + ')').join('; ')))
+  );
+
+  return { checks, coverage, providers, instances: judgement === null ? [] : judgement.instances };
 }
 
 function number(value) {

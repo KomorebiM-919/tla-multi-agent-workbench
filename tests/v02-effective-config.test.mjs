@@ -21,6 +21,15 @@ function failed(report) {
   return report.checks.filter((check) => !check.ok).map((check) => check.name);
 }
 
+// Fixture identities: these tests exercise the configuration rules, not the install on disk.
+// Supplying them explicitly keeps "no evidence" from silently looking like "verified".
+function identitiesOf(entries) {
+  const names = [...new Set(entries.map((entry) => entry.name).filter((name) => typeof name === 'string' && name !== ''))];
+  return names
+    .filter((name) => name === 'tla-prelaunch-budget' || name === '@nanmicoder/dsh-agent-teams')
+    .map((name) => ({ name, status: 'verified', detail: 'fixture identity' }));
+}
+
 const FAILED_OVERLAY_DUMP = [
   '- id: llm-deepseek',
   "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
@@ -68,7 +77,7 @@ const GOOD_DUMP = [
 ].join('\n');
 
 test('the configuration that cost a run is reported as failing', () => {
-  const report = evaluateEffectiveConfig({ entries: entriesOf(FAILED_OVERLAY_DUMP), gateUrl: GATE, env: ENV });
+  const report = evaluateEffectiveConfig({ entries: entriesOf(FAILED_OVERLAY_DUMP), gateUrl: GATE, env: ENV, identities: identitiesOf(entriesOf(FAILED_OVERLAY_DUMP)) });
   const names = failed(report);
   assert.equal(report.checks.every((check) => check.ok), false);
   // The exact defect: baseURL points at the gate but no key variable is named.
@@ -78,7 +87,7 @@ test('the configuration that cost a run is reported as failing', () => {
 });
 
 test('the rendered template produces a configuration that passes', () => {
-  const report = evaluateEffectiveConfig({ entries: entriesOf(GOOD_DUMP), gateUrl: GATE, env: ENV });
+  const report = evaluateEffectiveConfig({ entries: entriesOf(GOOD_DUMP), gateUrl: GATE, env: ENV, identities: identitiesOf(entriesOf(GOOD_DUMP)) });
   assert.deepEqual(failed(report), []);
   assert.deepEqual(report.coverage.guarded, ['llm-deepseek']);
   assert.deepEqual(report.coverage.unguarded, []);
@@ -92,7 +101,7 @@ test('a provider pointed somewhere else is an unguarded channel, not a pass', ()
     "- id: llm-pi-ai",
     "- id: llm-something-else\n  name: '@deepseek-ai/dsh-llm-something-else'\n  config:\n    baseURL: https://api.example.com\n- id: llm-pi-ai"
   );
-  const report = evaluateEffectiveConfig({ entries: entriesOf(dump), gateUrl: GATE, env: ENV });
+  const report = evaluateEffectiveConfig({ entries: entriesOf(dump), gateUrl: GATE, env: ENV, identities: identitiesOf(entriesOf(dump)) });
   assert.deepEqual(report.coverage.unguarded, ['llm-something-else']);
   assert.ok(failed(report).includes('coverage:every-enabled-provider'));
 });
@@ -101,9 +110,18 @@ test('a real-looking key in the launching environment fails the credential check
   const report = evaluateEffectiveConfig({
     entries: entriesOf(GOOD_DUMP),
     gateUrl: GATE,
-    env: { [FAKE_CREDENTIAL.envName]: 'sk-real-looking-value' }
+    env: { [FAKE_CREDENTIAL.envName]: 'sk-real-looking-value' },
+    identities: identitiesOf(entriesOf(GOOD_DUMP))
   });
   assert.ok(failed(report).includes('credential:dedicated-fake'));
+});
+
+test('an absent identity list is a failure, not a pass', () => {
+  const entries = entriesOf(GOOD_DUMP);
+  const report = evaluateEffectiveConfig({ entries, gateUrl: GATE, env: ENV });
+  const names = failed(report);
+  assert.ok(names.includes('identity:per-instance'), 'expected identity:per-instance to fail, got ' + names.join(', '));
+  assert.ok(names.includes('identity:no-conflict-or-duplicate'), 'expected identity:no-conflict-or-duplicate to fail, got ' + names.join(', '));
 });
 
 test('the renderer refuses specs that would weaken the guard', () => {
