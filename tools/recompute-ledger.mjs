@@ -1,4 +1,4 @@
-// Recompute a per-run budget ledger from the raw logs of one gated run.
+﻿// Recompute a per-run budget ledger from the raw logs of one gated run.
 //
 // Why this exists: the experiment reports quote "reserved / allowed / upstream"
 // counts, and it is easy to add two runs that share one budget state file and
@@ -7,6 +7,19 @@
 // derives the deltas per run, so the numbers can be checked without trusting a
 // hand-written table.
 //
+// The four stages are deliberately separate numbers, because they answer
+// different questions:
+//   reserved   the plugin counted the request against the budget before sending
+//   attempted  the gate let the request through towards the upstream
+//   received   the upstream server logged that the request arrived
+//   completed  the upstream server finished writing the response
+//
+// A run whose upstream log is missing, empty while the host started, truncated
+// or written before this distinction existed cannot prove "received" or
+// "completed". Those fields are reported as the string 'unknown' and the run is
+// marked INCOMPLETE: an unverifiable zero is never reported as a clean
+// reconciliation.
+//
 // It never talks to the network, never reads credentials, and never rewrites
 // the logs it reads.
 //
@@ -14,95 +27,188 @@
 //   node tools/recompute-ledger.mjs <run-dir> [<run-dir> ...]
 //   node tools/recompute-ledger.mjs --json <run-dir> [...]
 //
-// Expected files in a run dir (all optional; missing ones count as empty):
-//   plugin-events.jsonl  (mounted/reserved/rejected/unmounted heartbeats)
+// Expected files in a run dir (all optional; missing ones make the run
+// INCOMPLETE rather than silently empty):
+//   plugin-events.jsonl  (mounted/reserved/rejected/unmounted/heartbeat)
 //   gate-events.jsonl    (allowed/denied/lease-granted/lease-revoked)
-//   upstream.jsonl       (what the fake model server actually accepted)
+//   upstream.jsonl       (fake model server: arrived/responded/legacy accepted)
 //   gate-summary.json    (launcher summary: hostStarted, result, blockers)
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-export const LEDGER_SCHEMA = 'tla.run-ledger/v1';
+export const LEDGER_SCHEMA = 'tla.run-ledger/v2';
+export const UNKNOWN = 'unknown';
 
 function readJsonl(path) {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8')
-    .split(/\r?\n/)
-    .filter((line) => line.trim() !== '')
-    .map((line, index) => {
-      try {
-        return JSON.parse(line);
-      } catch (error) {
-        throw new Error(`${path}: line ${index + 1} is not JSON (${error.message})`);
-      }
-    });
+  if (!existsSync(path)) return { ok: false, reason: 'missing', entries: [] };
+  const text = readFileSync(path, 'utf8');
+  const entries = [];
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+  for (const [index, line] of lines.entries()) {
+    try {
+      entries.push(JSON.parse(line));
+    } catch (error) {
+      // A truncated final line is the signature of a crashed writer. Report the
+      // run as unverifiable instead of dropping the line and looking clean.
+      return { ok: false, reason: `unparseable line ${index + 1}: ${error.message}`, entries };
+    }
+  }
+  return { ok: true, reason: null, entries };
 }
 
 function readJson(path) {
   if (!existsSync(path)) return null;
-  return JSON.parse(readFileSync(path, 'utf8'));
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    return { __unparseable: error.message };
+  }
 }
 
 export function measureRun(runDir, label = basename(runDir)) {
-  const pluginEvents = readJsonl(join(runDir, 'plugin-events.jsonl'));
-  const gateEvents = readJsonl(join(runDir, 'gate-events.jsonl'));
-  // 上游日志的默认文件名是 upstream.jsonl；早期实验里假服务直接写 requests.jsonl，
-  // 两者内容同构（每行一次真实收到的 HTTP 请求）。这里按顺序回退，并记录来源，
-  // 避免"文件不在默认位置"被误读成"上游收到 0 个请求"。
-  const upstreamPath = existsSync(join(runDir, 'upstream.jsonl'))
+  const plugin = readJsonl(join(runDir, 'plugin-events.jsonl'));
+  const gate = readJsonl(join(runDir, 'gate-events.jsonl'));
+  const upstreamFile = existsSync(join(runDir, 'upstream.jsonl'))
     ? 'upstream.jsonl'
     : (existsSync(join(runDir, 'requests.jsonl')) ? 'requests.jsonl' : null);
-  const upstream = upstreamPath === null ? [] : readJsonl(join(runDir, upstreamPath));
+  const upstream = upstreamFile === null
+    ? { ok: false, reason: 'missing', entries: [] }
+    : readJsonl(join(runDir, upstreamFile));
   const summary = readJson(join(runDir, 'gate-summary.json'));
+
+  const pluginEvents = plugin.entries;
+  const gateEvents = gate.entries;
+  const upstreamEvents = upstream.entries;
 
   const mounted = pluginEvents.find((event) => event.event === 'mounted') ?? null;
   const reserved = pluginEvents.filter((event) => event.event === 'reserved');
   const rejected = pluginEvents.filter((event) => event.event === 'rejected');
   const last = pluginEvents.length === 0 ? null : pluginEvents[pluginEvents.length - 1];
 
+  const hostStarted = summary === null ? null : summary.hostStarted === true;
+  // The hardened server writes explicit `arrived` / `responded` events. Older
+  // logs only have one accepted line per request, which proves arrival at most.
+  const staged = upstreamEvents.some((event) => event.event === 'arrived' || event.event === 'responded');
+  const arrived = upstreamEvents.filter((event) => event.event === 'arrived');
+  const responded = upstreamEvents.filter((event) => event.event === 'responded');
+  const acceptedLegacy = upstreamEvents.filter((event) => event.accepted === true);
+
+  const incompleteReasons = [];
+  if (!plugin.ok) incompleteReasons.push(`plugin-events: ${plugin.reason}`);
+  if (!gate.ok) incompleteReasons.push(`gate-events: ${gate.reason}`);
+  if (summary === null) incompleteReasons.push('gate-summary missing');
+  else if (summary.__unparseable !== undefined) incompleteReasons.push(`gate-summary: ${summary.__unparseable}`);
+  if (!upstream.ok) incompleteReasons.push(`upstream: ${upstream.reason}`);
+
+  const received = !upstream.ok ? UNKNOWN : (staged ? arrived.length : acceptedLegacy.length);
+  let completed;
+  if (!upstream.ok) completed = UNKNOWN;
+  else if (staged) completed = responded.length;
+  else completed = UNKNOWN; // legacy single-line logs cannot prove completion
+
   const row = {
     schema: LEDGER_SCHEMA,
     run: label,
-    hostStarted: summary === null ? null : summary.hostStarted === true,
-    result: summary === null ? null : summary.result ?? null,
+    hostStarted,
+    result: summary === null || summary.__unparseable !== undefined ? null : summary.result ?? null,
     resumeMode: mounted === null ? 'not-mounted' : mounted.resumeMode ?? 'fresh',
     usedBefore: mounted !== null && typeof mounted.used === 'number' ? mounted.used : null,
     reservedDelta: reserved.length,
     rejectedDelta: rejected.length,
     usedAfter: last !== null && typeof last.used === 'number' ? last.used : null,
     lastEvent: last === null ? null : last.event ?? null,
-    gateAllowed: gateEvents.filter((event) => event.event === 'allowed').length,
-    gateDenied: gateEvents.filter((event) => event.event === 'denied').length,
-    upstreamAccepted: upstream.filter((event) => event.accepted === true).length,
-    upstreamSource: upstreamPath,
-    upstreamLines: upstream.length,
+    gateAllowed: gateEvents.length === 0 ? UNKNOWN : gateEvents.filter((event) => event.event === 'allowed').length,
+    gateDenied: gateEvents.length === 0 ? UNKNOWN : gateEvents.filter((event) => event.event === 'denied').length,
+    upstreamReceived: received,
+    upstreamCompleted: completed,
+    upstreamStages: staged ? 'arrived/responded' : (upstream.ok ? 'legacy-accepted-only' : UNKNOWN),
+    upstreamSource: upstreamFile,
+    upstreamLines: upstreamEvents.length,
     sourceLines: {
       pluginEvents: pluginEvents.length,
       gateEvents: gateEvents.length,
-      upstream: upstream.length,
+      upstream: upstreamEvents.length,
     },
   };
-  // 账本一致性：usedAfter 必须等于 usedBefore + 本次预占增量。resume 的两次运行
-  // 共用同一个状态文件，所以 usedBefore 必须来自各自运行的第一条 mounted 事件，
-  // 不能把上一轮留下的 used 当成这一轮的。
-  row.ledgerConsistent = row.usedBefore === null ? null : row.usedAfter === row.usedBefore + row.reservedDelta;
-  // 闸门是唯一出口：上游收到的请求不可能多于闸门放行的请求。
-  row.upstreamWithinGate = row.upstreamAccepted <= row.gateAllowed;
+
+  // Budget arithmetic: usedAfter must be usedBefore + this run's reservations.
+  // A resumed run shares the state file, so usedBefore has to come from that
+  // run's own first `mounted` event.
+  row.ledgerConsistent = row.usedBefore === null ? UNKNOWN
+    : row.usedAfter === row.usedBefore + row.reservedDelta;
+  // The gate is the only exit: the upstream cannot see more than it let through.
+  if (row.gateAllowed === UNKNOWN || row.upstreamReceived === UNKNOWN) {
+    row.upstreamWithinGate = UNKNOWN;
+  } else {
+    row.upstreamWithinGate = row.upstreamReceived <= row.gateAllowed;
+  }
+
+  // A run is only COMPLETE when every stage is a number and the stages agree
+  // with each other. Anything else stays INCOMPLETE with named reasons.
+  const stageMismatch = [];
+  if (typeof row.reservedDelta === 'number' && row.gateAllowed !== UNKNOWN && row.gateAllowed > row.reservedDelta) {
+    stageMismatch.push('gate allowed more requests than the plugin reserved');
+  }
+  if (row.gateAllowed !== UNKNOWN && row.upstreamReceived !== UNKNOWN && row.upstreamReceived > row.gateAllowed) {
+    stageMismatch.push('upstream received more requests than the gate allowed');
+  }
+  if (row.upstreamReceived !== UNKNOWN && row.upstreamCompleted !== UNKNOWN && row.upstreamCompleted > row.upstreamReceived) {
+    stageMismatch.push('upstream completed more responses than it received');
+  }
+  if (row.upstreamReceived !== UNKNOWN && row.upstreamCompleted !== UNKNOWN && row.upstreamCompleted < row.upstreamReceived) {
+    stageMismatch.push('upstream received requests it never finished answering');
+  }
+  if (row.gateAllowed !== UNKNOWN && row.upstreamReceived !== UNKNOWN && row.upstreamReceived < row.gateAllowed) {
+    stageMismatch.push('the gate allowed requests the upstream never saw');
+  }
+  if (row.ledgerConsistent === false) stageMismatch.push('budget counter does not match the reservations');
+  row.stageMismatch = stageMismatch;
+  row.unknownFields = [
+    row.upstreamReceived === UNKNOWN ? 'upstreamReceived' : null,
+    row.upstreamCompleted === UNKNOWN ? 'upstreamCompleted' : null,
+    row.gateAllowed === UNKNOWN ? 'gateAllowed' : null,
+  ].filter((value) => value !== null);
+  row.completeness = incompleteReasons.length === 0 && stageMismatch.length === 0 && row.unknownFields.length === 0 ? 'COMPLETE' : 'INCOMPLETE';
+  row.incompleteReasons = incompleteReasons;
   return row;
 }
 
 export function summarise(rows) {
   const counted = rows.filter((row) => row.hostStarted !== false);
+  const sum = (key) => {
+    let total = 0;
+    const unknownRuns = [];
+    for (const row of counted) {
+      if (typeof row[key] === 'number') total += row[key];
+      else unknownRuns.push(row.run);
+    }
+    return { total, unknownRuns };
+  };
+  const reserved = sum('reservedDelta');
+  const rejected = sum('rejectedDelta');
+  const allowed = sum('gateAllowed');
+  const received = sum('upstreamReceived');
+  const completed = sum('upstreamCompleted');
   return {
     schema: LEDGER_SCHEMA,
     runs: rows.length,
     countedRuns: counted.length,
-    reserved: counted.reduce((sum, row) => sum + row.reservedDelta, 0),
-    rejected: counted.reduce((sum, row) => sum + row.rejectedDelta, 0),
-    allowed: counted.reduce((sum, row) => sum + row.gateAllowed, 0),
-    upstream: counted.reduce((sum, row) => sum + row.upstreamAccepted, 0),
+    reserved: reserved.total,
+    rejected: rejected.total,
+    allowed: allowed.total,
+    upstreamReceived: received.total,
+    upstreamCompleted: completed.total,
+    unknown: {
+      reserved: reserved.unknownRuns,
+      rejected: rejected.unknownRuns,
+      allowed: allowed.unknownRuns,
+      upstreamReceived: received.unknownRuns,
+      upstreamCompleted: completed.unknownRuns,
+    },
+    incompleteRuns: rows.filter((row) => row.completeness !== 'COMPLETE').map((row) => row.run),
     inconsistent: rows.filter((row) => row.ledgerConsistent === false).map((row) => row.run),
     upstreamOverGate: rows.filter((row) => row.upstreamWithinGate === false).map((row) => row.run),
+    complete: counted.every((row) => row.completeness === 'COMPLETE'),
   };
 }
 
@@ -122,12 +228,22 @@ function main(argv) {
     console.log(
       `${row.run}: resume=${row.resumeMode} usedBefore=${row.usedBefore} reserved=${row.reservedDelta} `
       + `rejected=${row.rejectedDelta} usedAfter=${row.usedAfter} allowed=${row.gateAllowed} `
-      + `upstream=${row.upstreamAccepted} consistent=${row.ledgerConsistent} withinGate=${row.upstreamWithinGate}`,
+      + `received=${row.upstreamReceived} completed=${row.upstreamCompleted} `
+      + `consistent=${row.ledgerConsistent} withinGate=${row.upstreamWithinGate} ${row.completeness}`,
     );
+    if (row.incompleteReasons.length > 0) {
+      console.log(`  incomplete: ${row.incompleteReasons.join('; ')}`);
+    }
+    if (row.stageMismatch.length > 0) {
+      console.log(`  mismatch: ${row.stageMismatch.join('; ')}`);
+    }
   }
   const totals = summarise(rows);
-  console.log(`TOTAL reserved=${totals.reserved} rejected=${totals.rejected} allowed=${totals.allowed} upstream=${totals.upstream}`);
-  return totals.inconsistent.length === 0 && totals.upstreamOverGate.length === 0 ? 0 : 1;
+  console.log(
+    `TOTAL reserved=${totals.reserved} rejected=${totals.rejected} allowed=${totals.allowed} `
+    + `received=${totals.upstreamReceived} completed=${totals.upstreamCompleted} complete=${totals.complete}`,
+  );
+  return totals.complete && totals.inconsistent.length === 0 && totals.upstreamOverGate.length === 0 ? 0 : 1;
 }
 
 if (process.argv[1] !== undefined && process.argv[1].endsWith('recompute-ledger.mjs')) {
