@@ -20,8 +20,15 @@
 // - 并发安全：JS 单线程 + 同步预占，两个并发 turn 不会同时读到同一个旧计数。
 // - 中止（abort）可能在预占之后发生：此时计数已加但请求没发，属于**多计**；
 //   多计不会让预算超支，但会让"剩余额度"偏小，报告里必须如实说明。
+//
+// 2026-10-18 独立审查后的修订：
+// - `used` 允许"带着历史值"构造：进程重启后必须从持久化状态恢复，**不能**默认重置
+//   额度；`used >= modelRequests` 也允许构造，表示"恢复后已经用尽"，此后每个请求
+//   都被拒（fail-closed），而不是"额度又满了"。
+// - 超限时先 `onReject(error, snapshot)` 再抛错，便于把拒绝落盘/记事件。
 
 export const INTERCEPTOR_ID = 'tla-prelaunch-budget';
+export const BUDGET_UNIT = 'modelRequests';
 
 export class PrelaunchBudgetError extends Error {
   constructor(code, detail, snapshot) {
@@ -33,91 +40,75 @@ export class PrelaunchBudgetError extends Error {
   }
 }
 
-function requirePositiveInteger(value, where) {
-  if (!Number.isInteger(value) || value <= 0 || !Number.isSafeInteger(value)) {
-    throw new PrelaunchBudgetError('BUDGET_LIMIT_INVALID', where + ' 必须是正整数');
+function requireNonNegativeInteger(value, where) {
+  if (!Number.isInteger(value) || value < 0 || !Number.isSafeInteger(value)) {
+    throw new PrelaunchBudgetError('BUDGET_LIMIT_INVALID', where + ' 必须是非负安全整数，收到：' + String(value));
   }
   return value;
 }
 
 /**
- * 创建一个"模型请求"计数器。
- *
- * @param {{modelRequests:number, used?:number, onReject?:(error:Error,snapshot:object)=>void}} options
- *   modelRequests：允许同步预占的最大请求数（严格上限，不含事后补救）
- *   used：从已持久化的状态恢复的已预占数（不得大于 limit 时仍要能构造，用于"用尽后拒绝"）
+ * @param {{modelRequests:number, used?:number, onReserve?:(snapshot:object)=>void, onReject?:(error:Error, snapshot:object)=>void}} options
  */
-export function createRequestBudget({ modelRequests, used: seeded = 0, onReject }) {
-  requirePositiveInteger(modelRequests, 'modelRequests');
-  if (!Number.isInteger(seeded) || seeded < 0 || !Number.isSafeInteger(seeded)) {
-    throw new PrelaunchBudgetError('BUDGET_STATE_INVALID', 'used 必须是非负整数');
+export function createRequestBudget(options) {
+  const limit = requireNonNegativeInteger(options.modelRequests, 'modelRequests');
+  if (limit < 1) {
+    throw new PrelaunchBudgetError('BUDGET_LIMIT_INVALID', 'modelRequests 必须 >= 1，收到：' + String(limit));
   }
+  const seeded = options.used === undefined ? 0 : requireNonNegativeInteger(options.used, 'used');
   let used = seeded;
   let rejected = 0;
-  const events = seeded === 0 ? [] : [{ kind: 'resumed', at: 0, used: seeded }];
-  return {
-    /** 同步预占一次请求；超限抛错（调用方不得 catch 后继续发请求）。 */
-    reserve(context) {
-      if (used >= modelRequests) {
-        rejected += 1;
-        events.push({ kind: 'rejected', at: events.length, context: context || null });
-        const snapshot = this.snapshot();
-        const error = new PrelaunchBudgetError(
-          'MODEL_REQUEST_BUDGET_EXCEEDED',
-          '模型请求上限 ' + modelRequests + ' 已用尽（已预占 ' + used + ' 次），本次请求在发起前被拒绝',
-          snapshot,
-        );
-        if (typeof onReject === 'function') onReject(error, snapshot);
-        throw error;
-      }
-      used += 1;
-      events.push({ kind: 'reserved', at: events.length, context: context || null });
-      return used;
-    },
-    snapshot() {
-      return {
-        unit: 'modelRequests',
-        limit: modelRequests,
-        used,
-        rejected,
-        remaining: Math.max(0, modelRequests - used),
-        resumedFrom: seeded,
-      };
-    },
-    events() {
-      return events.slice();
-    },
+  const onReject = typeof options.onReject === 'function' ? options.onReject : null;
+  const onReserve = typeof options.onReserve === 'function' ? options.onReserve : null;
+
+  const snapshot = () => ({
+    unit: BUDGET_UNIT,
+    limit,
+    used,
+    rejected,
+    remaining: Math.max(0, limit - used),
+    resumedFrom: seeded,
+  });
+
+  const reserve = (context) => {
+    if (used >= limit) {
+      rejected += 1;
+      const error = new PrelaunchBudgetError(
+        'MODEL_REQUEST_BUDGET_EXCEEDED',
+        '模型请求上限 ' + limit + ' 已用尽（已预占 ' + used + ' 次），本次请求在发起前被拒绝',
+        snapshot(),
+      );
+      if (onReject !== null) onReject(error, snapshot());
+      throw error;
+    }
+    used += 1;
+    // 预占成功也要立刻通知调用方落盘：崩溃不会让"已预占"这件事消失。
+    if (onReserve !== null) onReserve(snapshot());
+    return { ...snapshot(), context: context === undefined ? null : context };
   };
+
+  return { limit, seed: seeded, reserve, snapshot, get used() { return used; } };
 }
 
 /**
- * 生成一个符合宿主 `agent/request` 瀑布形状的监听器。
+ * 宿主形状的 `agent/request` 监听器。
  *
- * 宿主侧的等价注册（见 `index.js` 的真实接线）：
- *   ctx.on('agent/request', listener, { prepend: true })
- *
- * 监听器签名按 DSH 的瀑布约定：`(payload, next) => Promise<config>`；
- * 本实现忽略 `payload`，只做计数与放行/否决。
- *
- * @param {{modelRequests:number, used?:number, onReserve?:(snapshot:object)=>void, onReject?:(error:Error,snapshot:object)=>void}} options
+ * 注意：这里只计数"模型请求"，不计数"代理启动"。一次代理启动可能包含多次请求
+ * （工具调用轮次），所以这两个数字不能互相替代。
  */
-export function createAgentRequestListener({ modelRequests, used = 0, onReserve, onReject }) {
-  const budget = createRequestBudget({ modelRequests, used, onReject });
-  // 注意：这里刻意写成同步函数——预占在第一个 await 之前完成。
-  function listener(_payload, next) {
+export function createAgentRequestListener(options) {
+  const budget = createRequestBudget(options);
+  const listener = (_config, next) => {
+    // 同步预占：在任何 await 之前完成，保证并发请求不会同时看到"还剩一个额度"。
     budget.reserve({ phase: 'agent/request' });
-    if (typeof onReserve === 'function') onReserve(budget.snapshot());
     return next();
-  }
+  };
   return {
     id: INTERCEPTOR_ID,
     event: 'agent/request',
-    // 未打标签 = 全局可见（dsh-scope README: "an untagged listener is admitted"）。
     scope: null,
     listener,
     budget,
-    snapshot() {
-      return budget.snapshot();
-    },
+    snapshot: () => budget.snapshot(),
   };
 }
