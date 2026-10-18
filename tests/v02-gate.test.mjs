@@ -105,11 +105,14 @@ async function postMessage(baseUrl, index) {
   }
 }
 
-function runLauncher(args, { timeoutMs = 20_000 } = {}) {
+function runLauncher(args, { timeoutMs = 20_000, env } = {}) {
   // 受限沙箱下 Node 子进程不能用 pipe 捕获输出（EPERM / 命名管道），因此这里
   // 用 ignore，判据全部取自闸门写下的 JSON 证据文件。
   return new Promise((done) => {
-    const child = spawn(process.execPath, [gatedRun, ...args], { stdio: 'ignore' });
+    const child = spawn(process.execPath, [gatedRun, ...args], {
+      stdio: 'ignore',
+      env: env === undefined ? process.env : { ...process.env, ...env },
+    });
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
     child.on('exit', (code) => {
       clearTimeout(timer);
@@ -118,7 +121,20 @@ function runLauncher(args, { timeoutMs = 20_000 } = {}) {
   });
 }
 
+/**
+ * 夹具宿主同时扮演两个角色，因为启动器现在**自己**去问 `--dump-config`：
+ *   - 带 `--dump-config` 时把 `STUB_DUMP_FILE` 的内容打到 stdout（模拟 CLI 输出）；
+ *   - 否则按 `./gate.json` 里的闸门地址连发 5 次请求。
+ * 这样"被检查的配置"和"真正启动的实例"由启动器同源派生，而不是外部文件。
+ */
 const STUB_HOST = `import { readFileSync, writeFileSync } from 'node:fs';
+
+const argv = process.argv.slice(2);
+if (argv.includes('--dump-config')) {
+  const source = process.env.STUB_DUMP_FILE;
+  process.stdout.write(source === undefined ? '' : readFileSync(source, 'utf8'));
+  process.exit(0);
+}
 
 const handshake = JSON.parse(readFileSync('./gate.json', 'utf8'));
 const results = [];
@@ -140,6 +156,22 @@ for (let index = 0; index < 5; index += 1) {
 writeFileSync('./host-results.json', JSON.stringify(results, null, 2) + '\\n', 'utf8');
 process.exit(0);
 `;
+
+/** 写一份 YAML 形态的生效配置（`--dump-config` 的真实输出就是 YAML）。 */
+function writeDumpYaml(path, providers) {
+  const lines = [];
+  for (const provider of providers) {
+    lines.push('- id: ' + provider.id);
+    lines.push("  name: '@deepseek-ai/dsh-llm-" + provider.adapter + "'");
+    if (provider.baseURL === undefined) {
+      lines.push('  config: {}');
+    } else {
+      lines.push('  config:');
+      lines.push('    baseURL: ' + provider.baseURL);
+    }
+  }
+  writeFileSync(path, lines.join('\n') + '\n', 'utf8');
+}
 
 // ---------------------------------------------------------------------------
 // 1. 默认拒绝：没有租约时，闸门必须一条都不转发。
@@ -304,7 +336,8 @@ async function scenarioLauncherRefusals() {
   {
     const dir = scratchDir('launcher-realurl');
     const port = await freePort();
-    writeJson(join(dir, 'dump.json'), [{ id: 'llm-deepseek', config: { baseURL: 'https://api.deepseek.com/anthropic' } }]);
+    const dump = join(dir, 'dump.yml');
+    writeDumpYaml(dump, [{ id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'https://api.deepseek.com/anthropic' }]);
     const log = join(dir, 'events.jsonl');
     appendEvent(log, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
     const stub = join(dir, 'stub-host.mjs');
@@ -315,16 +348,19 @@ async function scenarioLauncherRefusals() {
       '--gate-port', String(port),
       '--run-dir', dir,
       '--heartbeat-file', log,
-      '--dump-config-from', join(dir, 'dump.json'),
+      '--dsh-exe', process.execPath,
+      '--dsh-cli', stub,
+      '--profile', 'stage1',
+      '--prompt', 'stub prompt',
       '--timeout-ms', '800',
-      '--',
-      process.execPath, stub,
-    ]);
+    ], { env: { STUB_DUMP_FILE: dump } });
     const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
     check(result.code === 3, 'launcher-realurl: exit 3', result.code);
     check(summary.hostStarted === false, 'launcher-realurl: host never started');
     check(existsSync(join(dir, 'host-results.json')) === false, 'launcher-realurl: stub host never ran');
     check(summary.decision.blockers.some((blocker) => blocker.code === 'BASE_URL_MISMATCH'), 'launcher-realurl: BASE_URL_MISMATCH');
+    check(summary.config.source === 'launcher-fetched', 'launcher-realurl: config came from the launcher probe', summary.config.source);
+    check(typeof summary.config.sha256 === 'string' && summary.config.sha256.length === 64, 'launcher-realurl: probe digest recorded');
   }
 
   // 6b 插件缺失：没有 event log。宿主照常启动，但每条请求都被闸门拒绝。
@@ -336,7 +372,8 @@ async function scenarioLauncherRefusals() {
   for (const testCase of afterStart) {
     const dir = scratchDir('launcher-' + testCase.name);
     const port = await freePort();
-    writeJson(join(dir, 'dump.json'), [{ id: 'llm-deepseek', config: { baseURL: 'http://127.0.0.1:' + port } }]);
+    const dump = join(dir, 'dump.yml');
+    writeDumpYaml(dump, [{ id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'http://127.0.0.1:' + port }]);
     const log = join(dir, 'events.jsonl');
     if (testCase.heartbeat === 'absent') {
       // 不创建文件：模拟插件根本没挂载。
@@ -351,11 +388,12 @@ async function scenarioLauncherRefusals() {
       '--gate-port', String(port),
       '--run-dir', dir,
       '--heartbeat-file', log,
-      '--dump-config-from', join(dir, 'dump.json'),
+      '--dsh-exe', process.execPath,
+      '--dsh-cli', stub,
+      '--profile', 'stage1',
+      '--prompt', 'stub prompt',
       '--timeout-ms', '1200',
-      '--',
-      process.execPath, stub,
-    ]);
+    ], { env: { STUB_DUMP_FILE: dump } });
     const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
     const hostResults = existsSync(join(dir, 'host-results.json')) ? JSON.parse(readFileSync(join(dir, 'host-results.json'), 'utf8')) : null;
     check(result.code === 3, 'launcher-unprotected (' + testCase.name + '): exit 3', result.code);
@@ -377,7 +415,8 @@ async function scenarioLauncherLeased() {
   const dir = scratchDir('launcher-ok');
   const upstream = await startUpstream();
   const port = await freePort();
-  writeJson(join(dir, 'dump.json'), [{ id: 'llm-deepseek', config: { baseURL: 'http://127.0.0.1:' + port } }]);
+  const dump = join(dir, 'dump.yml');
+  writeDumpYaml(dump, [{ id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'http://127.0.0.1:' + port }]);
   const heartbeat = join(dir, 'events.jsonl');
   appendEvent(heartbeat, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
   const stub = join(dir, 'stub-host.mjs');
@@ -389,12 +428,13 @@ async function scenarioLauncherLeased() {
     '--gate-port', String(port),
     '--run-dir', dir,
     '--heartbeat-file', heartbeat,
-    '--dump-config-from', join(dir, 'dump.json'),
+    '--dsh-exe', process.execPath,
+    '--dsh-cli', stub,
+    '--profile', 'stage1',
+    '--prompt', 'stub prompt',
     '--lease-ttl-ms', '5000',
     '--timeout-ms', '5000',
-    '--',
-    process.execPath, stub,
-  ]);
+  ], { env: { STUB_DUMP_FILE: dump } });
 
   const results = JSON.parse(readFileSync(join(dir, 'host-results.json'), 'utf8'));
   const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
@@ -406,7 +446,113 @@ async function scenarioLauncherLeased() {
   check(upstream.count() === 2, 'launcher-leased: upstream received exactly the budget', upstream.count());
   check(summary.result === 'host-ok' && summary.hostStarted === true, 'launcher-leased: summary records a started host', summary.result);
   check(summary.gate.used === 2 && summary.gate.rejects === 3, 'launcher-leased: gate counters match the server log', summary.gate);
+  check(summary.config.source === 'launcher-fetched' && summary.config.reason === null, 'launcher-leased: effective config was probed by the launcher', summary.config);
+  check(summary.invocation.sameCommandAsProbe === true && summary.invocation.sameProfileAsProbe === true && summary.invocation.samePatchesAsProbe === true && summary.invocation.cwdIsRunDir === true, 'launcher-leased: probe and host invocation are derived from the same parameters', summary.invocation);
 
+  await upstream.close();
+}
+
+// ---------------------------------------------------------------------------
+// 8. 生效配置的可信绑定：启动器自己取配置；取不到、覆盖率不明、存在未指向闸门的
+//    provider 实例时一律拒绝启动；放宽开关与外部配置文件被明确禁用。
+// ---------------------------------------------------------------------------
+async function scenarioLauncherConfigBinding() {
+  const upstream = await startUpstream();
+
+  function launcherArgs(dir, port, log) {
+    return [
+      '--upstream', upstream.url,
+      '--model-requests', '2',
+      '--gate-port', String(port),
+      '--run-dir', dir,
+      '--heartbeat-file', log,
+      '--dsh-exe', process.execPath,
+      '--dsh-cli', join(dir, 'stub-host.mjs'),
+      '--profile', 'stage1',
+      '--prompt', 'stub prompt',
+      '--timeout-ms', '900',
+    ];
+  }
+
+  // 8a 另一个 provider 实例（账户额度路由）没有指向闸门 → 存在绕过路径，拒绝启动。
+  {
+    const dir = scratchDir('binding-ungated');
+    const port = await freePort();
+    const dump = join(dir, 'dump.yml');
+    writeDumpYaml(dump, [
+      { id: 'llm-deepseek', adapter: 'deepseek-api-key', baseURL: 'http://127.0.0.1:' + port },
+      { id: 'llm-deepseek-account', adapter: 'deepseek-account' },
+    ]);
+    const log = join(dir, 'events.jsonl');
+    appendEvent(log, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
+    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
+    const result = await runLauncher(launcherArgs(dir, port, log), { env: { STUB_DUMP_FILE: dump } });
+    const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
+    check(result.code === 3, 'binding-ungated: exit 3', result.code);
+    check(summary.hostStarted === false, 'binding-ungated: host never started');
+    check(summary.decision.blockers.some((blocker) => blocker.code === 'PROVIDER_NOT_GATED'), 'binding-ungated: PROVIDER_NOT_GATED');
+    check(summary.coverage.unguarded.join(',') === 'llm-deepseek-account', 'binding-ungated: names the ungated instance', summary.coverage.unguarded);
+  }
+
+  // 8b 取不到生效配置（宿主什么都不输出）→ 不能声称"和启动实例一致"，拒绝启动。
+  {
+    const dir = scratchDir('binding-unreadable');
+    const port = await freePort();
+    const log = join(dir, 'events.jsonl');
+    appendEvent(log, { event: 'mounted', at: new Date().toISOString(), limit: 2, used: 0 });
+    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
+    const result = await runLauncher(launcherArgs(dir, port, log), { env: { STUB_DUMP_FILE: join(dir, 'does-not-exist.yml') } });
+    const summary = JSON.parse(readFileSync(join(dir, 'gate-summary.json'), 'utf8'));
+    check(result.code === 3, 'binding-unreadable: exit 3', result.code);
+    check(summary.hostStarted === false, 'binding-unreadable: host never started');
+    check(summary.config.reason === 'CONFIG_UNREADABLE', 'binding-unreadable: reason recorded', summary.config.reason);
+    check(summary.config.sha256 === null, 'binding-unreadable: no digest claimed');
+    check(summary.decision.blockers.some((blocker) => blocker.code === 'CONFIG_UNREADABLE'), 'binding-unreadable: blocker CONFIG_UNREADABLE');
+    // 回归：读不到配置时不能顺带声称"baseURL 也不对"，那会把缺输入说成地址错。
+    check(summary.decision.blockers.map((blocker) => blocker.code).join(',') === 'CONFIG_UNREADABLE', 'binding-unreadable: unreadable config is not reported as a baseURL mismatch', summary.decision.blockers.map((blocker) => blocker.code));
+  }
+
+  // 8c 放宽开关被禁用（本实验不允许把覆盖率校验关掉）。
+  {
+    const dir = scratchDir('binding-override-flag');
+    const port = await freePort();
+    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
+    const result = await runLauncher([
+      '--upstream', upstream.url,
+      '--model-requests', '1',
+      '--gate-port', String(port),
+      '--run-dir', dir,
+      '--dsh-exe', process.execPath,
+      '--dsh-cli', join(dir, 'stub-host.mjs'),
+      '--profile', 'stage1',
+      '--prompt', 'stub prompt',
+      '--allow-ungated-providers',
+    ]);
+    check(result.code === 2, 'binding-override-flag: rejected as a usage error', result.code);
+    check(existsSync(join(dir, 'gate-summary.json')) === false, 'binding-override-flag: gate never started');
+  }
+
+  // 8d 手工预生成的配置文件被拒绝（无法证明与被启动实例一致）。
+  {
+    const dir = scratchDir('binding-external-dump');
+    const port = await freePort();
+    writeFileSync(join(dir, 'stub-host.mjs'), STUB_HOST, 'utf8');
+    const result = await runLauncher([
+      '--upstream', upstream.url,
+      '--model-requests', '1',
+      '--gate-port', String(port),
+      '--run-dir', dir,
+      '--dsh-exe', process.execPath,
+      '--dsh-cli', join(dir, 'stub-host.mjs'),
+      '--profile', 'stage1',
+      '--prompt', 'stub prompt',
+      '--dump-config-from', join(dir, 'dump.yml'),
+    ]);
+    check(result.code === 2, 'binding-external-dump: rejected as a usage error', result.code);
+    check(existsSync(join(dir, 'gate-summary.json')) === false, 'binding-external-dump: gate never started');
+  }
+
+  check(upstream.count() === 0, 'binding: upstream received 0 requests across all refused runs', upstream.count());
   await upstream.close();
 }
 
@@ -521,11 +667,12 @@ async function main() {
   await scenarioDecisionFunctions();
   await scenarioLauncherRefusals();
   await scenarioLauncherLeased();
+  await scenarioLauncherConfigBinding();
   await scenarioProviderCoverage();
   await scenarioConcurrentLastSlot();
   await scenarioMountProofAndLeaseIsolation();
 
-  const scenarios = 10;
+  const scenarios = 11;
   for (const failure of failures) {
     process.stdout.write('FAIL ' + failure.label + (failure.detail === null ? '' : ' :: ' + JSON.stringify(failure.detail)) + '\n');
   }

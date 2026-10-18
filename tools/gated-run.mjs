@@ -24,15 +24,21 @@
 // 用法：
 //   node tools/gated-run.mjs --upstream http://127.0.0.1:18777 \
 //     --model-requests 3 --run-dir <dir> --heartbeat-file <plugin events.jsonl> \
-//     --dsh <path to dsh.cmd> --profile stage1 --patch <overlay.yml> -- "<prompt>"
+//     --dsh-exe "<.../DeepSeek Harness.exe>" --dsh-cli "<.../dsh-desktop-host/lib/cli.js>" \
+//     --profile stage1 --patch <overlay.yml> --prompt "<prompt>"
+//
+// 生效配置由本运行器**自己**向同一个可执行文件、同一个 profile、同一个工作目录、
+// 同一份环境变量请求（`--dump-config`），不接受手工预生成的配置文件；被检查的
+// 配置与真正启动的实例因此由同一组参数派生（见 buildInvocation()）。
 //
 // 退出码：0 = 宿主正常退出；1 = 宿主失败；2 = 参数/环境错误；
 //        3 = 保护未建立（已终止宿主，模型请求 0 次）；
 //        4 = 运行中保护失效（已撤销租约并终止宿主）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { appendFileSync, closeSync, openSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join, resolve, basename } from 'node:path';
 import { createBudgetGate } from '../orchestration/gate/gate.mjs';
 import {
   checkBaseUrl,
@@ -49,40 +55,55 @@ export const EXIT_PROTECTION_UNVERIFIED = 3;
 export const EXIT_PROTECTION_LOST = 4;
 
 export function parseArgs(argv) {
-  const options = { hostArgs: [] };
+  const options = { patches: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--') {
-      options.hostArgs = argv.slice(index + 1);
-      break;
-    }
-    const next = () => {
+    const next = (name) => {
       index += 1;
-      return argv[index];
+      const value = argv[index];
+      if (value === undefined) throw new UsageError('--' + name + ' requires a value');
+      return value;
     };
+    if (arg === '--') {
+      // 宿主命令行不再由调用方拼装：一旦允许自由拼接，被检查的配置和真正启动的
+      // 实例就可能不是同一个 CLI/profile/工作目录。两条命令都由 buildInvocation()
+      // 从同一组参数派生。
+      throw new UsageError('host arguments after -- are not accepted; use --prompt');
+    }
     switch (arg) {
-      case '--upstream': options.upstream = next(); break;
-      case '--model-requests': options.modelRequests = Number(next()); break;
-      case '--lease-ttl-ms': options.leaseTtlMs = Number(next()); break;
-      case '--heartbeat-file': options.heartbeatFile = next(); break;
-      case '--heartbeat-max-age-ms': options.heartbeatMaxAgeMs = Number(next()); break;
-      case '--timeout-ms': options.timeoutMs = next(); break;
-      case '--run-dir': options.runDir = next(); break;
-      case '--gate-port': options.gatePort = Number(next()); break;
-      case '--gate-log': options.gateLog = next(); break;
-      case '--dsh': options.dsh = next(); break;
-      case '--dsh-exe': options.dshExe = next(); break;
-      case '--dsh-cli': options.dshCli = next(); break;
-      case '--profile': options.profile = next(); break;
-      case '--patch': options.patch = next(); break;
-      case '--dump-config-from': options.dumpConfigFrom = next(); break;
-      case '--allow-ungated-providers': options.allowUngatedProviders = true; break;
-      case '--on-loss': options.onLoss = next(); break;
-      case '--summary': options.summary = next(); break;
-      default: options.hostArgs.push(arg); break;
+      case '--upstream': options.upstream = next('upstream'); break;
+      case '--model-requests': options.modelRequests = Number(next('model-requests')); break;
+      case '--lease-ttl-ms': options.leaseTtlMs = Number(next('lease-ttl-ms')); break;
+      case '--heartbeat-file': options.heartbeatFile = next('heartbeat-file'); break;
+      case '--heartbeat-max-age-ms': options.heartbeatMaxAgeMs = Number(next('heartbeat-max-age-ms')); break;
+      case '--timeout-ms': options.timeoutMs = next('timeout-ms'); break;
+      case '--run-dir': options.runDir = next('run-dir'); break;
+      case '--gate-port': options.gatePort = Number(next('gate-port')); break;
+      case '--gate-log': options.gateLog = next('gate-log'); break;
+      case '--dsh-exe': options.dshExe = next('dsh-exe'); break;
+      case '--dsh-cli': options.dshCli = next('dsh-cli'); break;
+      case '--profile': options.profile = next('profile'); break;
+      case '--patch': options.patches.push(next('patch')); break;
+      case '--prompt': options.prompt = next('prompt'); break;
+      case '--dump-config-from':
+        // 手工预生成的配置文件无法证明与真正启动的实例一致，一律拒绝。
+        throw new UsageError('--dump-config-from is not accepted; the launcher fetches the effective config itself');
+      case '--allow-ungated-providers':
+        // 放宽覆盖率校验会让"保护"退回成调用方的说法，本实验明确禁止。
+        throw new UsageError('--allow-ungated-providers is forbidden: every enabled provider instance must point at the gate');
+      case '--on-loss': options.onLoss = next('on-loss'); break;
+      case '--summary': options.summary = next('summary'); break;
+      default: throw new UsageError('unknown argument: ' + arg);
     }
   }
   return options;
+}
+
+export class UsageError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'UsageError';
+  }
 }
 
 function fail(message) {
@@ -160,41 +181,126 @@ function summarizeCandidates(candidates) {
   return { ok: true, baseURL: unique[0], id: withUrl[0].id };
 }
 
-export function dumpConfig(options) {
-  if (options.dumpConfigFrom !== undefined) {
-    try {
-      return { text: readFileSync(options.dumpConfigFrom, 'utf8') };
-    } catch (error) {
-      return { error: 'dump file unreadable: ' + String(error && error.message) };
-    }
+/**
+ * 派生一次宿主调用。**生效配置探测与真正启动都走这里**：同一个可执行文件、同一个
+ * cli.js、同一个 profile 与同一组 patch、同一个工作目录、同一份环境变量，只差叶子
+ * 参数（`--dump-config` 与 prompt）。这条"同源派生"是可校验性的一部分：如果被检查
+ * 的配置来自别处（手工文件、别的 profile），那它就只是调用方的说法。
+ */
+export function buildInvocation(options, leafArgs) {
+  const args = ['--expose-internals', options.dshCli, '--profile', options.profile];
+  for (const patch of options.patches) args.push('--patch', patch);
+  args.push(...leafArgs);
+  return {
+    command: options.dshExe,
+    args,
+    cwd: options.scratchDir,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    leaf: leafArgs,
+  };
+}
+
+/**
+ * 受限沙箱里子进程不能用管道回传输出（`EPERM` / 命名管道），所以把 stdout 与
+ * stderr 直接接到**文件描述符**上，再由本进程读文件。
+ */
+export function captureInvocation(invocation, outPath, errPath, timeoutMs = 120_000) {
+  // stdout 与 stderr 分开落盘：生效配置只能取自 stdout。否则宿主写到 stderr 的
+  // 警告/堆栈会被当成配置内容解析，把"读不到配置"误判成"配置不匹配"。
+  const outFd = openSync(outPath, 'w');
+  const errFd = openSync(errPath, 'w');
+  try {
+    const result = spawnSync(invocation.command, invocation.args, {
+      stdio: ['ignore', outFd, errFd],
+      cwd: invocation.cwd,
+      env: invocation.env,
+      timeout: timeoutMs,
+    });
+    return {
+      exitCode: typeof result.status === 'number' ? result.status : null,
+      signal: result.signal || null,
+      error: result.error ? String(result.error.message) : null,
+    };
+  } finally {
+    closeSync(outFd);
+    closeSync(errFd);
   }
-  if (options.dsh === undefined && options.dshExe === undefined) return { error: 'no --dsh/--dsh-exe or --dump-config-from given' };
-  const args = ['--profile', options.profile || 'desktop'];
-  if (options.patch !== undefined) args.push('--patch', options.patch);
-  args.push('--dump-config');
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-  // Windows 上 `dsh.cmd` 不能直接 spawn（需要 shell，而 shell 又会把带空格的
-  // 安装路径拆开）。优先用"Desktop 可执行文件 + asar 内 cli.js"的形式调用。
-  const command = options.dshExe === undefined ? options.dsh : options.dshExe;
-  const commandArgs = options.dshExe === undefined ? args : ['--expose-internals', options.dshCli, ...args];
-  const result = spawnSync(command, commandArgs, { encoding: 'utf8', env, shell: options.dshExe === undefined && process.platform === 'win32' });
-  const text = String(result.stdout || '');
-  // `--dump-config` 打印完配置后以非零码退出（实测 exit -1），因此判据是"有没有
-  // 输出"，不是退出码；没输出才当作失败。
-  if (text.trim() === '') {
-    return { error: 'dump-config produced no output: ' + String(result.stderr || result.error || '').slice(0, 300) };
+}
+
+const BINDING_ENV_KEYS = ['ELECTRON_RUN_AS_NODE', 'DSH_HOME', 'DSH_PROFILE', 'DSH_PROFILE_DIR'];
+
+/**
+ * 由启动器自己去问宿主"生效配置是什么"。之后所有判断都基于这段字节，不再读任何
+ * 调用方预先写好的配置文件。
+ */
+export function fetchEffectiveConfig(options, { runDir }) {
+  const dumpPath = join(runDir, 'effective-config.yml');
+  const errPath = join(runDir, 'effective-config.stderr.txt');
+  const invocation = buildInvocation(options, ['--dump-config']);
+  const capture = captureInvocation(invocation, dumpPath, errPath);
+  let text = '';
+  let stderrText = '';
+  try {
+    text = readFileSync(dumpPath, 'utf8');
+  } catch (_missingOut) {
+    text = '';
   }
+  try {
+    stderrText = readFileSync(errPath, 'utf8');
+  } catch (_missingErr) {
+    stderrText = '';
+  }
+  const binding = {
+    schema: 'tla.config-binding/v1',
+    source: 'launcher-fetched',
+    commandName: basename(invocation.command),
+    cliName: basename(options.dshCli),
+    profile: options.profile,
+    patches: options.patches.map((patch) => basename(patch)),
+    cwdIsRunDir: true,
+    envKeys: BINDING_ENV_KEYS.filter((key) => invocation.env[key] !== undefined),
+    dumpFile: basename(dumpPath),
+    stderrFile: basename(errPath),
+    // `--dump-config` 打印完配置后以非零码退出（实测 -1），判据是"有没有输出"。
+    dumpExitCode: capture.exitCode,
+    dumpSpawnError: capture.error,
+  };
+  // 裁剪到第一个真正像配置的位置：宿主在配置前后可能夹带无关行。
   const start = text.search(/^(\[|- id:|\{)/m);
-  return { text: start >= 0 ? text.slice(start) : text };
+  const body = start >= 0 ? text.slice(start) : text;
+  if (body.trim() === '') {
+    const detail = (capture.error || stderrText.trim() || 'no output').slice(0, 300);
+    return { ok: false, reason: 'CONFIG_UNREADABLE', detail, binding, text: '' };
+  }
+  return {
+    ok: true,
+    text: body,
+    path: dumpPath,
+    bytes: Buffer.byteLength(body, 'utf8'),
+    sha256: createHash('sha256').update(body, 'utf8').digest('hex'),
+    binding,
+    capture,
+  };
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  let options;
+  try {
+    options = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    fail(error && error.message ? error.message : 'invalid arguments');
+    return;
+  }
   if (options.upstream === undefined) fail('--upstream is required');
   if (!Number.isInteger(options.modelRequests)) fail('--model-requests must be an integer');
-  if (options.hostArgs.length === 0) fail('no host command given after --');
+  if (options.dshExe === undefined) fail('--dsh-exe is required (the launcher must fetch the effective config itself)');
+  if (options.dshCli === undefined) fail('--dsh-cli is required (the launcher must fetch the effective config itself)');
+  if (options.profile === undefined) fail('--profile is required');
+  if (options.prompt === undefined) fail('--prompt is required');
   const runDir = resolve(options.runDir || '.');
   mkdirSync(runDir, { recursive: true });
+  // 生效配置探测与真正启动用同一个工作目录。
+  options.scratchDir = runDir;
   const gateLog = options.gateLog || join(runDir, 'gate-events.jsonl');
   const summaryPath = options.summary || join(runDir, 'gate-summary.json');
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 20_000;
@@ -224,32 +330,47 @@ async function main() {
   };
 
   const gateStatus = await readGateStatus(baseUrl);
-  const dump = dumpConfig(options);
-  const extracted = dump.text === undefined ? { ok: false, reason: dump.error || 'DUMP_MISSING' } : extractBaseUrlFromDump(dump.text);
+  // 启动器自己去取生效配置：同一个可执行文件、同一个 profile、同一个工作目录、
+  // 同一份环境变量。取不到就拒绝启动，绝不退回"调用方给的配置文件"。
+  const configProbe = fetchEffectiveConfig(options, { runDir });
+  record.config = {
+    source: configProbe.binding.source,
+    binding: configProbe.binding,
+    bytes: configProbe.ok ? configProbe.bytes : 0,
+    sha256: configProbe.ok ? configProbe.sha256 : null,
+    reason: configProbe.ok ? null : configProbe.reason,
+    detail: configProbe.ok ? null : configProbe.detail,
+  };
+  const dumpText = configProbe.ok ? configProbe.text : '';
+  const extracted = configProbe.ok ? extractBaseUrlFromDump(dumpText) : { ok: false, reason: configProbe.reason };
   const effectiveBaseUrl = extracted.ok === true ? extracted.baseURL : null;
   const baseUrlCheck = checkBaseUrl({ effectiveBaseUrl, gateBaseUrl: baseUrl });
   if (extracted.ok !== true) baseUrlCheck.detail = extracted.reason;
-  const coverage = dump.text === undefined ? null : extractProviderCoverage(dump.text, baseUrl);
+  const coverage = configProbe.ok ? extractProviderCoverage(dumpText, baseUrl) : null;
   record.coverage = coverage;
-  // 只用于**演示绕过路径**：显式关掉覆盖判定，让宿主真的把请求发给未受保护的
-  // provider 实例。默认必须为 false，且会在 summary 里留下 coverageOverride，
-  // 以免把演示当成受保护的运行。
-  const unguardedProviders = options.allowUngatedProviders === true || coverage === null ? [] : coverage.unguarded;
-  record.coverageOverride = options.allowUngatedProviders === true;
+  // 没有任何 provider 被确认指向闸门，等于"保护只存在于调用方的话里"。
+  const noGuardedProvider = coverage === null || coverage.guarded.length === 0;
+  const unguardedProviders = coverage === null ? [] : coverage.unguarded;
 
   // 步骤 2：闸门在不在路径上。不在就不启动宿主（结构性 0 请求）。
   // 覆盖判定同样在这里：任何未指向闸门的 provider 实例都意味着存在绕过路径。
-  if (gateStatus.ok !== true || baseUrlCheck.ok !== true || unguardedProviders.length > 0) {
+  if (gateStatus.ok !== true || configProbe.ok !== true || baseUrlCheck.ok !== true || unguardedProviders.length > 0 || noGuardedProvider) {
     record.decision = {
       allow: false,
       blockers: [
         ...(gateStatus.ok !== true ? [{ code: 'GATE_NOT_READY', detail: gateStatus.reason || 'status unreachable' }] : []),
-        ...(baseUrlCheck.ok !== true ? [{ code: 'BASE_URL_MISMATCH', detail: baseUrlCheck.reason === 'BASE_URL_MISMATCH' ? 'effective baseURL is ' + String(effectiveBaseUrl) : String(baseUrlCheck.detail || baseUrlCheck.reason) }] : []),
+        ...(configProbe.ok !== true ? [{ code: 'CONFIG_UNREADABLE', detail: String(configProbe.detail || configProbe.reason) }] : []),
+        ...(configProbe.ok && coverage === null ? [{ code: 'CONFIG_COVERAGE_UNKNOWN', detail: '生效配置无法解析出 provider 覆盖率' }] : []),
+        ...(configProbe.ok && coverage !== null && noGuardedProvider ? [{ code: 'NO_GATED_PROVIDER', detail: '生效配置里没有任何指向闸门的 provider 实例' }] : []),
+        // 只有在真的读到配置、且里面的地址不对时才谈 BASE_URL_MISMATCH；读不到
+        // 配置时把它一起报出来会把"缺输入"说成"地址错"。
+        ...(configProbe.ok === true && baseUrlCheck.ok !== true ? [{ code: 'BASE_URL_MISMATCH', detail: baseUrlCheck.reason === 'BASE_URL_MISMATCH' ? 'effective baseURL is ' + String(effectiveBaseUrl) : String(baseUrlCheck.detail || baseUrlCheck.reason) }] : []),
         ...(unguardedProviders.length > 0 ? [{ code: 'PROVIDER_NOT_GATED', detail: '未指向闸门的 provider 实例：' + coverage.unguarded.join(',') }] : []),
       ],
       effectiveBaseUrl,
       gateBaseUrl: baseUrl,
       dumpReason: extracted.ok === true ? null : extracted.reason,
+      configSha256: configProbe.ok ? configProbe.sha256 : null,
     };
     record.result = 'refused-before-host-start';
     record.hostStarted = false;
@@ -262,11 +383,26 @@ async function main() {
   }
 
   // 步骤 3：启动宿主。此刻没有租约，任何模型请求都会被闸门 403 拒掉。
-  const child = spawn(options.hostArgs[0], options.hostArgs.slice(1), {
+  // 启动用的调用由 buildInvocation() 派生，与上面探测配置时同源。
+  const hostInvocation = buildInvocation(options, [options.prompt]);
+  const child = spawn(hostInvocation.command, hostInvocation.args, {
     stdio: 'inherit',
-    env: { ...process.env },
-    cwd: runDir,
+    env: hostInvocation.env,
+    cwd: hostInvocation.cwd,
   });
+  record.invocation = {
+    schema: 'tla.config-binding/v1',
+    commandName: basename(hostInvocation.command),
+    cliName: basename(options.dshCli),
+    profile: options.profile,
+    patches: options.patches.map((patch) => basename(patch)),
+    cwdIsRunDir: hostInvocation.cwd === runDir,
+    sameCommandAsProbe: basename(hostInvocation.command) === configProbe.binding.commandName,
+    sameProfileAsProbe: options.profile === configProbe.binding.profile,
+    samePatchesAsProbe: options.patches.length === configProbe.binding.patches.length,
+    dumpLeaf: configProbe.binding.dumpFile,
+    hostLeaf: 'prompt',
+  };
   record.hostStarted = true;
   record.hostPid = child.pid;
   record.phase = 'awaiting-heartbeat';
@@ -291,7 +427,7 @@ async function main() {
   }
 
   if (lease === null && heartbeat.ok) {
-    const decision = decideStart({ gateReady: true, baseUrl: baseUrlCheck, heartbeat, coverage: options.allowUngatedProviders === true ? null : coverage });
+    const decision = decideStart({ gateReady: true, baseUrl: baseUrlCheck, heartbeat, coverage });
     if (!decision.allow) {
       record.decision = decision;
       record.result = 'refused-after-heartbeat';
