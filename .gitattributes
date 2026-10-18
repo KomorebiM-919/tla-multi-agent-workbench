@@ -36,3 +36,10 @@ docs/run-records/** -text -whitespace
 # 脱敏协议夹具的字节本身就是断言对象：MANIFEST.json 记录的是这些文件的 sha256，
 # 检出、导出或克隆都不能改行尾，否则“固定 SHA 下可复跑”不成立（2026-10-18）。
 tests/fixtures/repair-protocol/** -text -whitespace
+
+# 拦截器插件的**工作区字节**是被校验对象：`fingerprintPluginDir` 按文件 sha256 计算
+# buildDigest，并与 preflight 里登记的审查指纹比对。本机 `core.autocrlf=true` 时，
+# 同一提交的新检出会把 LF 变 CRLF（3 个文件、10362 → 10607 字节），指纹随之从
+# 54f1a8e3… 变成 4de4b80e…，启动器按设计拒绝启动（2026-10-18 受控实验预检实测）。
+# 固定该路径的行尾，使“审查指纹”在干净检出上也能复现。
+orchestration/interceptor-plugin/** -text -whitespace
