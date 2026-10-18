@@ -15,11 +15,12 @@
 //     --run-dir <new run dir> --gate-port 18921 --upstream-port 18920 \
 //     --require-file src/sum.mjs --require-file test/sum.test.mjs [--print] [--json]
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, UsageError } from './gated-run.mjs';
 import { inspectEffectiveConfig } from './inspect-effective-config.mjs';
+import { renderOverlay } from './overlay-template.mjs';
 import { runStaticChecks } from './static-preflight.mjs';
 
 export const COMMAND_SCHEMA = 'tla.experiment-command/v1';
@@ -43,6 +44,14 @@ export const REPORTED_FLAGS = [
   '--timeout-ms',
   '--require-file',
   '--prompt',
+  '--dsh-home',
+  '--upstream-port',
+  '--fake-server',
+  '--policy',
+  '--pin-source',
+  '--pin-fixtures',
+  '--spec',
+  '--check',
 ];
 export const PLACEHOLDER_PATTERN = /^<[^>]+>$/u;
 export const MODEL_REQUEST_CEILING = 40;
@@ -64,6 +73,10 @@ const KNOWN = new Set([
   '--timeout-ms',
   '--require-file',
   '--prompt',
+  '--fake-server',
+  '--policy',
+  '--pin-source',
+  '--pin-fixtures',
   '--print',
   '--json',
 ]);
@@ -94,6 +107,10 @@ function readLocalArgs(argv) {
       case '--timeout-ms': spec.timeoutMs = Number(next()); break;
       case '--require-file': spec.requireFiles.push(next()); break;
       case '--prompt': spec.prompt = next(); break;
+      case '--fake-server': spec.fakeServerPath = next(); break;
+      case '--policy': spec.policyPath = next(); break;
+      case '--pin-source': spec.pinned = { ...(spec.pinned ?? {}), sourceSha: next() }; break;
+      case '--pin-fixtures': spec.pinned = { ...(spec.pinned ?? {}), fixturesSha: next() }; break;
       case '--print': spec.print = true; break;
       case '--json': spec.json = true; break;
       default: throw new Error('unhandled argument: ' + arg);
@@ -244,6 +261,46 @@ export function toPowerShell(command) {
  * is `--overlay`) loaded the profile without any overlay, so all eight config checks failed for
  * a reason that had nothing to do with the experiment.
  */
+// The supervisor takes one spec, not a dozen hand-copied flags. Everything that used to be
+// typed twice (ports, run id, project, log dir, budget) is derived from this object.
+export function supervisorSpecFor(spec) {
+  const derived = {
+    schema: 'tla.experiment-spec/v1',
+    profile: spec.profile,
+    projectCwd: resolve(spec.projectCwd),
+    runDir: resolve(spec.runDir),
+    gatePort: spec.gatePort,
+    upstreamPort: spec.upstreamPort,
+    modelRequests: spec.modelRequests,
+    requireFiles: [...spec.requireFiles],
+    fakeServerPath: spec.fakeServerPath,
+    policyPath: spec.policyPath,
+    fakeKeyEnv: 'TLA_STAGE2_FAKE_KEY',
+    fakeKeyValue: 'stage2-fake-key'
+  };
+  for (const name of ['timeoutMs', 'leaseTtlMs', 'heartbeatMaxAgeMs', 'prompt', 'dshExe', 'dshCli', 'dshHome', 'pinned']) {
+    if (spec[name] !== undefined) derived[name] = spec[name];
+  }
+  return derived;
+}
+
+// The overlay the launcher will actually receive is rendered from the same template and the
+// same inputs the runner uses, so the inspected file cannot drift from the executed one.
+export function ensureOverlayFile(spec, runDir) {
+  if (spec.overlay !== undefined) return resolve(spec.overlay);
+  const path = join(dirname(runDir), 'overlay-inspect-' + String(spec.gatePort) + '.patch.yml');
+  writeFileSync(
+    path,
+    renderOverlay({
+      gateUrl: 'http://127.0.0.1:' + String(spec.gatePort),
+      runDir,
+      modelRequests: spec.modelRequests === undefined ? 40 : spec.modelRequests
+    }),
+    'utf8'
+  );
+  return path;
+}
+
 export function inspectionInputFor(spec, runDir) {
   return {
     dshExe: spec.dshExe,
@@ -294,7 +351,8 @@ async function main(argv) {
     // configuration and judge that; the dump goes to a scratch directory so the evidence
     // directory stays untouched and still "new" for the launcher.
     const runDir = spec.runDir === undefined ? '' : resolve(spec.runDir);
-    const inspection = inspectEffectiveConfig(inspectionInputFor(spec, runDir));
+    const overlayPath = ensureOverlayFile(spec, runDir);
+    const inspection = inspectEffectiveConfig({ ...inspectionInputFor(spec, runDir), patches: [overlayPath] });
     for (const check of inspection.checks) process.stderr.write('experiment-command: config ' + (check.ok ? 'ok   ' : 'FAIL ') + check.name + ' — ' + check.detail + '\n');
     if (inspection.ok !== true) {
       process.stderr.write('experiment-command: EFFECTIVE CONFIG FAILED — do not request an escalation for this command\n');
@@ -312,6 +370,15 @@ async function main(argv) {
     if (spec.print) process.stdout.write(toPowerShell(command) + '\n');
     if (!spec.json && !spec.print) {
       process.stdout.write('command validated: ' + command.argv.length + ' arguments, ' + (spec.requireFiles || []).length + ' required files\n');
+    }
+    // One supervised command per experiment: it starts the fake upstream, proves readiness and
+    // run identity, starts the protected host, watches both, and tears both down.
+    if (spec.fakeServerPath !== undefined && spec.policyPath !== undefined) {
+      const specPath = join(dirname(runDir), 'experiment-spec.json');
+      writeFileSync(specPath, JSON.stringify(supervisorSpecFor(spec), null, 2) + '\n', 'utf8');
+      process.stdout.write('supervised command: node "' + resolve('tools/experiment-runner.mjs') + '" --spec "' + specPath + '"\n');
+    } else {
+      process.stdout.write('experiment-command: note — pass --fake-server and --policy to emit the supervised command\n');
     }
     process.stdout.write('STATIC PREFLIGHT OK\n');
     return 0;

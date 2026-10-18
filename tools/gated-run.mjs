@@ -52,6 +52,7 @@ import {
   parseDumpConfigStrict,
   readGateStatus,
 } from '../orchestration/gate/preflight.mjs';
+import { HEALTH_BLOCKER_CODES, describeHealth, probeUpstreamHealth } from './health-probe.mjs';
 
 export const EXIT_OK = 0;
 export const EXIT_HOST_FAILED = 1;
@@ -680,23 +681,24 @@ async function main() {
 
     let spawnError = null;
     // 假上游必须先用健康检查证明"它就是本轮的服务"：端口被别人占着、
-    // 或者读到的 PID/runId 与预期不符时，不启动宿主，也不复用旧服务。
+    // 或者读到的 runId 与预期不符时，不启动宿主，也不复用旧服务。
+    // 每种失败都按证据分类，绝不把"连不上"写成"属于其他运行"。
     if (options.upstreamHealthUrl !== undefined) {
-      let health = null;
-      try {
-        const response = await fetch(options.upstreamHealthUrl, { signal: AbortSignal.timeout(3_000) });
-        health = { status: response.status, body: await response.json() };
-      } catch (error) {
-        health = { error: String(error && error.message) };
-      }
+      const health = await probeUpstreamHealth(options.upstreamHealthUrl, {
+        expectedRunId: options.upstreamRunId
+      });
       record.upstreamHealth = health;
-      const expected = options.upstreamRunId;
-      const healthy = health !== null && health.status === 200 && health.body && health.body.ok === true;
-      const matchesRun = expected === undefined || (health.body && health.body.runId === expected);
-      if (!healthy || !matchesRun) {
+      if (health.status !== 'ok') {
         record.result = 'refused-before-host-start';
         record.hostStarted = false;
-        record.decision = { allow: false, blockers: [{ code: 'UPSTREAM_UNHEALTHY', detail: matchesRun ? 'upstream health check failed: ' + JSON.stringify(health) : 'upstream belongs to another run: ' + JSON.stringify(health.body) }] };
+        record.decision = {
+          allow: false,
+          blockers: [{
+            code: HEALTH_BLOCKER_CODES[health.status] === undefined ? 'UPSTREAM_UNHEALTHY' : HEALTH_BLOCKER_CODES[health.status],
+            detail: describeHealth(health),
+            upstreamStatus: health.status
+          }]
+        };
         writeFileSync(summaryPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
         return EXIT_PROTECTION_UNVERIFIED;
       }

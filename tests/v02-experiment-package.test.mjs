@@ -10,7 +10,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, buildInvocation, UsageError } from '../tools/gated-run.mjs';
-import { buildCommand, inspectionInputFor, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder } from '../tools/experiment-command.mjs';
+import { buildCommand, ensureOverlayFile, inspectionInputFor, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder, supervisorSpecFor } from '../tools/experiment-command.mjs';
+import { renderOverlay } from '../tools/overlay-template.mjs';
+import { validateSpec } from '../tools/experiment-runner.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -28,11 +30,11 @@ function check(condition, label, detail = '') {
   }
 }
 
-// Pull the one command block that invokes the launcher, drop the bash line
-// continuations, and split it the way a shell would.
-function commandBlock(text) {
+// Pull the command block that invokes one tool, drop the bash line continuations, and split it
+// the way a shell would.
+function commandBlock(text, pattern) {
   const lines = text.split(/\r?\n/u);
-  const start = lines.findIndex((line) => /node\s+tools\/gated-run\.mjs/u.test(line));
+  const start = lines.findIndex((line) => pattern.test(line));
   if (start === -1) return { args: [], raw: '' };
   const collected = [];
   for (let index = start; index < lines.length; index += 1) {
@@ -61,7 +63,8 @@ function commandBlock(text) {
   return { args: firstFlag === -1 ? [] : args.slice(firstFlag), raw };
 }
 
-const block = commandBlock(DOC);
+const block = commandBlock(DOC, /node\s+tools\/experiment-command\.mjs/u);
+const supervised = commandBlock(DOC, /node\s+tools\/experiment-runner\.mjs/u);
 
 // 1. The documented command is the launcher's command, with placeholders filled in.
 const SUBSTITUTIONS = new Map([
@@ -76,6 +79,8 @@ const SUBSTITUTIONS = new Map([
   ['<path-to-host-exe>', 'C:\\work\\host\\DeepSeek Harness.exe'],
   ['<path-to-host-cli.js>', 'C:\\work\\host\\cli.js'],
   ['<dir>', 'C:\\work\\repo\\bodies'],
+  ['<source sha>', '45b6540e61c2bf0da477a0b7009fc4b8e1640023'],
+  ['<fixtures sha>', '4fc9515935fbbe67ad567ef12921bc1ff5b47d1d'],
 ]);
 function filled(value) {
   let result = value;
@@ -83,30 +88,34 @@ function filled(value) {
   return result;
 }
 
-check(block.args.length > 0, 'the package contains a launcher command');
+check(block.args.length > 0, 'the package contains the command builder invocation');
 const filledArgs = block.args.map(filled);
 const leftover = filledArgs.filter((value) => PLACEHOLDER_PATTERN.test(value));
 check(leftover.length === 0, 'every placeholder in the command has a documented substitution', JSON.stringify(leftover));
 
-let parsed = null;
-try {
-  parsed = parseLauncherArgs(filledArgs);
-  check(true, 'the launcher accepts the documented command unchanged');
-} catch (error) {
-  check(false, 'the launcher accepts the documented command unchanged', error instanceof UsageError ? error.message : String(error));
-}
+const valueOf = (args, flag) => {
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
+};
 
-if (parsed !== null) {
-  check(parsed.modelRequests === 40, 'the documented budget is the approved 40', String(parsed.modelRequests));
-  check(parsed.gatePort === 18921, 'the documented gate port is 18921', String(parsed.gatePort));
-  check(parsed.upstream === 'http://127.0.0.1:18920', 'the documented upstream is the loopback fake model', String(parsed.upstream));
-  check(parsed.dshExe !== undefined && parsed.dshCli !== undefined, 'the command passes the host executable and cli it validates');
-  check(parsed.profile === 'stage1', 'the command uses the isolated profile', String(parsed.profile));
-  check(parsed.requireFiles.length === 3, 'the command requires every project file the run reads', JSON.stringify(parsed.requireFiles));
-  check(typeof parsed.prompt === 'string' && parsed.prompt.length > 0, 'the command carries the captain prompt');
-  check(parsed.heartbeatFile.endsWith('plugin-events.jsonl'), 'the heartbeat file is the plugin event log', parsed.heartbeatFile);
-  check(resolve(dirname(parsed.summary)) === resolve(dirname(parsed.heartbeatFile)), 'summary and heartbeat live in the same run directory');
-}
+// 1. The documented generator invocation carries the whole experiment, and the only command that
+//    needs an escalation is the supervisor one: it starts the fake upstream, waits for it, starts
+//    the protected host, watches both and tears both down.
+check(valueOf(filledArgs, '--model-requests') === '40', 'the documented budget is the approved 40', String(valueOf(filledArgs, '--model-requests')));
+check(valueOf(filledArgs, '--gate-port') === '18921', 'the documented gate port is 18921', String(valueOf(filledArgs, '--gate-port')));
+check(valueOf(filledArgs, '--upstream-port') === '18920', 'the documented upstream port is 18920', String(valueOf(filledArgs, '--upstream-port')));
+check((valueOf(filledArgs, '--profile') ?? '') === 'stage1', 'the command uses the isolated profile', String(valueOf(filledArgs, '--profile')));
+check(valueOf(filledArgs, '--dsh-exe') !== undefined && valueOf(filledArgs, '--dsh-cli') !== undefined, 'the command passes the host executable and cli it validates');
+const requireFiles = filledArgs.filter((_value, index) => filledArgs[index - 1] === '--require-file');
+check(requireFiles.length === 3, 'the command requires every project file the run reads', JSON.stringify(requireFiles));
+check(typeof valueOf(filledArgs, '--prompt') === 'string' && valueOf(filledArgs, '--prompt').length > 0, 'the command carries the captain prompt');
+check((valueOf(filledArgs, '--dsh-home') ?? '').includes('dshhome'), 'the command carries the isolated DSH_HOME', String(valueOf(filledArgs, '--dsh-home')));
+check((valueOf(filledArgs, '--fake-server') ?? '').endsWith('fake-model-server.mjs'), 'the command names the local fake upstream', String(valueOf(filledArgs, '--fake-server')));
+check((valueOf(filledArgs, '--policy') ?? '').endsWith('policy.json'), 'the command names the reactive policy', String(valueOf(filledArgs, '--policy')));
+check(valueOf(filledArgs, '--pin-source') !== undefined && valueOf(filledArgs, '--pin-fixtures') !== undefined, 'the command pins the executing source and the fixtures');
+check(supervised.args.length > 0, 'the package contains the one supervised command');
+check((valueOf(supervised.args, '--spec') ?? '').endsWith('experiment-spec.json'), 'the supervised command takes the generated spec', String(valueOf(supervised.args, '--spec')));
+check(/supervised command|监督器/u.test(DOC), 'the package states that the supervisor owns the whole run');
 
 // 2. The package never leaks a local absolute path or the retired flag name.
 check(!block.args.includes('--captain-prompt'), 'the documented command does not use the retired --captain-prompt flag');
@@ -151,14 +160,9 @@ for (const [label, pattern] of [
 }
 check(/不能仅凭|not from text alone|文本/u.test(DOC), 'the package says text alone is not a success signal');
 
-// 6. The fake model invocation matches the fake model's real flags, and the ports and
-//    run id agree with what the launcher is told.
-const fakeLine = DOC.split(/\r?\n/u).find((line) => /--policy\s+tests\/fixtures/u.test(line)) ?? '';
-check(fakeLine !== '', 'the package shows how the fake model is started');
-const fakeFlags = fakeLine.match(/--[a-z-]+/gu) ?? [];
-for (const flag of ['--port', '--policy', '--run-id', '--body-dir']) {
-  check(fakeFlags.includes(flag), 'the documented fake model invocation uses ' + flag);
-}
+// 6. The fake model is started by the supervisor, never by a hand-typed command, and the
+//    implementation still recognises the flags the spec passes to it.
+check(!/^\s*node\s+tests\/\.scratch\S*fake-model-server\.mjs/mu.test(DOC), 'the package does not tell a human to start the fake model by hand');
 if (existsSync(FAKE_SERVER)) {
   const source = readFileSync(FAKE_SERVER, 'utf8');
   for (const flag of ['--port', '--policy', '--run-id', '--body-dir']) {
@@ -166,14 +170,6 @@ if (existsSync(FAKE_SERVER)) {
   }
 } else {
   check(/不入库|本地实验台|local harness/u.test(DOC), 'the package marks the fake model as a local (unversioned) harness');
-}
-const fakePort = fakeLine.match(/--port\s+(\d+)/u);
-const fakeRunId = fakeLine.match(/--run-id\s+(\S+)/u);
-if (fakePort !== null && parsed !== null) {
-  check(parsed.upstream.endsWith(':' + fakePort[1]), 'the documented fake model port matches --upstream', fakePort[1]);
-}
-if (fakeRunId !== null && parsed !== null) {
-  check(parsed.upstreamRunId === fakeRunId[1].replace(/["'`]/gu, ''), 'the documented fake model run id matches --upstream-run-id', fakeRunId[1]);
 }
 
 // 7. The builder refuses incomplete specs instead of producing a plausible command.
@@ -271,6 +267,39 @@ try {
     built.argv.includes(spec.overlay),
     'the same overlay string appears in the launcher command'
   );
+
+  // One supervised command per experiment: the spec carries the ports, the run id inputs, the
+  // project, the log directory and the budget, so none of them is typed twice by hand.
+  const policy = join(ROOT, 'tests', 'fixtures', 'repair-loop-policy.v2.json');
+  const standinFake = join(root, 'fake-server.mjs');
+  writeFileSync(standinFake, '// stand-in for the local fake upstream\n');
+  const supSpec = supervisorSpecFor({
+    ...spec,
+    profile: 'stage1',
+    requireFiles: ['src/sum.mjs'],
+    fakeServerPath: standinFake,
+    policyPath: policy,
+    runDir: join(root, 'run-supervised')
+  });
+  check(supSpec.schema === 'tla.experiment-spec/v1', 'the supervisor spec declares its schema', supSpec.schema);
+  check(supSpec.profile === 'stage1', 'the supervisor spec names the isolated profile', String(supSpec.profile));
+  check(supSpec.gatePort === spec.gatePort && supSpec.upstreamPort === spec.upstreamPort, 'the supervisor spec carries both ports');
+  check(supSpec.modelRequests === 40, 'the supervisor spec carries the budget', String(supSpec.modelRequests));
+  check(supSpec.fakeKeyEnv === 'TLA_STAGE2_FAKE_KEY' && supSpec.fakeKeyValue === 'stage2-fake-key', 'the supervisor spec pins a dedicated fake credential');
+  check(supSpec.projectCwd === resolve(spec.projectCwd), 'the supervisor spec pins the project working directory');
+  validateSpec(supSpec);
+  check(true, 'the emitted supervisor spec passes the runner validator');
+
+  const rendered = ensureOverlayFile(
+    { ...spec, overlay: undefined, runDir: join(root, 'run-supervised'), requireFiles: ['src/sum.mjs'] },
+    join(root, 'run-supervised')
+  );
+  const expectedOverlay = renderOverlay({
+    gateUrl: 'http://127.0.0.1:' + String(spec.gatePort),
+    runDir: join(root, 'run-supervised'),
+    modelRequests: 40
+  });
+  check(readFileSync(rendered, 'utf8') === expectedOverlay, 'the inspected overlay is the one the runner renders');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
