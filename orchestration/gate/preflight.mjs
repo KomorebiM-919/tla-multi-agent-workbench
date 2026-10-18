@@ -75,6 +75,10 @@ export const KNOWN_NON_PROVIDER_ADAPTERS = new Set([
 // 这是**本地完整性核对**，防的是"装错了版本/包被换过"，不是防恶意本机管理员
 // ——能被本机管理员同时改写包和本表的人可以绕过它。它也不覆盖运行时依赖解析
 // （peer/外部依赖）与原生二进制内容之外的行为。
+// 本项目的"出勤"插件：overlay 通过 `insert:` 注入，宿主不会给它补 `name`。覆盖率判定必须
+// 认识它，否则闸门会把自己的证明插件当成未知模型适配器而拒绝启动。
+export const ATTENDANCE_PLUGIN_ID = 'tla-prelaunch-budget';
+
 export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
   'tla-prelaunch-budget': Object.freeze({
     version: '0.0.0-local',
@@ -535,6 +539,13 @@ export function extractProviderCoverage(entries, gateBaseUrl) {
   for (const entry of entries) {
     const id = typeof entry.id === 'string' ? entry.id : null;
     const name = typeof entry.name === 'string' ? entry.name : null;
+    // 本项目自己的闸门前置插件：它只注册一个 `agent/request` 监听器做预占，不创建任何模型
+    // 客户端、不打开网络连接（见 orchestration/interceptor-plugin/index.js）。overlay 用
+    // `insert:` 注入时宿主不会补 `name`，若按"缺 name 即 unknown"处理，闸门会拒绝自己。
+    if (id === ATTENDANCE_PLUGIN_ID || name === ATTENDANCE_PLUGIN_ID) {
+      providers.push({ id, name: name === null ? ATTENDANCE_PLUGIN_ID : name, status: 'plumbing', baseURL: null });
+      continue;
+    }
     // 缺 name：无法判断这个组件会不会发模型请求，按 unknown 处理（绝不静默跳过）。
     if (name === null) {
       providers.push({ id, name: null, status: 'unknown', baseURL: null });

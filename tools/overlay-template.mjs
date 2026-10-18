@@ -94,6 +94,7 @@ export function renderOverlay(spec) {
   blocks.push([
     '- insert:',
     '    - id: ' + BUDGET_PLUGIN_ID,
+    '      name: ' + BUDGET_PLUGIN_ID,
     '      config:',
     '        modelRequests: ' + String(modelRequests),
     '        heartbeatIntervalMs: ' + String(heartbeatIntervalMs),

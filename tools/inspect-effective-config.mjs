@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { fetchEffectiveConfig } from './gated-run.mjs';
+import { extractProviderCoverage } from '../orchestration/gate/preflight.mjs';
 import { ACCOUNT_PROVIDERS, BUDGET_PLUGIN_ID, DISABLED_PROVIDERS, FAKE_CREDENTIAL, GUARDED_PROVIDERS } from './overlay-template.mjs';
 
 export const INSPECTION_SCHEMA = 'tla.effective-config-inspection/v1';
@@ -228,6 +229,28 @@ export function evaluateEffectiveConfig({ entries, gateUrl, env }) {
     budget === undefined
       ? 'no ' + BUDGET_PLUGIN_ID + ' entry in the loaded configuration'
       : 'modelRequests ' + String(plain(budgetConfig.modelRequests)) + ', eventLog ' + String(plain(budgetConfig.eventLog))
+  );
+
+  // The inspector and the launcher each decide "is every provider covered?", and on 2026-10-18
+  // they disagreed: the inspector saw the inserted budget plugin as plumbing while the launcher
+  // called the same entry an unknown model adapter and refused to start — after an approval had
+  // already been spent. Judge the dump with the launcher's own classifier so "pre-flight ok"
+  // means "the launcher will accept this".
+
+  // Run the launcher's classifier over the very same entries.
+  let launcherCoverage = null;
+  let launcherError = null;
+  try {
+    launcherCoverage = extractProviderCoverage(entries, gateUrl);
+  } catch (error) {
+    launcherError = error instanceof Error ? error.message : String(error);
+  }
+  add(
+    'coverage:launcher-classifier',
+    launcherError === null && launcherCoverage.unknown.length === 0 && launcherCoverage.guarded.length > 0,
+    launcherError !== null
+      ? 'launcher classifier failed: ' + launcherError
+      : 'launcher sees guarded [' + launcherCoverage.guarded.join(', ') + '], unknown [' + launcherCoverage.unknown.join(', ') + ']'
   );
 
   return { checks, coverage, providers };

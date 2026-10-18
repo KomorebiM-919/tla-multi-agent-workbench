@@ -1,10 +1,10 @@
 // The effective-config inspection exists because checking the overlay *text* is not the same as
 // checking what the host loads: on 2026-10-18 an overlay rewrote baseURL but no apiKeyEnv, the
-// host merged it happily and died with MISSING_CREDENTIAL. These tests pin both halves — the
+// host merged it happily and died with MISSING_CREDENTIAL. These tests pin both halves 鈥?the
 // template that renders the overlay and the rules that judge the merged configuration.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDumpConfigStrict } from '../orchestration/gate/preflight.mjs';
+import { KNOWN_NON_PROVIDER_ADAPTERS, KNOWN_PROVIDER_ADAPTERS, parseDumpConfigStrict } from '../orchestration/gate/preflight.mjs';
 import { evaluateEffectiveConfig } from '../tools/inspect-effective-config.mjs';
 import { FAKE_CREDENTIAL, OverlayTemplateError, renderOverlay, templateContract } from '../tools/overlay-template.mjs';
 
@@ -23,7 +23,7 @@ function failed(report) {
 
 const FAILED_OVERLAY_DUMP = [
   '- id: llm-deepseek',
-  "  name: '@deepseek-ai/dsh-llm-deepseek'",
+  "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
   '  config:',
   '    baseURL: ' + GATE,
   '- id: llm-deepseek-account',
@@ -33,6 +33,7 @@ const FAILED_OVERLAY_DUMP = [
   '- id: web-search-deepseek',
   "  name: '@deepseek-ai/dsh-web-search-deepseek'",
   '- id: tla-prelaunch-budget',
+  '  name: tla-prelaunch-budget',
   '  config:',
   '    modelRequests: 40',
   '    eventLog: >-',
@@ -42,7 +43,7 @@ const FAILED_OVERLAY_DUMP = [
 
 const GOOD_DUMP = [
   '- id: llm-deepseek',
-  "  name: '@deepseek-ai/dsh-llm-deepseek'",
+  "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
   '  config:',
   '    apiKeyEnv: ' + FAKE_CREDENTIAL.envName,
   '    baseURL: ' + GATE,
@@ -58,6 +59,7 @@ const GOOD_DUMP = [
   '- id: llm-pi-ai',
   "  name: '@deepseek-ai/dsh-llm-pi-ai'",
   '- id: tla-prelaunch-budget',
+  '  name: tla-prelaunch-budget',
   '  config:',
   '    modelRequests: 40',
   '    eventLog: >-',
@@ -122,4 +124,23 @@ test('the rendered overlay carries the guard and the contract names it', () => {
   assert.deepEqual(contract.disabledProviders, ['web-search-deepseek']);
   assert.deepEqual(contract.guardedProviders, ['llm-deepseek']);
   assert.equal(contract.maxModelRequests, 40);
+});
+
+// The fixtures above are hand-written reductions of a real dump, and on 2026-10-18 they drifted:
+// they named the key route `@deepseek-ai/dsh-llm-deepseek` while the host actually loads
+// `@deepseek-ai/dsh-llm-deepseek-api-key`. The inspector still passed (it accepted any
+// `dsh-llm-*` pointing at the gate) and the launcher called the same entry unknown. Pin the
+// adapter names to the launcher's own registry so a fixture cannot silently describe a host
+// that does not exist.
+test('every adapter named in the fixtures is one the launcher knows', () => {
+  const names = new Set();
+  for (const dump of [GOOD_DUMP, FAILED_OVERLAY_DUMP]) {
+    for (const match of dump.matchAll(/name: '([^']+)'/gu)) names.add(match[1]);
+  }
+  const llmNames = [...names].filter((name) => name.startsWith('@deepseek-ai/dsh-llm-'));
+  assert.ok(llmNames.length > 0, 'fixtures must name at least one model adapter');
+  for (const name of llmNames) {
+    const known = Object.prototype.hasOwnProperty.call(KNOWN_PROVIDER_ADAPTERS, name) || KNOWN_NON_PROVIDER_ADAPTERS.has(name);
+    assert.ok(known, name + ' is not in the launcher adapter registry; the fixture describes a host that does not exist');
+  }
 });
