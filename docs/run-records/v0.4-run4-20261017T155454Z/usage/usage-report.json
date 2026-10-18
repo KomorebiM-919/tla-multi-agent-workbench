@@ -1,0 +1,348 @@
+{
+  "schemaVersion": 1,
+  "tool": "tests/extract-usage-report.mjs",
+  "toolVersion": "1.0.0",
+  "run": {
+    "runId": "v0.4-run4-20261017T155454Z",
+    "workflowName": "three-agent-mvp-run4",
+    "evidenceDir": null,
+    "runRecordDir": "docs/run-records/v0.4-run4-20261017T155454Z",
+    "parentSessionId": "3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "agentCallCountFromRecord": 1
+  },
+  "scope": {
+    "sessionRoot": "<DSH_HOME>/sessions",
+    "includeParent": false,
+    "attributedBy": "native-events",
+    "attributionSourceSha256": "5346fb846b2613bcea56d7c930ab29a9817a1f1e079b411ea41f43d48c7a53e8"
+  },
+  "coverage": {
+    "status": "complete",
+    "problems": [],
+    "logFiles": 67,
+    "sessionsCounted": 1,
+    "ignoredSessions": 65,
+    "runWindow": {
+      "start": "2026-10-17T15:56:28.933Z",
+      "end": "2026-10-17T15:57:14.378Z",
+      "slackMs": 60000,
+      "basis": "父会话同时承载其他任务，只有落在窗口内且父会话是本运行会话的未归因会话才算漏记"
+    },
+    "expectedSessionIds": [
+      "e5f8028d-206d-47d7-83d1-ada87b7a974b"
+    ],
+    "missingSessionIds": [],
+    "sessionsWithoutCompleteUsage": [],
+    "badLogs": [],
+    "derivedSessions": [],
+    "unattributedSessions": [],
+    "note": "每个已归因的子会话都有可解析日志，且每条 assistant/message 都带 usage"
+  },
+  "fieldSemantics": {
+    "usagePath": "assistant/message → data.usage",
+    "fields": [
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "totalTokens"
+    ],
+    "perFieldStates": {
+      "inputTokens": {
+        "value": 11,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "outputTokens": {
+        "value": 11,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "cacheReadTokens": {
+        "value": 11,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "cacheWriteTokens": {
+        "value": 0,
+        "zero": 11,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "totalTokens": {
+        "value": 11,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      }
+    },
+    "totalIdentity": {
+      "rule": "totalTokens = inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens",
+      "checked": 11,
+      "matched": 11,
+      "mismatched": 0
+    },
+    "perRequestOrCumulative": "unknown-until-heuristic-says-otherwise",
+    "heuristicNote": "逐会话给出 heuristic（per-request-likely / cumulative-likely / unknown）；证据不足时保持 unknown",
+    "cacheWriteZero": {
+      "sessionsReportingZeroOnly": true,
+      "interpretation": "0 是\"显式上报的 0\"，不能推断 provider 不支持上报该字段，也不能推断缓存写入不产生费用"
+    },
+    "inputCacheReadIndependence": "unknown",
+    "inputCacheReadNote": "不假设 inputTokens 与 cacheReadTokens 互不重叠：本报告同时给出分项与 totalTokens 合计，两者是否可加由字段语义决定，未核实前不自行相加冒充真实总量",
+    "costFieldsPresent": false,
+    "costNote": "日志里没有 price/cost/billing 字段"
+  },
+  "totals": {
+    "sessions": 1,
+    "messages": 11,
+    "messagesWithUsage": 11,
+    "messagesMissingUsage": 0,
+    "inputTokens": 12516,
+    "outputTokens": 6775,
+    "cacheReadTokens": 237184,
+    "cacheWriteTokens": 0,
+    "totalTokens": 256475,
+    "sumOfComponents": 256475,
+    "componentsMatchTotalTokens": true,
+    "buckets": {
+      "attributed": {
+        "sessions": 1,
+        "messages": 11,
+        "totalTokens": 256475
+      },
+      "derived": {
+        "sessions": 0,
+        "messages": 0,
+        "totalTokens": 0
+      },
+      "unattributed": {
+        "sessions": 0,
+        "messages": 0,
+        "totalTokens": 0
+      }
+    },
+    "runTotalTokens": 256475,
+    "byAttempt": [
+      {
+        "attempt": 1,
+        "phase": "preflight",
+        "label": "Verifier (preflight)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 11,
+        "messagesMissingUsage": 0,
+        "inputTokens": 12516,
+        "outputTokens": 6775,
+        "cacheReadTokens": 237184,
+        "cacheWriteTokens": 0,
+        "totalTokens": 256475
+      }
+    ],
+    "attempts": [
+      1
+    ]
+  },
+  "budget": {
+    "declared": true,
+    "verdict": "WITHIN_BUDGET",
+    "reasons": [
+      "观察到的子会话数 1 未超过声明上限 8",
+      "token 总量 256475 未超过声明上限 8000000"
+    ],
+    "declaredBudget": {
+      "callBudgetNote": "所有子代理调用（预检、需求、编码、验证、审核及修订）计入同一本账；不允许子代理再派生其他代理。",
+      "derivedAgentsAllowed": false,
+      "maxAgentCalls": 8,
+      "maxTotalTokens": 8000000,
+      "runId": "v0.4-run4-20261017T155454Z",
+      "source": "m12051（用户批准第四次真实运行的同一条件）：maxAgentCalls=8、maxCodingAttempts=2；声明 maxTotalTokens=8,000,000 仅用于事后观测判定，不是硬限额、不是货币预算",
+      "tokenBudgetNote": "maxTotalTokens=8000000 只是运行前声明的观测阈值：超出即报 OVER_BUDGET，但工作流不能在 8M 处强制停止，编排层只能硬限制调用次数。货币成本未提供价格，不能由 token 换算。"
+    }
+  },
+  "cost": {
+    "status": "NOT_PROVIDED",
+    "currency": null,
+    "note": "未提供价格：价格与渠道计费未核实，本工具不输出人民币成本"
+  },
+  "sessions": [
+    {
+      "seq": 1,
+      "label": "Verifier (preflight)",
+      "phase": "preflight",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "e5f8028d-206d-47d7-83d1-ada87b7a974b",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T15:56:29.359Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 11,
+      "messagesWithUsage": 11,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 12516,
+        "outputTokens": 6775,
+        "cacheReadTokens": 237184,
+        "cacheWriteTokens": 0,
+        "totalTokens": 256475
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 11,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 11,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 11,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 11,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 11,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 256475,
+        "lastTotalTokens": 29360,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 17177
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 19472
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 20042
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 21066
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 21960
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 23216
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 24072
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 25434
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 26704
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 27972
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 29360
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 11,
+        "matched": 11,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T15:56:30.965Z",
+      "lastMessageAt": "2026-10-17T15:57:14.315Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/e5f8028d-206d-47d7-83d1-ada87b7a974b/session.v4.jsonl.zstd",
+        "bytes": 74303,
+        "compressed": true,
+        "frames": 50,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "695738ce7069b86c5a147434fbbe4d417c64d9423c3446375c614c1265332b58"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    }
+  ],
+  "limitations": [
+    "只读日志推断：日志缺字段/坏帧/缺日志时判 INCOMPLETE，不输出\"在预算内\"",
+    "usage 是逐请求还是累计由启发式判断；未知时不做加减推断",
+    "cacheWriteTokens 为 0 只表示\"上报了 0\"，不代表 provider 不支持该字段",
+    "再派生会话单独列出：若某个子代理内部又派生了代理，其用量不在本报告的 sessions 里",
+    "没有价格信息，因此没有货币成本；token 数不等于费用",
+    "父会话默认排除：父会话包含与本次运行无关的对话，混入会高估用量",
+    "尝试轮次取自阶段名后缀 -revision-N 或标签 (revision N)：记录里没有真正的 attempt 字段，轮次是名字派生的，改名会让轮次失真"
+  ]
+}

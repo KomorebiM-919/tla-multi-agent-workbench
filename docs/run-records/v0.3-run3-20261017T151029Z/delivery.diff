@@ -1,0 +1,235 @@
+diff --git a/examples/text-stats/README.md b/examples/text-stats/README.md
+index 5545761..bf0f898 100644
+--- a/examples/text-stats/README.md
++++ b/examples/text-stats/README.md
+@@ -24,6 +24,7 @@
+ - **大小写**（BC-07）：不做小写化归并，每个 `[A-Za-z]+` 片段各计 1 个词，`Hello hello HELLO` → 3。
+ - **连接符**（BC-07）：只有三种连接符能把两个字母片段连成 1 个词 —— ASCII 连字符 `-`、ASCII 撇号 `'`（U+0027）与右单引号 `\u2019`（U+2019）；连接符两侧必须都紧邻 ASCII 字母，且一次只允许一个连接符。`well-known` → 1，`don't` → 1，`it\u2019s` → 1，`a-b-c` → 1，但 `hello--world` → 2（连续两个连接符不连接）。非 ASCII 字母与组合记号不能充当连接符：`caf\u00e9-mocha` → 2，`cafe\u0301` → 1（并且 `char_count` 为 5）。
+ - **单一实现路径**（BC-16）：命令行路径与标准输入路径都复用 `count_text`，归一化只在 `count_text` 一处完成，同一份已解码文本得到同一组四个数值。
++- **读取分工**（AC-21）：读文件时用 `open(..., newline="")` 保留原始换行，BOM 剥除与 `\r\n`/`\r` 到 `\n` 的替换只出现在 `count_text` 一处，模块内其它函数不做任何换行改写，也不使用 `str.splitlines()`。
+ - **不做 Unicode 归一化**（BC-06）：NFC/NFD 都不做，字符不折叠、不去尾、不 trim 整篇；`\u00a0` 与 `\u3000` 原样保留并计入 `char_count`，只在 `strip()` 判空时算作空白。
+ 
+ ## 命令行用法
+@@ -118,7 +119,7 @@ word_count: 0
+ {'char_count': 5, 'line_count': 3, 'non_empty_line_count': 3, 'word_count': 3}
+ ```
+ 
+-`--encoding` 只作用于文件解码（BC-13）：先用 Python 造一个 UTF-16LE 文件，再读它。
++`--encoding` 只作用于文件解码（BC-13）：先用 Python 造一个 UTF-16LE 文件，再读它（临时文件写在 `.test-scratch/` 下，用后请自行删除）。
+ 
+ ```console
+ $ python -c "open('.test-scratch/utf16le-demo.txt','wb').write('abc\n'.encode('utf-16-le'))"
+@@ -159,12 +160,14 @@ $ cd examples/text-stats
+ $ python -m unittest discover -p "test_*.py"
+ ```
+ 
+-测试仅依赖标准库 `unittest`，覆盖本轮 `boundary_conditions` **BC-01 至 BC-26** 每条边界条件与 `acceptance_criteria` **AC-01 至 AC-25** 每条验收条件；每条用例的名称或注释都标注了它覆盖的 AC/BC 编号，并通过真实子进程校验命令行入口、退出码、四行输出与错误契约（AC-21）。
++两条命令都必须配合 `PYTHONDONTWRITEBYTECODE=1` 运行，否则会在交付目录内生成本轮的字节码缓存（BC-20）。命令本体不因环境变量而改写，受控写法是在同一次进程调用里加前缀：PowerShell 为 `$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p "test_*.py"`，POSIX shell 为 `PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s examples/text-stats -p "test_*.py"`。
+ 
+-> 测试需要交付目录内已存在 `.test-scratch/` 目录（仓库中已保留占位文件），用于写入临时输入文件；测试只在该目录下写**平铺文件**、不新建子目录，并在结束时删除写入的文件（BC-20）。DSH 沙箱禁止向本次运行中新建的目录写入文件，也禁止写入工作区之外（含系统临时目录）。
++测试仅依赖标准库 `unittest`，覆盖本轮 `boundary_conditions` **BC-01 至 BC-26** 每条边界条件与 `acceptance_criteria` **AC-01 至 AC-25** 每条验收条件；每条用例的名称或注释都标注了它覆盖的 AC/BC 编号，并通过真实子进程校验命令行入口、退出码、四行输出与错误契约（AC-13、AC-14），另按 AC-21 校验“读文件保留原始换行、归一化只在 `count_text` 一处”。
++
++> 测试把临时输入文件写成 `.test-scratch/` 下的**平铺文件**，并在结束时删除自己写入的文件（BC-20）。该目录由测试按需自建（`os.makedirs(..., exist_ok=True)`），**不需要预先存在**，也无需人工处理任何权限。
++> 该目录内早期轮次遗留的 `tmp*` 子目录既不是运行前提，也不会令测试失败；测试不会删除、也不会改动它们。
+ > 该目录已被交付目录内的 `.gitignore` 忽略，不会进入版本库。
+-> 该目录内另有若干早期轮次遗留、被沙箱权限锁定而无法删除的 `tmp*` 子目录，清理需要人工处理 ACL；它们不影响测试，新临时文件仍写在平铺层并自删。
+-> 运行测试前设置 `PYTHONDONTWRITEBYTECODE=1`（本仓库的规范化运行方式），不会在交付目录内新增 `__pycache__`（BC-20）。
++> 运行测试前设置 `PYTHONDONTWRITEBYTECODE=1`（本仓库的规范化运行方式），不会在交付目录内新增或改写 `__pycache__`（BC-20）。
+ 
+ ## 规范优先级
+ 
+@@ -177,6 +180,7 @@ $ python -m unittest discover -p "test_*.py"
+ 5. **程序化调用的静默性**（BC-01、BC-11、BC-26）：显式传入 `stdin_text` 时 `main()` 只返回退出码、**两个输出流都不写**（成功、`--help`、受控错误都一样）；只有命令行调用才输出那 4 行。
+ 6. **错误文本**（BC-12）：命令行调用在标准错误上**恰好一行**以 `error: ` 开头、不含 traceback 的消息；程序化调用没有任何输出。
+ 7. **`'  \r\n \r\n'` 的 `char_count`**：本轮口径统一为 `5`。该输入共 7 个原始码点，按 BC-02 归一化为 `'  \n \n'` 后按 BC-06 只有 5 个码点；历史轮次记录的另一个数值无法与 BC-02、BC-06 同时成立，已从实现、测试与文档中删除。
++8. **编号语义**（AC-23）：本轮共 AC-01 至 AC-25、BC-01 至 BC-26 条。历史上“非 UTF-8 输入的一致性”已并入 **BC-17**；**BC-22** 本轮的定义是“同一类调用、同一输入只有一个期望值（冲突处理）”；**AC-21** 本轮的定义是“读文件保留原始换行、归一化只在 `count_text` 一处”。文档与测试中的编号标注都已按此语义修正。
+ 
+ ```python
+ >>> count_text("  \r\n \r\n")
+@@ -203,12 +207,12 @@ $ python -m unittest discover -p "test_*.py"
+ | BC-14 注入文本 | 即本次输入，但 `main` 只返回退出码 | 需数值时调用 `count_text` |
+ | BC-15 argv | `None` 等价于 `sys.argv[1:]`，不含程序名 | `main(["path.txt"])` 的 `path.txt` 是 PATH |
+ | BC-16 读取分工 | 文件保留原始换行，归一化只在 `count_text` | `newline=""` |
+-| BC-17 stdin 解码 | 由 `sys.stdin` 自身编码，`--encoding` 不作用于它 | 无 stdin 编码覆盖选项 |
++| BC-17 stdin 解码 | 由 `sys.stdin` 自身编码解码，`--encoding` 不作用于它；一致性只在同一份已解码文本下要求 | 无 stdin 编码覆盖选项；字节不同不构成失败 |
+ | BC-18 依赖边界 | 仅标准库，不联网 | 无第三方 import |
+-| BC-19 交付目录 | `examples/text-stats`，4 个文件 | 见本节目录清单 |
+-| BC-20 运行期写入 | 临时文件只写已存在的 `.test-scratch/` 平铺层并自删；不新增 `__pycache__` | `PYTHONDONTWRITEBYTECODE=1` |
++| BC-19 交付目录 | `examples/text-stats`，四个文件：`text_stats.py`、`test_text_stats.py`、`README.md`、`sample_input.txt` | 不新建交付目录 |
++| BC-20 运行期写入 | 临时文件写到 `.test-scratch/` 平铺层（测试按需自建）并自删；遗留 `tmp*` 不动；不新增、不改写 `__pycache__` | `PYTHONDONTWRITEBYTECODE=1` |
+ | BC-21 样例与文档 | `sample_input.txt` 恰 20 字节；每个示例可复现；连接符写 `\u2019` 转义 | `char_count: 20` |
+-| BC-22 非 UTF-8 | 只在同一份已解码文本下要求数值一致 | 字节不同不构成失败 |
++| BC-22 唯一期望 | 同一类调用、同一输入只有一个期望值；出现互斥期望必须报冲突、不得自行选边 | 命令行写 4 行 / 程序化静默，各只有一套期望 |
+ | BC-23 `-` | 不作为 stdin 别名，按普通文件名 | 不存在 → 退出码 1 |
+ | BC-24 0 字节文件 | 4 行全 0、退出码 0、stderr 空 | `char_count: 0` |
+ | BC-25 空输入 | stdin 立即 EOF 走成功路径，不阻塞 | 4 行全 0 |
+diff --git a/examples/text-stats/test_text_stats.py b/examples/text-stats/test_text_stats.py
+index 786401c..ed882ca 100644
+--- a/examples/text-stats/test_text_stats.py
++++ b/examples/text-stats/test_text_stats.py
+@@ -23,10 +23,11 @@ Facts pinned here, with the rules they come from:
+   command line and complete silence programmatically, never argparse's default
+   2 (BC-10, BC-12).
+ 
+-The DSH file sandbox denies writes outside the workspace (including the system
+-temporary directory), so transient fixtures are written as flat files into the
+-pre-existing scratch directory ``.test-scratch`` and removed by the owning test
+-(BC-20).
++Transient fixtures are written as flat files into ``.test-scratch`` and removed
++by the owning test.  The directory is created on demand
++(``os.makedirs(..., exist_ok=True)``), so it never has to exist beforehand, and
++leftover ``tmp*`` directories from earlier rounds are neither a precondition for
++these tests nor touched by them (BC-20).
+ """
+ 
+ import ast
+@@ -317,6 +318,14 @@ class NormalisationTests(unittest.TestCase):
+             "non_empty_line_count": 3,
+             "word_count": 3,
+         })
++        # AC-08 (c): a CRLF pair is a single line break, so "a\r\nb" is 3
++        # characters on 2 lines with 2 non-empty lines and 2 words.
++        self.assertEqual(count_text("a\r\nb"), {
++            "char_count": 3,
++            "line_count": 2,
++            "non_empty_line_count": 2,
++            "word_count": 2,
++        })
+ 
+     def test_ac08_whitespace_crlf_text_is_five_characters(self):
+         # The historical 6 was impossible: 7 raw code points minus the two CR
+@@ -541,6 +550,16 @@ class ProgrammaticCallTests(unittest.TestCase):
+                     self.assertEqual(stdout, "")
+                     self.assertEqual(stderr, "")
+ 
++    def test_ac15_programmatic_undecodable_file_is_silent(self):
++        # AC-15 lists the undecodable file among the handled errors: even though
++        # the bytes cannot be decoded, the call only returns 1 and writes nothing.
++        with scratch_file("ac15-bad-bytes.bin", b"A\xffB", binary=True) as path:
++            with working_directory(HERE):
++                code, stdout, stderr = call_main(
++                    [scratch_argument(path)], stdin_text=""
++                )
++        self.assertEqual((code, stdout, stderr), (1, "", ""))
++
+     def test_ac16_programmatic_help_returns_zero_and_writes_nothing(self):
+         code, stdout, stderr = call_main(["--help"], stdin_text="")
+         self.assertEqual(code, 0)
+@@ -579,7 +598,7 @@ class ProgrammaticCallTests(unittest.TestCase):
+ 
+ 
+ class CommandLineSuccessTests(ErrorContractAssertions):
+-    """AC-03, AC-05, AC-06, AC-07, AC-13 with BC-08, BC-09, BC-24, BC-25, BC-26."""
++    """AC-03, AC-05, AC-06, AC-07, AC-13 with BC-08, BC-09, BC-22, BC-24, BC-25, BC-26."""
+ 
+     def test_ac03_immediate_eof_prints_four_zeros(self):
+         result = run_cli_bytes([], b"")
+@@ -652,6 +671,19 @@ class CommandLineSuccessTests(ErrorContractAssertions):
+             with self.subTest(args=args):
+                 self.assertEqual(run_cli(args).stderr, "")
+ 
++    def test_bc22_one_expectation_per_call_kind_and_input(self):
++        # BC-22: one call kind plus one input has exactly one expectation.  The
++        # command line repeats the same four numbers for the same file, while
++        # the programmatic call of the same text stays silent - the two scopes
++        # never produce rival expectations for a single call.
++        first = run_cli(["sample_input.txt"])
++        second = run_cli(["sample_input.txt"])
++        self.assertEqual(first.returncode, second.returncode)
++        self.assertEqual(first.stdout, second.stdout)
++        self.assertEqual(first.stdout.splitlines(), REFERENCE_OUTPUT.splitlines())
++        code, stdout, stderr = call_main([], stdin_text=REFERENCE_TEXT)
++        self.assertEqual((code, stdout, stderr), (0, "", ""))
++
+ 
+ class HelpTests(ErrorContractAssertions):
+     """AC-16 with BC-11: help text belongs to the command line scope only."""
+@@ -721,7 +753,7 @@ class CommandLineErrorTests(ErrorContractAssertions):
+ 
+ 
+ class EncodingTests(unittest.TestCase):
+-    """AC-20 with BC-16, BC-17, BC-22."""
++    """AC-20 with BC-16, BC-17: --encoding decodes files only."""
+ 
+     def test_ac20_encoding_option_decodes_a_utf16le_file(self):
+         payload = "abc\n".encode("utf-16-le")
+@@ -750,7 +782,7 @@ class EncodingTests(unittest.TestCase):
+              "non_empty_line_count": 3, "word_count": 3},
+         )
+ 
+-    def test_bc22_encoding_option_never_touches_standard_input(self):
++    def test_bc17_encoding_option_never_touches_standard_input(self):
+         result = run_cli_bytes(["--encoding", "utf-16-le"], b"hello world\n")
+         self.assertEqual(result.returncode, 0, result.stderr)
+         self.assertEqual(
+@@ -946,11 +978,52 @@ class DeliveryConstraintTests(ErrorContractAssertions):
+             with self.subTest(condition=number):
+                 self.assertTrue(referenced("bc-{0:02d}".format(number)))
+ 
+-    def test_ac21_required_test_kinds_are_present(self):
+-        content = read_text(os.path.join(HERE, "test_text_stats.py"))
+-        self.assertIn("test_ac01_programmatic_empty_text_is_silent_zero", content)
+-        self.assertIn("test_ac10_line_and_non_empty_line_table", content)
+-        self.assertIn("test_bc05_blank_set_is_str_strip", content)
++    def test_ac21_file_input_keeps_raw_newlines_and_normalises_once(self):
++        # AC-21: the file read disables universal-newline translation, and the
++        # newline rewrite lives in count_text alone - no other function of the
++        # module replaces CRLF or CR, and line_count is never str.splitlines().
++        source = read_text(SCRIPT)
++        self.assertIn('newline=""', source)
++        self.assertNotIn("splitlines", source)
++
++        module = ast.parse(source)
++        count_text_node = next(
++            node
++            for node in module.body
++            if isinstance(node, ast.FunctionDef) and node.name == "count_text"
++        )
++
++        def replace_calls(function_node):
++            """Return the ``.replace(...)`` calls inside *function_node*."""
++            return [
++                node
++                for node in ast.walk(function_node)
++                if isinstance(node, ast.Call)
++                and isinstance(node.func, ast.Attribute)
++                and node.func.attr == "replace"
++            ]
++
++        # Exactly the CRLF -> LF and CR -> LF rewrites, both inside count_text.
++        self.assertEqual(len(replace_calls(count_text_node)), 2)
++        other_functions = [
++            node.name
++            for node in module.body
++            if isinstance(node, ast.FunctionDef)
++            and node.name != "count_text"
++            and replace_calls(node)
++        ]
++        self.assertEqual(other_functions, [])
++
++        # A file holding "a\\r\\nb\\rc" therefore reaches count_text unchanged.
++        with scratch_file("ac21-raw-newlines.txt", b"a\r\nb\rc", binary=True) as path:
++            result = run_cli([scratch_argument(path)])
++        self.assertEqual(result.returncode, 0, result.stderr)
++        self.assertEqual(parse_stats(result.stdout), count_text("a\r\nb\rc"))
++        self.assertEqual(
++            parse_stats(result.stdout),
++            {"char_count": 5, "line_count": 3,
++             "non_empty_line_count": 3, "word_count": 3},
++        )
+ 
+     def test_bc20_scratch_fixtures_are_flat_files_and_are_removed(self):
+         with scratch_file("flat-check.txt", "payload") as path:
+diff --git a/examples/text-stats/text_stats.py b/examples/text-stats/text_stats.py
+index 3a09e59..675a4aa 100644
+--- a/examples/text-stats/text_stats.py
++++ b/examples/text-stats/text_stats.py
+@@ -41,7 +41,7 @@ touches neither process stream, the injected text being the whole input
+ Worked example for the one input whose figure was once ambiguous
+ -----------------------------------------------------------------
+ ``"  \\r\\n \\r\\n"`` holds 7 raw code points; BC-02 rewrites it to
+-``"  \\n \\n"``, so BC-06 counts 5 of them - ``char_count`` is 5, never 6 (AC-08).
++``"  \\n \\n"``, so BC-06 counts 5 of them - ``char_count`` is 5, never 6 (AC-22).
+ """
+ 
+ import argparse

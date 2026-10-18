@@ -1,0 +1,406 @@
+{
+  "description": "一次工作流运行的原生执行证据（DSH 会话日志白名单提取）",
+  "source": "DSH 会话日志：$DSH_HOME/sessions/<group>/<session>/session.v4.jsonl.zstd（宿主写入，本工具只读）",
+  "extraction": {
+    "script": "tests/extract-native-events.mjs",
+    "method": "逐帧解 zstd；只保留身份/角色/模型/沙箱/审批/时间/turn-step 计数/工具调用名与目标路径/产物归因",
+    "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "workflowName": "tla-v03-run3",
+    "since": "2026-10-17T23:10:00+08:00",
+    "evidenceDir": "docs/evidence/v0.3-run3-20261017T151029Z",
+    "attributionRules": {
+      "write-tool": "子会话的写文件工具调用，其目标路径位于证据目录内（强归因）",
+      "time-window": "文件 mtime 落入唯一一个子会话的活动区间（次强归因，适用于经 shell 写出的产物）",
+      "unattributed": "两种证据都没有，或同时命中多个子会话；检查项会失败"
+    },
+    "excludedByDesign": [
+      "用户与助手消息正文",
+      "系统提示词与角色指令正文",
+      "工具结果载荷与 shell 命令原文",
+      "DSH 凭据存储中的任何内容"
+    ]
+  },
+  "workflowRun": {
+    "runId": "fddd9915-fd7b-42e3-88f8-742068a4b06e",
+    "name": "tla-v03-run3",
+    "startedAt": "2026-10-17T15:12:15.758Z",
+    "endedAt": "2026-10-17T15:23:05.423Z",
+    "stopReason": "error",
+    "agentCallCount": 4
+  },
+  "invocation": {
+    "callId": "call_00_PDDOkRcuIT83EygUrzeJ1388",
+    "at": "2026-10-17T15:12:15.717Z",
+    "metaName": "tla-v03-run3",
+    "scriptBytes": 134705,
+    "scriptLines": 2299,
+    "scriptSha256": "5766ccc3fb0791691b4b458cbe18f825c6c7998be0749ee28b660b186de2c481",
+    "argsKeys": [
+      "evidenceDir",
+      "promptDir",
+      "runId",
+      "runStartedAt",
+      "task"
+    ],
+    "argsSha256": "5b6bf269c067d97bb78ccd1cc6bf6d2759722e8e30b61f5c4eae4c394ffcd385",
+    "matchesRepoScript": true,
+    "repoScriptBytes": 134705,
+    "repoScriptLines": 2299,
+    "repoScriptSha256": "5766ccc3fb0791691b4b458cbe18f825c6c7998be0749ee28b660b186de2c481",
+    "matchesRepoScriptExact": true,
+    "matchesRepoScriptIgnoringTrailingNewline": true,
+    "byteDelta": 0
+  },
+  "agentCalls": [
+    {
+      "seq": 1,
+      "label": "Verifier (preflight)",
+      "phase": "preflight",
+      "childSessionId": "1061a2f2-323f-4085-a185-9e5f1b3fa14f",
+      "startedAt": "2026-10-17T15:12:16.271Z",
+      "endedAt": "2026-10-17T15:13:21.297Z",
+      "outcome": "completed",
+      "childFound": true,
+      "childParentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "childParentMatches": true,
+      "childDelegationDepth": 1,
+      "childAgentPreset": "standard",
+      "childCreatedAt": "2026-10-17T15:12:16.254Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "turnCount": 1,
+      "stepCount": 14,
+      "toolCallCount": 20,
+      "writesInEvidenceDir": [
+        {
+          "name": "write",
+          "target": "<repo>/docs/evidence/v0.3-run3-20261017T151029Z/preflight.json",
+          "at": "2026-10-17T15:13:12.648Z"
+        }
+      ],
+      "shellArtifactMentions": [
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:13:15.381Z",
+          "artifacts": [
+            "preflight.json",
+            ".run-owner.json"
+          ]
+        }
+      ]
+    },
+    {
+      "seq": 2,
+      "label": "Requirement Agent",
+      "phase": "requirement",
+      "childSessionId": "7d10e3c9-40ba-4662-b0c2-457c1cdfc0da",
+      "startedAt": "2026-10-17T15:13:21.326Z",
+      "endedAt": "2026-10-17T15:18:57.174Z",
+      "outcome": "completed",
+      "childFound": true,
+      "childParentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "childParentMatches": true,
+      "childDelegationDepth": 1,
+      "childAgentPreset": "standard",
+      "childCreatedAt": "2026-10-17T15:13:21.309Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "turnCount": 1,
+      "stepCount": 28,
+      "toolCallCount": 34,
+      "writesInEvidenceDir": [
+        {
+          "name": "write",
+          "target": "docs/evidence/v0.3-run3-20261017T151029Z/requirement.json",
+          "at": "2026-10-17T15:18:08.609Z"
+        }
+      ],
+      "shellArtifactMentions": [
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:17:18.836Z",
+          "artifacts": [
+            "preflight.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:18:14.397Z",
+          "artifacts": [
+            "requirement.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:18:26.793Z",
+          "artifacts": [
+            "requirement.json"
+          ]
+        }
+      ]
+    },
+    {
+      "seq": 3,
+      "label": "Coding Agent",
+      "phase": "coding",
+      "childSessionId": "f2bf28f4-eef1-40d7-a1c2-dda2aa07b76c",
+      "startedAt": "2026-10-17T15:18:57.202Z",
+      "endedAt": "2026-10-17T15:22:13.474Z",
+      "outcome": "completed",
+      "childFound": true,
+      "childParentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "childParentMatches": true,
+      "childDelegationDepth": 1,
+      "childAgentPreset": "standard",
+      "childCreatedAt": "2026-10-17T15:18:57.186Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "turnCount": 1,
+      "stepCount": 28,
+      "toolCallCount": 41,
+      "writesInEvidenceDir": [
+        {
+          "name": "write",
+          "target": "<repo>/docs/evidence/v0.3-run3-20261017T151029Z/coding-report.json",
+          "at": "2026-10-17T15:21:57.464Z"
+        }
+      ],
+      "shellArtifactMentions": [
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:22:00.388Z",
+          "artifacts": [
+            "coding-report.json"
+          ]
+        }
+      ]
+    },
+    {
+      "seq": 4,
+      "label": "Verifier (verify)",
+      "phase": "verify",
+      "childSessionId": "22e058ba-ccac-442f-ac2b-0d9b2f9c01de",
+      "startedAt": "2026-10-17T15:22:13.500Z",
+      "endedAt": "2026-10-17T15:23:05.346Z",
+      "outcome": "completed",
+      "childFound": true,
+      "childParentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "childParentMatches": true,
+      "childDelegationDepth": 1,
+      "childAgentPreset": "standard",
+      "childCreatedAt": "2026-10-17T15:22:13.484Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "turnCount": 1,
+      "stepCount": 13,
+      "toolCallCount": 14,
+      "writesInEvidenceDir": [
+        {
+          "name": "write",
+          "target": "<repo>/docs/evidence/v0.3-run3-20261017T151029Z/verify.json",
+          "at": "2026-10-17T15:22:48.641Z"
+        }
+      ],
+      "shellArtifactMentions": [
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:22:50.927Z",
+          "artifacts": [
+            "verify.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:22:57.038Z",
+          "artifacts": [
+            "verify.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:22:59.451Z",
+          "artifacts": [
+            "verify.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/evidence/v0.3-run3-20261017T151029Z/preflight.json",
+      "sha256": "be171c45d9ee4f8c40285062761bb587f92eef1929ce1d133e4518a70e419b90",
+      "bytes": 2841,
+      "mtimeUtc": "2026-10-17T15:13:12.656Z",
+      "attribution": "write-tool",
+      "writtenBy": [
+        {
+          "seq": 1,
+          "label": "Verifier (preflight)",
+          "childSessionId": "1061a2f2-323f-4085-a185-9e5f1b3fa14f"
+        }
+      ]
+    },
+    {
+      "path": "docs/evidence/v0.3-run3-20261017T151029Z/requirement.json",
+      "sha256": "385e0346dcd23513bc23c11ba0efffbb912abf27faa8028d0a4e5bef569f850e",
+      "bytes": 29984,
+      "mtimeUtc": "2026-10-17T15:18:08.622Z",
+      "attribution": "write-tool",
+      "writtenBy": [
+        {
+          "seq": 2,
+          "label": "Requirement Agent",
+          "childSessionId": "7d10e3c9-40ba-4662-b0c2-457c1cdfc0da"
+        }
+      ]
+    },
+    {
+      "path": "docs/evidence/v0.3-run3-20261017T151029Z/coding-report.json",
+      "sha256": "4d1384d0c1ef1ae775d3c544e902874d38e214805388744f8d246140f9f46186",
+      "bytes": 8230,
+      "mtimeUtc": "2026-10-17T15:21:57.472Z",
+      "attribution": "write-tool",
+      "writtenBy": [
+        {
+          "seq": 3,
+          "label": "Coding Agent",
+          "childSessionId": "f2bf28f4-eef1-40d7-a1c2-dda2aa07b76c"
+        }
+      ]
+    },
+    {
+      "path": "docs/evidence/v0.3-run3-20261017T151029Z/verify.json",
+      "sha256": "927ef0c8365f60510b121ad904145ed9c5ff24a5e19389a57bac149ce6a26fd5",
+      "bytes": 2713,
+      "mtimeUtc": "2026-10-17T15:22:48.647Z",
+      "attribution": "write-tool",
+      "writtenBy": [
+        {
+          "seq": 4,
+          "label": "Verifier (verify)",
+          "childSessionId": "22e058ba-ccac-442f-ac2b-0d9b2f9c01de"
+        }
+      ]
+    },
+    {
+      "path": "docs/evidence/v0.3-run3-20261017T151029Z/review.json",
+      "sha256": null,
+      "bytes": null,
+      "mtimeUtc": null,
+      "attribution": "unattributed",
+      "writtenBy": []
+    },
+    {
+      "path": "docs/evidence/v0.3-run3-20261017T151029Z/.run-owner.json",
+      "sha256": "58165d1229417671e479bbb642996339b943127c65c50ad952dcb58f6d7e3d15",
+      "bytes": 277,
+      "mtimeUtc": "2026-10-17T15:12:32.559Z",
+      "attribution": "time-window",
+      "writtenBy": [
+        {
+          "seq": 1,
+          "label": "Verifier (preflight)",
+          "childSessionId": "1061a2f2-323f-4085-a185-9e5f1b3fa14f"
+        }
+      ]
+    }
+  ],
+  "derivedChecks": [
+    {
+      "id": "run.single",
+      "ok": true,
+      "detail": "tla-v03-run3 运行次数 = 1"
+    },
+    {
+      "id": "run.completed",
+      "ok": false,
+      "detail": "stopReason = error"
+    },
+    {
+      "id": "calls.count",
+      "ok": true,
+      "detail": "agent-start = 4"
+    },
+    {
+      "id": "calls.parentMatches",
+      "ok": true,
+      "detail": "全部匹配"
+    },
+    {
+      "id": "calls.depth",
+      "ok": true,
+      "detail": "1,1,1,1"
+    },
+    {
+      "id": "calls.noGrandchildren",
+      "ok": true,
+      "detail": "无再派生会话"
+    },
+    {
+      "id": "calls.uniqueChildren",
+      "ok": true,
+      "detail": "子会话数 = 4"
+    },
+    {
+      "id": "invocation.scriptDigest",
+      "ok": true,
+      "detail": "5766ccc3fb0791691b4b458cbe18f825c6c7998be0749ee28b660b186de2c481 (134705 B)"
+    },
+    {
+      "id": "invocation.scriptMatchesRepo",
+      "ok": true,
+      "detail": "与 docs/run-records/v0.3-run3-20261017T151029Z/workflow-script-at-run.js 逐字节一致"
+    },
+    {
+      "id": "artifacts.writtenByChild",
+      "ok": false,
+      "detail": "docs/evidence/v0.3-run3-20261017T151029Z/review.json(writers=0,sha=missing)"
+    }
+  ],
+  "checksAllPassed": false
+}

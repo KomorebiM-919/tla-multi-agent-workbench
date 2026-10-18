@@ -1,0 +1,367 @@
+{
+  "runId": "v0.2-run2-20261017T133204Z",
+  "requirementVersion": "v0.2-demo-input-3（与 run1 注入原文同字节）",
+  "requirementSha256": "6307a7f0ca0a84ccf0b8036ad202d7acaa56e8664d5761b22c10a915a86f71d7",
+  "method": "自动归位：中文字符二元组 + ASCII 词 + 数字重叠打分，取最高分条款；脚本 tests/.scratch/unattended/build-run2-mapping.py 可复算",
+  "notProven": [
+    "R-12",
+    "R-18",
+    "R-19",
+    "R-24",
+    "R-28",
+    "R-30",
+    "R-36",
+    "R-37"
+  ],
+  "clauses": [
+    {
+      "requirement": "R-01",
+      "criteria": [
+        "AC-01",
+        "AC-02",
+        "AC-06",
+        "AC-16",
+        "AC-18",
+        "AC-19",
+        "AC-21",
+        "BC-01"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-02",
+      "criteria": [
+        "BC-25"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-03",
+      "criteria": [
+        "AC-04",
+        "AC-08",
+        "BC-24"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-04",
+      "criteria": [
+        "AC-15",
+        "AC-17",
+        "AC-19",
+        "AC-21",
+        "BC-01",
+        "BC-15"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-05",
+      "criteria": [
+        "AC-21",
+        "BC-01"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-06",
+      "criteria": [
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-10",
+        "AC-13",
+        "AC-18",
+        "AC-19",
+        "AC-20",
+        "AC-21",
+        "AC-22",
+        "BC-08",
+        "BC-09",
+        "BC-21",
+        "BC-24"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-07",
+      "criteria": [
+        "AC-07",
+        "BC-16",
+        "BC-22"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-08",
+      "criteria": [
+        "BC-16"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-09",
+      "criteria": [
+        "AC-01",
+        "AC-15",
+        "AC-16",
+        "AC-19",
+        "AC-21",
+        "BC-01",
+        "BC-11",
+        "BC-23",
+        "BC-26"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-10",
+      "criteria": [
+        "AC-05",
+        "AC-06",
+        "AC-14",
+        "AC-15",
+        "AC-16",
+        "AC-20",
+        "BC-12",
+        "BC-23"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-11",
+      "criteria": [
+        "AC-01",
+        "AC-15",
+        "AC-16",
+        "AC-19",
+        "BC-01",
+        "BC-11",
+        "BC-24"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-12",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-13",
+      "criteria": [
+        "AC-01",
+        "AC-10",
+        "AC-15",
+        "AC-16",
+        "AC-18",
+        "AC-19",
+        "AC-21",
+        "BC-01",
+        "BC-13",
+        "BC-14",
+        "BC-25"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-14",
+      "criteria": [
+        "AC-08",
+        "AC-17",
+        "AC-18",
+        "BC-01",
+        "BC-10"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-15",
+      "criteria": [
+        "BC-02"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-16",
+      "criteria": [
+        "AC-09",
+        "BC-03"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-17",
+      "criteria": [
+        "AC-08",
+        "BC-02"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-18",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-19",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-20",
+      "criteria": [
+        "AC-04",
+        "AC-10",
+        "AC-11",
+        "AC-12",
+        "BC-06"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-21",
+      "criteria": [
+        "AC-04",
+        "AC-10",
+        "BC-04"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-22",
+      "criteria": [
+        "AC-10",
+        "BC-05"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-23",
+      "criteria": [
+        "BC-05"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-24",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-25",
+      "criteria": [
+        "AC-12",
+        "BC-07"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-26",
+      "criteria": [
+        "AC-12"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-27",
+      "criteria": [
+        "AC-12",
+        "BC-07"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-28",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-29",
+      "criteria": [
+        "AC-07",
+        "AC-19",
+        "AC-20",
+        "AC-21",
+        "BC-17",
+        "BC-22"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-30",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-31",
+      "criteria": [
+        "AC-25",
+        "BC-18"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-32",
+      "criteria": [
+        "AC-19",
+        "AC-21",
+        "AC-22",
+        "AC-23",
+        "AC-24",
+        "BC-19"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-33",
+      "criteria": [
+        "AC-19",
+        "AC-20",
+        "AC-21",
+        "AC-22",
+        "AC-24",
+        "BC-20"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-34",
+      "criteria": [
+        "AC-04",
+        "AC-05",
+        "AC-07",
+        "AC-08",
+        "AC-10",
+        "AC-19",
+        "AC-20",
+        "AC-22",
+        "BC-21",
+        "BC-24"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-35",
+      "criteria": [
+        "AC-22",
+        "AC-23",
+        "BC-21"
+      ],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-36",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    },
+    {
+      "requirement": "R-37",
+      "criteria": [],
+      "rationale": "按正文字符重叠自动归位（best-match，多归位）；条款原文见 requirement-injected.txt"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# 05-mutation-check
+# command: python tests/mutation-text-stats.py
+# exit code: 0
+# duration: 8.13s
+
+PASS baseline | exit=0 failures=0
+PASS quiet_errors_still_write_stderr | ʧ�ܵ�����=3 ����Ŀ��=3
+PASS programmatic_help_prints_usage | ʧ�ܵ�����=1 ����Ŀ��=1
+PASS bad_encoding_without_path_is_success | ʧ�ܵ�����=5 ����Ŀ��=3
+
+3/3 �������屻ץס; ����ͨ��

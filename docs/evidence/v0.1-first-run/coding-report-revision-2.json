@@ -1,0 +1,58 @@
+{
+  "run_id": "v0.1-first-run",
+  "agent": "Coding Agent",
+  "stage": "coding",
+  "generated_at": "2026-10-16T19:28:37+08:00",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "purpose": "修订：删除复审 issue #3 指出的死代码模块级常量 DEVIATIONS（原 text_stats.py:55-66，模块内无任何引用，违反 AGENTS.md 第 4 节），并改写模块 docstring 中对它的引用，改为说明“AC 与 BC 冲突时按 scope_in 第 7 条以 BC-01..BC-11 为准”。统计逻辑（count_text、_normalize、_split_lines、_count_lines、main、_format_stats、_read_file、_resolve_encoding）一字未改。"
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "修订：新增 TestScratchDirectoryContract（2 个用例）把“必须复用已存在的 .test-scratch 且只写平铺文件、不创建目录”固定为可执行契约，防止复审 issue #4 的残留目录问题重现；并修正模块 docstring 中关于沙箱约束的不准确归因（原文声称“沙箱只允许在已存在目录内创建文件”，实测为“禁止写入工作区之外（含系统临时目录）以及本次运行中新建的目录”）。原有 42 个用例全部保留，未删除、未放宽。"
+      },
+      {
+        "path": "examples/text-stats/.gitignore",
+        "purpose": "新增（交付目录内）：忽略测试临时目录 .test-scratch/，消除复审 issue #4 中 git status 每次产生的 11 条“访问被拒绝”警告；因根 .gitignore 位于交付目录之外、角色规范禁止修改，故忽略规则放在交付目录内，效果等价。"
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "修订“测试”一节的说明：补充 .test-scratch 已被交付目录内 .gitignore 忽略、测试只写平铺文件不建子目录（含沙箱写入边界的实测结论），以及目录内 12 个 v0.1 遗留、被沙箱权限锁定而无法删除的 tmp* 子目录的指引。"
+      },
+      {
+        "path": "docs/evidence/v0.1-first-run/coding-report-revision-2.json",
+        "purpose": "本证据文件：记录修订轮的真实改动、对复审 4 条 issue 的逐条处理结果、AC-01 至 AC-13 的实测复验结论、规范化测试命令的真实输出，以及仍无法在本会话内解决的环境限制（12 个不可删除目录）。"
+      }
+    ],
+    "implementation_summary": "本轮为修订轮（revision 2）。实现主体经复审确认逻辑正确，本轮只修复复审清单中的实现卫生问题，并把两条属于需求文本自相矛盾、超出 Coding Agent 可改范围的问题如实上报。\n\n1) 复审 issue #3（死代码）：已删除 text_stats.py 的模块级常量 DEVIATIONS（原 55-66 行，模块内零引用），docstring 中“see DEVIATIONS below”的表述同步改写为一段说明——AC-02/AC-06 与 BC-03、AC-05 与 BC-06/BC-09 的冲突按 scope_in 第 7 条“BC-01 至 BC-11 是实现与验收的唯一判定依据”裁定为 BC 优先。矛盾本身仍由 README.md 与 test_text_stats.py::TestSpecificationConflicts 显式记录并断言，测试一条未删、未放宽。\n\n2) 复审 issue #4（.test-scratch 下 11 个不可访问残留目录）：现场复验确认它们由 v0.1 初版用 tempfile.mkdtemp(dir=.test-scratch) 创建、随后写入被沙箱拒绝而未能清理；icacls 显示当前令牌无权读取这些子目录的 DACL，Remove-Item -Recurse -Force 与 shutil.rmtree 均返回“访问被拒绝”，.test-scratch 自身带继承的 Everyone(DELETE_CHILD) 拒绝项与按会话发放的 S-1-4-* 授权（沙箱预期行为）。本会话是受限子代理且审批已禁用，无法执行需要非受限权限的 ACL 修复，故这些目录（连同本轮诊断时误产生的 tmpl8ymy245，共 12 个）只能由仓库所有者在非受限终端删除。在能力范围内的两项缓解已完成：(a) 交付目录内新增 .gitignore（.test-scratch/），git check-ignore 验证命中，git status 不再出现任何访问被拒绝警告；(b) 测试不再创建任何目录，并新增 TestScratchDirectoryContract 两个用例把该约束固定下来（44 个测试跑完后 .test-scratch 内除 .gitkeep 外无任何残留文件、无新增目录）。\n\n3) 实测复核：规范化测试命令 44 个测试全绿、退出码 0；另用独立脚本逐条复验 AC-01、AC-03、AC-04、AC-06、AC-07、AC-08、AC-09、AC-10、AC-12、AC-13 全部通过；AC-02 除 line_count（需求矛盾）外三项一致；AC-05 的 12 条断言 11 条通过，仅 'cafe\\u0301' 一条因需求矛盾不成立；AC-11 由测试命令本身覆盖。交付目录内所有 import 仅为标准库（argparse、codecs、contextlib、io、os、re、subprocess、sys、unittest）与本地模块 text_stats，且不存在 requirements.txt / pyproject.toml / setup.py / Pipfile。",
+    "acceptance_criteria_addressed": [
+      "AC-01：cd examples/text-stats 后执行 python -c \"from text_stats import count_text; d = count_text('a'); print(type(d).__name__, sorted(d))\"，标准输出为 `dict ['char_count', 'line_count', 'non_empty_line_count', 'word_count']`，且四个值类型均为 int（实测附加断言 all(type(v) is int) 为 True）。",
+      "AC-02：count_text('hello world\\nfoo bar\\n') 实测 {'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}——char_count / non_empty_line_count / word_count 与 AC-02 期望一致；line_count 按 BC-03 为 2 而非 AC-02 声称的 3，属需求内部矛盾，见 deviations_from_requirement 第 1 条。",
+      "AC-03：count_text('') 返回四项全 0。",
+      "AC-04：count_text('\\n\\n') == {'char_count': 2, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}；count_text('  \\n\\t \\n') == {'char_count': 6, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}，与期望完全一致。",
+      "AC-05：12 条断言中 11 条实测通过（3、1、1、2、0、1、1、[1]、1、0、2、2）。唯一不成立的是 'cafe\\u0301' 期望 2、按 BC-06 正则实得 1，属需求内部矛盾，见 deviations_from_requirement 第 2 条；需求中写作 'naive' 的那一条是纯 ASCII，实测 1，成立。",
+      "AC-06：python text_stats.py <sample.txt，内容 'hello world\\nfoo bar\\n'，退出码 0，标准输出恰为四行 char_count: 20 / line_count: 2 / non_empty_line_count: 2 / word_count: 4（line_count 按 BC-03 修正，其余三项与 AC-06 一致）。",
+      "AC-07：以 'hello world\\n' 作为标准输入运行 CLI，退出码 0，标准输出 char_count: 12 / line_count: 1 / non_empty_line_count: 1 / word_count: 2，与期望完全一致。",
+      "AC-08：以空标准输入运行 CLI（立即 EOF），退出码 0，四项均为 0，未阻塞等待输入。",
+      "AC-09：python text_stats.py missing-file.txt 退出码 1，标准输出为空，标准错误首行以 'error: ' 开头（实测 `error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'`），无未捕获 traceback。",
+      "AC-10：字节 EF BB BF + 'hi\\n' 的文件经 CLI 统计得 char_count: 3 / line_count: 1 / non_empty_line_count: 1 / word_count: 1；count_text('\\ufeffhi\\n')['char_count'] == 3。",
+      "AC-11：规范化测试命令退出码 0，Ran 44 tests / OK，无 failure、无 error（44 >= 12）。",
+      "AC-12：交付目录内两个 .py 文件的 import 行仅涉及标准库 argparse、codecs、contextlib、io、os、re、subprocess、sys、unittest 与本地模块 text_stats；目录内不存在 requirements.txt、pyproject.toml、setup.py、Pipfile（新增的 .gitignore 不是依赖清单）。",
+      "AC-13：README.md 示例 `python text_stats.py sample_input.txt` 从 README 原文解析后执行，输出与其记载的期望输出逐字符一致（char_count: 20 / line_count: 2 / non_empty_line_count: 2 / word_count: 4）；README 给出的测试命令执行后退出码为 0。"
+    ],
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": "text_stats.py: error: unrecognized arguments: <repo>\\examples\\text-stats\\.test-scratch\\test_extra_positional_arguments-b.txt\n..........................\n----------------------------------------------------------------------\nRan 44 tests in 0.260s\n\nOK\nexit code: 0\n\n（上面第一行来自 test_extra_positional_arguments 故意触发的 argparse 用法错误，属预期行为：main([path1, path2]) 的多余位置参数按 open_questions 第 2 条视为用法错误。）",
+    "deviations_from_requirement": [
+      "AC-02/AC-06 的 line_count 与 BC-03、AC-07 相互矛盾，任何实现都不可能同时满足：AC-02/AC-06 要求 count_text('hello world\\nfoo bar\\n')['line_count'] == 3，而 BC-03 明文规定“以换行结尾不产生额外的空行”（'a\\n' → 1），AC-07 对同样以换行结尾的 'hello world\\n' 要求 1。按 scope_in 第 7 条（BC-01 至 BC-11 是实现与验收的唯一判定依据）与 BC-03 实现，实际返回 line_count == 2，char_count 20 / non_empty_line_count 2 / word_count 4 与 AC-02 一致。需由 Requirement Agent 统一口径（把 AC-02/AC-06 的期望改为 2）；Coding Agent 无权修改交付目录之外的 docs/evidence/v0.1-first-run/requirement.json，故本轮该条仍未修复。",
+      "AC-05 中 'cafe\\u0301' 期望 word_count == 2 与 BC-06/BC-09 冲突：BC-06 明文规定用正则 [A-Za-z]+ 在归一化文本上 findall，'cafe\\u0301' 只含一个 ASCII 字母片段 'cafe'，实得 1。另外 BC-09 自身的第四个例子 count_text('naïve')['word_count'] == 1 也与其自己的规则不符——需求文件中的 'naïve' 实测为预组合 U+00EF（码点 6e 61 ef 76 65），按 BC-06 正则得 'na' 与 've' 两段，实得 2。按 BC-06/BC-09 的规范条文实现；AC-05 的 12 条断言 11 条成立，仅 'cafe\\u0301'==2 不成立。同样需由 Requirement Agent 改写需求条目，本轮未能修复。",
+      "测试临时文件落点属实现细节、非需求功能：实测本机 DSH 沙箱（workspace-write）禁止向工作区之外写入（含 tempfile.TemporaryDirectory() 使用的系统临时目录），也禁止向本次运行中新建的目录写入；因此测试在交付目录内已存在的 .test-scratch 下写平铺文件、用例结束即删除，不使用 tempfile。复审建议改用 tempfile/系统临时目录，实测在该环境下不可行，故未采纳并在此说明理由。",
+      "新增的忽略规则放在交付目录内（examples/text-stats/.gitignore）而非复审建议的仓库根 .gitignore，因为角色规范禁止修改交付目录之外的文件；效果等价，已用 git check-ignore -v 验证规则命中 examples/text-stats/.test-scratch。",
+      "examples/text-stats/.test-scratch 下现存 12 个无法删除的 tmp* 子目录未清除：其中 11 个来自 v0.1 初版（tempfile.mkdtemp 在该目录内建目录后写入被沙箱拒绝、清理失败），第 12 个 tmpl8ymy245 是本轮诊断复现该失败时我误产生的遗留物，如实记录。icacls 返回“Access is denied”（当前令牌无权读取其 DACL），Remove-Item -Recurse -Force 与 shutil.rmtree 均返回“访问被拒绝”；本会话是受限子代理且审批已禁用，无法执行需要非受限权限的 ACL 修复脚本，故未清除，仅用交付目录内 .gitignore 消除其版本库噪声。彻底删除需仓库所有者在非受限终端执行（例如对这 12 个目录运行 Remove-Item -Recurse -Force）。"
+    ],
+    "report_file": "docs/evidence/v0.1-first-run/coding-report-revision-2.json"
+  }
+}

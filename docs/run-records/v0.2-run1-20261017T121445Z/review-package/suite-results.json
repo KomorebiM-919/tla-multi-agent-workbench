@@ -1,0 +1,111 @@
+{
+  "runId": "v0.2-run1-20261017T121445Z",
+  "generatedAt": "2026-10-17T13:16:29Z",
+  "results": [
+    {
+      "name": "01-delivery-unit-tests",
+      "command": "python -m unittest discover -s examples/text-stats -p test_*.py",
+      "exitCode": 0,
+      "durationSeconds": 2.2,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/01-delivery-unit-tests.txt",
+      "outputSha256": "132d6815943579c38a5221f68110f00fb752b7cc8ec6e20e17dd8adeb1696c6b"
+    },
+    {
+      "name": "02-review-run-evidence",
+      "command": "python tests/review-run-evidence.py --run-id v0.2-run1-20261017T121445Z --mapping docs/run-records/v0.2-run1-20261017T121445Z/requirement-mapping.json --allow-scope tests/workflow-harness.mjs --allow-scope tests/workflow-logic.test.mjs --allow-scope workflows/three-agent-mvp.js --allow-scope tests/bytecode-integration.test.mjs --allow-scope tests/extract-native-events.mjs --allow-scope tests/mutation-text-stats.py --allow-scope tests/probe-text-stats-requirement.py --allow-scope tests/run-review-suite.py",
+      "exitCode": 0,
+      "durationSeconds": 0.33,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/02-review-run-evidence.txt",
+      "outputSha256": "bca3c2bed8ddf3e3a49ac4c9d0dc65b12e521e82a997eb11fb3d063efb5db5ee"
+    },
+    {
+      "name": "03-review-self-test",
+      "command": "python tests/review-run-evidence.py --self-test",
+      "exitCode": 0,
+      "durationSeconds": 2.28,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/03-review-self-test.txt",
+      "outputSha256": "585c3f0f98ab569ade6230f1a6cabe7a4f84da8bbcbeabed8f44d6c32794f084"
+    },
+    {
+      "name": "04-independent-probe",
+      "command": "python tests/probe-text-stats-requirement.py",
+      "exitCode": 0,
+      "durationSeconds": 0.82,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/04-independent-probe.txt",
+      "outputSha256": "93e8e69430c7bc590823b16398a7487f2de714ef66f2c60c4b001c51462b29bf"
+    },
+    {
+      "name": "05-mutation-check",
+      "command": "python tests/mutation-text-stats.py",
+      "exitCode": 0,
+      "durationSeconds": 8.13,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/05-mutation-check.txt",
+      "outputSha256": "e36333522996563835c69c2faff12bb245516bbf88d6fcd7c9261bec7e7a401f"
+    },
+    {
+      "name": "06-workflow-logic",
+      "command": "node tests/workflow-logic.test.mjs",
+      "exitCode": 0,
+      "durationSeconds": 0.1,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/06-workflow-logic.txt",
+      "outputSha256": "75defd8f6d8285b33ed23ff6750252474e5b6953945ef8773679f52146ed6570"
+    },
+    {
+      "name": "07-bytecode-integration",
+      "command": "node tests/bytecode-integration.test.mjs",
+      "exitCode": 0,
+      "durationSeconds": 3.2,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/07-bytecode-integration.txt",
+      "outputSha256": "c0daaf0be791585a94416c31c8df514ae05fbbe53bd7d86d62f1f290789a56be"
+    },
+    {
+      "name": "08-preflight-claim",
+      "command": "node tests/preflight-claim-integration.test.mjs",
+      "exitCode": 0,
+      "durationSeconds": 0.61,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/08-preflight-claim.txt",
+      "outputSha256": "1604c3ad606d0a61b812b64059e079309a0954566ae87dba63280caba8fbb190"
+    },
+    {
+      "name": "09-approval-evidence",
+      "command": "node tests/approval-rejection-evidence.test.mjs",
+      "exitCode": 0,
+      "durationSeconds": 2.47,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/09-approval-evidence.txt",
+      "outputSha256": "3226d440c6c49c3111410a8d75391505f520f536e677a2a51f6cec1943b552a0"
+    },
+    {
+      "name": "10-approval-mutation",
+      "command": "node tests/approval-evidence-mutation.test.mjs",
+      "exitCode": 0,
+      "durationSeconds": 0.07,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/10-approval-mutation.txt",
+      "outputSha256": "451884fc8997aa852253f9a953a1613fd56a6d1bb982fc65abeca13e0c851d65"
+    },
+    {
+      "name": "11-property-text-stats",
+      "command": "python tests/property_text_stats.py",
+      "exitCode": 0,
+      "durationSeconds": 0.17,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/11-property-text-stats.txt",
+      "outputSha256": "1e69274a443004359c41c4d44826df6cd75367650ce74c966cd9e966a946b454"
+    },
+    {
+      "name": "12-tests-unittest",
+      "command": "python -m unittest discover -s tests -p test_*.py",
+      "exitCode": 0,
+      "durationSeconds": 1.62,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/12-tests-unittest.txt",
+      "outputSha256": "f2dcf207d9145383d243719e5abea57a31ee40ef93fc898c6b4d4f12ce47b21d"
+    },
+    {
+      "name": "13-native-events",
+      "command": "node tests/extract-native-events.mjs --parent session-3f96bf08-83ae-48d6-a239-0223d4b1c12c --workflow-name tla-v02-run1 --since 2026-10-17T12:00:00Z --evidence-dir docs/evidence/v0.2-run1-20261017T121445Z --script-file docs/run-records/v0.2-run1-20261017T121445Z/workflow-script-at-run.js --out docs/run-records/v0.2-run1-20261017T121445Z/native-events.json",
+      "exitCode": 0,
+      "durationSeconds": 4.86,
+      "output": "docs/run-records/v0.2-run1-20261017T121445Z/review-package/test-output/13-native-events.txt",
+      "outputSha256": "cf873c464fe250b4415fbece56fbd2bd89497e9d620ac3076a849a3d943d6250"
+    }
+  ],
+  "failed": []
+}

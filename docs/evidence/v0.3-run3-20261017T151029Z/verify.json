@@ -1,0 +1,61 @@
+{
+  "run_id": "v0.3-run3-20261017T151029Z",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-17T23:22:43.7138246+08:00",
+  "result": {
+    "command": "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": "...................................................................................\n----------------------------------------------------------------------\nRan 83 tests in 1.828s\n\nOK\n",
+    "ran_tests": 83,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "077c7bffee24f806fe1b7ab0bd855eb95ec7a5d4335684077958f021edafd210",
+        "bytes": 13008
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "c496a04792cba3a51c7c800c9c9fbc885d0833e63f1baa7bafb331fcfe743da0",
+        "bytes": 40850
+      }
+    ],
+    "bytecode_scope": {
+      "env_applied": true,
+      "env_variable": "PYTHONDONTWRITEBYTECODE",
+      "cache_dir": "examples/text-stats/__pycache__",
+      "entries_before": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14885,
+          "mtime_ms": 1792244851273,
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ],
+      "entries_after": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14885,
+          "mtime_ms": 1792244851273,
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ]
+    },
+    "requirement_conflicts": [],
+    "notes": "从仓库根目录 <repo-root> 执行带受控环境前缀的规范化命令，退出码 0，输出 83 tests / OK。__pycache__ 在运行前后逐文件清单、字节数、mtime 与 sha256 完全一致（无新增、无改写），故未写入字节码缓存。artifacts 为复跑之后以二进制读取原始字节计算的 sha256。未修改交付目录或仓库中任何文件。",
+    "generated_at": "2026-10-17T23:22:43.7138246+08:00"
+  }
+}

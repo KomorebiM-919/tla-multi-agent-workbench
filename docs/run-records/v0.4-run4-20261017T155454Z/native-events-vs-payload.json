@@ -1,0 +1,236 @@
+{
+  "description": "一次工作流运行的原生执行证据（DSH 会话日志白名单提取）",
+  "source": "DSH 会话日志：$DSH_HOME/sessions/<group>/<session>/session.v4.jsonl.zstd（宿主写入，本工具只读）",
+  "extraction": {
+    "script": "tests/extract-native-events.mjs",
+    "method": "逐帧解 zstd；只保留身份/角色/模型/沙箱/审批/时间/turn-step 计数/工具调用名与目标路径/产物归因",
+    "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "workflowName": "three-agent-mvp-run4",
+    "since": "2026-10-17T23:54:54+08:00",
+    "evidenceDir": "docs/evidence/v0.4-run4-20261017T155454Z",
+    "attributionRules": {
+      "write-tool": "子会话的写文件工具调用，其目标路径位于证据目录内（强归因）",
+      "time-window": "文件 mtime 落入唯一一个子会话的活动区间（次强归因，适用于经 shell 写出的产物）",
+      "unattributed": "两种证据都没有，或同时命中多个子会话；检查项会失败"
+    },
+    "excludedByDesign": [
+      "用户与助手消息正文",
+      "系统提示词与角色指令正文",
+      "工具结果载荷与 shell 命令原文",
+      "DSH 凭据存储中的任何内容"
+    ]
+  },
+  "workflowRun": {
+    "runId": "6f10f365-0eb8-4160-9dee-7f39ca23502f",
+    "name": "three-agent-mvp-run4",
+    "startedAt": "2026-10-17T15:56:28.933Z",
+    "endedAt": "2026-10-17T15:57:14.378Z",
+    "stopReason": "completed",
+    "agentCallCount": 1
+  },
+  "invocation": {
+    "callId": "call_00_InCXVj4vG7e3QtCkZ3Dr1492",
+    "at": "2026-10-17T15:56:28.894Z",
+    "metaName": "three-agent-mvp-run4",
+    "scriptBytes": 141953,
+    "scriptLines": 2432,
+    "scriptSha256": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8",
+    "argsKeys": [
+      "evidenceDir",
+      "promptDir",
+      "runId",
+      "runStartedAt",
+      "selfCheck",
+      "selfCheckRequired",
+      "task"
+    ],
+    "argsSha256": "6c974ea5dbc689f0c644c45475e45a447f0e50cf162af6cf55cbd711c9d341bd",
+    "matchesRepoScript": true,
+    "repoScriptBytes": 141953,
+    "repoScriptLines": 2432,
+    "repoScriptSha256": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8",
+    "matchesRepoScriptExact": true,
+    "matchesRepoScriptIgnoringTrailingNewline": true,
+    "byteDelta": 0
+  },
+  "agentCalls": [
+    {
+      "seq": 1,
+      "label": "Verifier (preflight)",
+      "phase": "preflight",
+      "childSessionId": "e5f8028d-206d-47d7-83d1-ada87b7a974b",
+      "startedAt": "2026-10-17T15:56:29.388Z",
+      "endedAt": "2026-10-17T15:57:14.329Z",
+      "outcome": "completed",
+      "childFound": true,
+      "childParentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "childParentMatches": true,
+      "childDelegationDepth": 1,
+      "childAgentPreset": "standard",
+      "childCreatedAt": "2026-10-17T15:56:29.359Z",
+      "model": {
+        "provider": "deepseek-account",
+        "model": "deepseek-flash",
+        "contextWindow": 1000000
+      },
+      "sandbox": {
+        "mode": "workspace-write",
+        "source": "delegation"
+      },
+      "approval": {
+        "policy": "never",
+        "source": "delegation"
+      },
+      "turnCount": 1,
+      "stepCount": 11,
+      "toolCallCount": 13,
+      "writesInEvidenceDir": [],
+      "shellArtifactMentions": [
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:56:49.846Z",
+          "artifacts": [
+            ".run-owner.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:56:56.393Z",
+          "artifacts": [
+            ".run-owner.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:57:06.679Z",
+          "artifacts": [
+            "preflight.json",
+            ".run-owner.json"
+          ]
+        },
+        {
+          "name": "pwsh",
+          "at": "2026-10-17T15:57:09.314Z",
+          "artifacts": [
+            "preflight.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/evidence/v0.4-run4-20261017T155454Z/preflight.json",
+      "sha256": "114fcc96f838aca6a78e8ea7db90b4be6bc1e96ea220e98225073e8b708e37e2",
+      "bytes": 2921,
+      "mtimeUtc": "2026-10-17T15:57:07.306Z",
+      "attribution": "time-window",
+      "writtenBy": [
+        {
+          "seq": 1,
+          "label": "Verifier (preflight)",
+          "childSessionId": "e5f8028d-206d-47d7-83d1-ada87b7a974b"
+        }
+      ]
+    },
+    {
+      "path": "docs/evidence/v0.4-run4-20261017T155454Z/requirement.json",
+      "sha256": null,
+      "bytes": null,
+      "mtimeUtc": null,
+      "attribution": "unattributed",
+      "writtenBy": []
+    },
+    {
+      "path": "docs/evidence/v0.4-run4-20261017T155454Z/coding-report.json",
+      "sha256": null,
+      "bytes": null,
+      "mtimeUtc": null,
+      "attribution": "unattributed",
+      "writtenBy": []
+    },
+    {
+      "path": "docs/evidence/v0.4-run4-20261017T155454Z/verify.json",
+      "sha256": null,
+      "bytes": null,
+      "mtimeUtc": null,
+      "attribution": "unattributed",
+      "writtenBy": []
+    },
+    {
+      "path": "docs/evidence/v0.4-run4-20261017T155454Z/review.json",
+      "sha256": null,
+      "bytes": null,
+      "mtimeUtc": null,
+      "attribution": "unattributed",
+      "writtenBy": []
+    },
+    {
+      "path": "docs/evidence/v0.4-run4-20261017T155454Z/.run-owner.json",
+      "sha256": "9e266974834baf2f3a1a06f245640a599b69a9e79ff0ed8654d3a112ae5eeecc",
+      "bytes": 277,
+      "mtimeUtc": "2026-10-17T15:56:38.452Z",
+      "attribution": "time-window",
+      "writtenBy": [
+        {
+          "seq": 1,
+          "label": "Verifier (preflight)",
+          "childSessionId": "e5f8028d-206d-47d7-83d1-ada87b7a974b"
+        }
+      ]
+    }
+  ],
+  "derivedChecks": [
+    {
+      "id": "run.single",
+      "ok": true,
+      "detail": "three-agent-mvp-run4 运行次数 = 1"
+    },
+    {
+      "id": "run.completed",
+      "ok": true,
+      "detail": "stopReason = completed"
+    },
+    {
+      "id": "calls.count",
+      "ok": true,
+      "detail": "agent-start = 1"
+    },
+    {
+      "id": "calls.parentMatches",
+      "ok": true,
+      "detail": "全部匹配"
+    },
+    {
+      "id": "calls.depth",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "id": "calls.noGrandchildren",
+      "ok": true,
+      "detail": "无再派生会话"
+    },
+    {
+      "id": "calls.uniqueChildren",
+      "ok": true,
+      "detail": "子会话数 = 1"
+    },
+    {
+      "id": "invocation.scriptDigest",
+      "ok": true,
+      "detail": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8 (141953 B)"
+    },
+    {
+      "id": "invocation.scriptMatchesRepo",
+      "ok": true,
+      "detail": "与 tests/.scratch/run4/payload.js 逐字节一致"
+    },
+    {
+      "id": "artifacts.writtenByChild",
+      "ok": false,
+      "detail": "docs/evidence/v0.4-run4-20261017T155454Z/requirement.json(writers=0,sha=missing),docs/evidence/v0.4-run4-20261017T155454Z/coding-report.json(writers=0,sha=missing),docs/evidence/v0.4-run4-20261017T155454Z/verify.json(writers=0,sha=missing),docs/evidence/v0.4-run4-20261017T155454Z/review.json(writers=0,sha=missing)"
+    }
+  ],
+  "checksAllPassed": false
+}

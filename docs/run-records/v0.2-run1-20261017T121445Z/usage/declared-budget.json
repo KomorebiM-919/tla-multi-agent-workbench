@@ -1,0 +1,8 @@
+{
+  "derivedAgentsAllowed": false,
+  "maxAgentCalls": 8,
+  "maxTotalTokens": null,
+  "note": "证据：docs/run-records/v0.2-run1-20261017T121445Z/approval.md §5「同时批准的执行预算与边界（来自同一条用户消息）」——「工作流子代理调用：最多 8 次（计划 5 次，最多 1 轮编码返工）」「派生代理：不允许子代理再派生其他代理扩大调用量」。run2 的授权（m08801）沿用同一执行边界，因此两个运行都按「最多 8 次子代理调用」判定。",
+  "source": "docs/run-records/v0.2-run1-20261017T121445Z/approval.md §5（同一条用户消息里的执行预算）",
+  "tokenBudgetNote": "批准消息只声明了调用次数上限，没有声明 token 上限：因此本工具不做事后 token 超限判定（字段保持 null），也不得据此宣称「token 在预算内」。"
+}

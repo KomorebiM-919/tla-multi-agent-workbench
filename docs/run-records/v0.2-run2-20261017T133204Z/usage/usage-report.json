@@ -1,0 +1,2302 @@
+{
+  "schemaVersion": 1,
+  "tool": "tests/extract-usage-report.mjs",
+  "toolVersion": "1.0.0",
+  "run": {
+    "runId": "v0.2-run2-20261017T133204Z",
+    "workflowName": "tla-v02-run2",
+    "evidenceDir": null,
+    "runRecordDir": "docs/run-records/v0.2-run2-20261017T133204Z",
+    "parentSessionId": "3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "agentCallCountFromRecord": 10
+  },
+  "scope": {
+    "sessionRoot": "<DSH_HOME>/sessions",
+    "includeParent": false,
+    "attributedBy": "native-events",
+    "attributionSourceSha256": "1cd3090d341a3d6526403d7c6cf1d94a191377eee22bf50352f1a2c8da2f5a3c"
+  },
+  "coverage": {
+    "status": "complete",
+    "problems": [],
+    "logFiles": 61,
+    "sessionsCounted": 10,
+    "ignoredSessions": 50,
+    "runWindow": {
+      "start": "2026-10-17T13:36:52.511Z",
+      "end": "2026-10-17T13:58:48.553Z",
+      "slackMs": 60000,
+      "basis": "父会话同时承载其他任务，只有落在窗口内且父会话是本运行会话的未归因会话才算漏记"
+    },
+    "expectedSessionIds": [
+      "1095e693-db97-4f16-9191-d4b0605824fe",
+      "21a4efb0-7b86-4cf1-b79f-80512d2232e8",
+      "3139fda0-8eed-40d9-9d4c-326c51199f57",
+      "40da4df5-6e08-42fd-a5b3-ea34484cbd40",
+      "471aa1d9-b6ba-46bf-bfc1-4cc71341741c",
+      "96ac7036-3331-45d5-8934-d7f3cde51af4",
+      "b3f5752a-d9ad-4b98-b1bd-bca3d0007b59",
+      "db088775-9176-40df-9876-9f0032c343e6",
+      "f51fbd4f-1d25-4d1e-9850-a582c301c089",
+      "f5adad0a-83c5-437b-b030-27cdad08c66d"
+    ],
+    "missingSessionIds": [],
+    "sessionsWithoutCompleteUsage": [],
+    "badLogs": [],
+    "derivedSessions": [],
+    "unattributedSessions": [],
+    "note": "每个已归因的子会话都有可解析日志，且每条 assistant/message 都带 usage"
+  },
+  "fieldSemantics": {
+    "usagePath": "assistant/message → data.usage",
+    "fields": [
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "totalTokens"
+    ],
+    "perFieldStates": {
+      "inputTokens": {
+        "value": 184,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "outputTokens": {
+        "value": 184,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "cacheReadTokens": {
+        "value": 184,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "cacheWriteTokens": {
+        "value": 0,
+        "zero": 184,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      },
+      "totalTokens": {
+        "value": 184,
+        "zero": 0,
+        "null": 0,
+        "absent": 0,
+        "invalid": 0
+      }
+    },
+    "totalIdentity": {
+      "rule": "totalTokens = inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens",
+      "checked": 184,
+      "matched": 184,
+      "mismatched": 0
+    },
+    "perRequestOrCumulative": "unknown-until-heuristic-says-otherwise",
+    "heuristicNote": "逐会话给出 heuristic（per-request-likely / cumulative-likely / unknown）；证据不足时保持 unknown",
+    "cacheWriteZero": {
+      "sessionsReportingZeroOnly": true,
+      "interpretation": "0 是\"显式上报的 0\"，不能推断 provider 不支持上报该字段，也不能推断缓存写入不产生费用"
+    },
+    "inputCacheReadIndependence": "unknown",
+    "inputCacheReadNote": "不假设 inputTokens 与 cacheReadTokens 互不重叠：本报告同时给出分项与 totalTokens 合计，两者是否可加由字段语义决定，未核实前不自行相加冒充真实总量",
+    "costFieldsPresent": false,
+    "costNote": "日志里没有 price/cost/billing 字段"
+  },
+  "totals": {
+    "sessions": 10,
+    "messages": 184,
+    "messagesWithUsage": 184,
+    "messagesMissingUsage": 0,
+    "inputTokens": 415664,
+    "outputTokens": 240267,
+    "cacheReadTokens": 8117760,
+    "cacheWriteTokens": 0,
+    "totalTokens": 8773691,
+    "sumOfComponents": 8773691,
+    "componentsMatchTotalTokens": true,
+    "buckets": {
+      "attributed": {
+        "sessions": 10,
+        "messages": 184,
+        "totalTokens": 8773691
+      },
+      "derived": {
+        "sessions": 0,
+        "messages": 0,
+        "totalTokens": 0
+      },
+      "unattributed": {
+        "sessions": 0,
+        "messages": 0,
+        "totalTokens": 0
+      }
+    },
+    "runTotalTokens": 8773691,
+    "byAttempt": [
+      {
+        "attempt": 1,
+        "phase": "cache",
+        "label": "Cache Collector",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 21,
+        "messagesMissingUsage": 0,
+        "inputTokens": 20706,
+        "outputTokens": 6983,
+        "cacheReadTokens": 532480,
+        "cacheWriteTokens": 0,
+        "totalTokens": 560169
+      },
+      {
+        "attempt": 1,
+        "phase": "coding",
+        "label": "Coding Agent",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 27,
+        "messagesMissingUsage": 0,
+        "inputTokens": 126118,
+        "outputTokens": 50717,
+        "cacheReadTokens": 1593088,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1769923
+      },
+      {
+        "attempt": 1,
+        "phase": "preflight",
+        "label": "Verifier (preflight)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 8,
+        "messagesMissingUsage": 0,
+        "inputTokens": 10130,
+        "outputTokens": 6432,
+        "cacheReadTokens": 160384,
+        "cacheWriteTokens": 0,
+        "totalTokens": 176946
+      },
+      {
+        "attempt": 1,
+        "phase": "requirement",
+        "label": "Requirement Agent",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 25,
+        "messagesMissingUsage": 0,
+        "inputTokens": 26727,
+        "outputTokens": 48739,
+        "cacheReadTokens": 1233024,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1308490
+      },
+      {
+        "attempt": 1,
+        "phase": "review",
+        "label": "Review Agent",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 20,
+        "messagesMissingUsage": 0,
+        "inputTokens": 55911,
+        "outputTokens": 35737,
+        "cacheReadTokens": 1172864,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1264512
+      },
+      {
+        "attempt": 1,
+        "phase": "verify",
+        "label": "Verifier (verify)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 13,
+        "messagesMissingUsage": 0,
+        "inputTokens": 18313,
+        "outputTokens": 6810,
+        "cacheReadTokens": 307456,
+        "cacheWriteTokens": 0,
+        "totalTokens": 332579
+      },
+      {
+        "attempt": 2,
+        "phase": "cache-revision-2",
+        "label": "Cache Collector (revision 2)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 14,
+        "messagesMissingUsage": 0,
+        "inputTokens": 7742,
+        "outputTokens": 6482,
+        "cacheReadTokens": 271872,
+        "cacheWriteTokens": 0,
+        "totalTokens": 286096
+      },
+      {
+        "attempt": 2,
+        "phase": "coding-revision-2",
+        "label": "Coding Agent (revision 2)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 23,
+        "messagesMissingUsage": 0,
+        "inputTokens": 59593,
+        "outputTokens": 32961,
+        "cacheReadTokens": 1193984,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1286538
+      },
+      {
+        "attempt": 2,
+        "phase": "review-revision-2",
+        "label": "Review Agent (revision 2)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 18,
+        "messagesMissingUsage": 0,
+        "inputTokens": 47773,
+        "outputTokens": 34708,
+        "cacheReadTokens": 1038208,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1120689
+      },
+      {
+        "attempt": 2,
+        "phase": "verify-revision-2",
+        "label": "Verifier (verify) (revision 2)",
+        "model": "deepseek-flash",
+        "provider": "deepseek-account",
+        "sessions": 1,
+        "messages": 15,
+        "messagesMissingUsage": 0,
+        "inputTokens": 42651,
+        "outputTokens": 10698,
+        "cacheReadTokens": 614400,
+        "cacheWriteTokens": 0,
+        "totalTokens": 667749
+      }
+    ],
+    "attempts": [
+      1,
+      2
+    ]
+  },
+  "budget": {
+    "declared": true,
+    "verdict": "OVER_BUDGET",
+    "reasons": [
+      "观察到的子会话数 10 超过声明上限 8（超出 2 个）",
+      "声明里没有 maxTotalTokens：只判定调用次数，不判定 token 量"
+    ],
+    "declaredBudget": {
+      "derivedAgentsAllowed": false,
+      "maxAgentCalls": 8,
+      "maxTotalTokens": null,
+      "note": "证据：docs/run-records/v0.2-run1-20261017T121445Z/approval.md §5「同时批准的执行预算与边界（来自同一条用户消息）」——「工作流子代理调用：最多 8 次（计划 5 次，最多 1 轮编码返工）」「派生代理：不允许子代理再派生其他代理扩大调用量」。run2 的授权（m08801）沿用同一执行边界，因此两个运行都按「最多 8 次子代理调用」判定。",
+      "source": "docs/run-records/v0.2-run1-20261017T121445Z/approval.md §5（同一条用户消息里的执行预算）",
+      "tokenBudgetNote": "批准消息只声明了调用次数上限，没有声明 token 上限：因此本工具不做事后 token 超限判定（字段保持 null），也不得据此宣称「token 在预算内」。"
+    }
+  },
+  "cost": {
+    "status": "NOT_PROVIDED",
+    "currency": null,
+    "note": "未提供价格：价格与渠道计费未核实，本工具不输出人民币成本"
+  },
+  "sessions": [
+    {
+      "seq": 1,
+      "label": "Verifier (preflight)",
+      "phase": "preflight",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "b3f5752a-d9ad-4b98-b1bd-bca3d0007b59",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:36:52.952Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 8,
+      "messagesWithUsage": 8,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 10130,
+        "outputTokens": 6432,
+        "cacheReadTokens": 160384,
+        "cacheWriteTokens": 0,
+        "totalTokens": 176946
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 8,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 8,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 8,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 8,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 8,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 176946,
+        "lastTotalTokens": 26402,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 17247
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 19852
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 20452
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 20928
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 21732
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 25011
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 25322
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 26402
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 8,
+        "matched": 8,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:36:55.524Z",
+      "lastMessageAt": "2026-10-17T13:37:33.664Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/b3f5752a-d9ad-4b98-b1bd-bca3d0007b59/session.v4.jsonl.zstd",
+        "bytes": 67862,
+        "compressed": true,
+        "frames": 38,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "ffc51e6ebe4a7c62e9ecd9ed1432a113babce8d83c8dd078a1cda58165ded32b"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 2,
+      "label": "Requirement Agent",
+      "phase": "requirement",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "40da4df5-6e08-42fd-a5b3-ea34484cbd40",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:37:33.690Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 25,
+      "messagesWithUsage": 25,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 26727,
+        "outputTokens": 48739,
+        "cacheReadTokens": 1233024,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1308490
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 25,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 25,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 25,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 25,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 25,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 1308490,
+        "lastTotalTokens": 85941,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 21580
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 23814
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 28838
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 31759
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 32492
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 34729
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 36023
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 36565
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 37735
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 38536
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 45087
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 45558
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 50210
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 51201
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 53795
+          },
+          {
+            "turn": 1,
+            "step": 16,
+            "totalTokens": 61485
+          },
+          {
+            "turn": 1,
+            "step": 17,
+            "totalTokens": 62608
+          },
+          {
+            "turn": 1,
+            "step": 18,
+            "totalTokens": 73718
+          },
+          {
+            "turn": 1,
+            "step": 19,
+            "totalTokens": 74111
+          },
+          {
+            "turn": 1,
+            "step": 20,
+            "totalTokens": 74717
+          },
+          {
+            "turn": 1,
+            "step": 21,
+            "totalTokens": 75856
+          },
+          {
+            "turn": 1,
+            "step": 22,
+            "totalTokens": 76449
+          },
+          {
+            "turn": 1,
+            "step": 23,
+            "totalTokens": 77676
+          },
+          {
+            "turn": 1,
+            "step": 24,
+            "totalTokens": 78007
+          },
+          {
+            "turn": 1,
+            "step": 25,
+            "totalTokens": 85941
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 25,
+        "matched": 25,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:37:41.472Z",
+      "lastMessageAt": "2026-10-17T13:41:27.213Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/40da4df5-6e08-42fd-a5b3-ea34484cbd40/session.v4.jsonl.zstd",
+        "bytes": 288389,
+        "compressed": true,
+        "frames": 107,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "d98d525705e7d21b9416e9d4ceb9d6aed125a47a0faaea89f19bf66ea8a68ff9"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 3,
+      "label": "Coding Agent",
+      "phase": "coding",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "21a4efb0-7b86-4cf1-b79f-80512d2232e8",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:41:27.245Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 27,
+      "messagesWithUsage": 27,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 126118,
+        "outputTokens": 50717,
+        "cacheReadTokens": 1593088,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1769923
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 27,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 27,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 27,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 27,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 27,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "unknown",
+        "note": "既不等于总和也不单调，口径不明",
+        "sumOfTotalTokens": 1769923,
+        "lastTotalTokens": 38121,
+        "nonDecreasing": false,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 24553
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 26378
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 26851
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 31773
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 37333
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 39703
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 49237
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 63669
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 66382
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 72387
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 73179
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 77470
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 51106
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 65746
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 66136
+          },
+          {
+            "turn": 1,
+            "step": 16,
+            "totalTokens": 66818
+          },
+          {
+            "turn": 1,
+            "step": 17,
+            "totalTokens": 82550
+          },
+          {
+            "turn": 1,
+            "step": 18,
+            "totalTokens": 86534
+          },
+          {
+            "turn": 1,
+            "step": 19,
+            "totalTokens": 87099
+          },
+          {
+            "turn": 1,
+            "step": 20,
+            "totalTokens": 87985
+          },
+          {
+            "turn": 1,
+            "step": 21,
+            "totalTokens": 88236
+          },
+          {
+            "turn": 1,
+            "step": 22,
+            "totalTokens": 88453
+          },
+          {
+            "turn": 1,
+            "step": 23,
+            "totalTokens": 88910
+          },
+          {
+            "turn": 1,
+            "step": 24,
+            "totalTokens": 92585
+          },
+          {
+            "turn": 1,
+            "step": 25,
+            "totalTokens": 92914
+          },
+          {
+            "turn": 1,
+            "step": 26,
+            "totalTokens": 97815
+          },
+          {
+            "turn": 1,
+            "step": 27,
+            "totalTokens": 38121
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 27,
+        "matched": 27,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:41:29.995Z",
+      "lastMessageAt": "2026-10-17T13:45:38.088Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/21a4efb0-7b86-4cf1-b79f-80512d2232e8/session.v4.jsonl.zstd",
+        "bytes": 344530,
+        "compressed": true,
+        "frames": 127,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "46f7c171d2859488c0dea0412b6f1516b1848f4db78c8cdceb09258c5a124ac4"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 4,
+      "label": "Verifier (verify)",
+      "phase": "verify",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "96ac7036-3331-45d5-8934-d7f3cde51af4",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:45:38.112Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 13,
+      "messagesWithUsage": 13,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 18313,
+        "outputTokens": 6810,
+        "cacheReadTokens": 307456,
+        "cacheWriteTokens": 0,
+        "totalTokens": 332579
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 13,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 13,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 13,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 13,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 13,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 332579,
+        "lastTotalTokens": 34360,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 17151
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 19411
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 20111
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 20692
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 21048
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 21709
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 22312
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 28310
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 29885
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 32028
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 32624
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 32938
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 34360
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 13,
+        "matched": 13,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:45:41.401Z",
+      "lastMessageAt": "2026-10-17T13:46:34.255Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/96ac7036-3331-45d5-8934-d7f3cde51af4/session.v4.jsonl.zstd",
+        "bytes": 91317,
+        "compressed": true,
+        "frames": 57,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "09dbb4257526fc7178d33330391b29dd2a85ef79659bbc7cb43c5ddf74b8781c"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 5,
+      "label": "Review Agent",
+      "phase": "review",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "471aa1d9-b6ba-46bf-bfc1-4cc71341741c",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:46:34.281Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 20,
+      "messagesWithUsage": 20,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 55911,
+        "outputTokens": 35737,
+        "cacheReadTokens": 1172864,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1264512
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 20,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 20,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 20,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 20,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 20,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 1264512,
+        "lastTotalTokens": 97319,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 28108
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 30116
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 36197
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 41179
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 46402
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 49463
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 55830
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 57860
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 61848
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 63035
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 66961
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 67875
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 68724
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 71293
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 73721
+          },
+          {
+            "turn": 1,
+            "step": 16,
+            "totalTokens": 81505
+          },
+          {
+            "turn": 1,
+            "step": 17,
+            "totalTokens": 84171
+          },
+          {
+            "turn": 1,
+            "step": 18,
+            "totalTokens": 90851
+          },
+          {
+            "turn": 1,
+            "step": 19,
+            "totalTokens": 92054
+          },
+          {
+            "turn": 1,
+            "step": 20,
+            "totalTokens": 97319
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 20,
+        "matched": 20,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:46:35.966Z",
+      "lastMessageAt": "2026-10-17T13:49:39.641Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/471aa1d9-b6ba-46bf-bfc1-4cc71341741c/session.v4.jsonl.zstd",
+        "bytes": 273113,
+        "compressed": true,
+        "frames": 87,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "ee2686bdb40a2ea0acf837d3e176f348e73d1c6500ab49ca1fef20c9222fd95f"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 6,
+      "label": "Cache Collector",
+      "phase": "cache",
+      "attempt": 1,
+      "attribution": "native-events",
+      "sessionId": "db088775-9176-40df-9876-9f0032c343e6",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:49:39.669Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 21,
+      "messagesWithUsage": 21,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 20706,
+        "outputTokens": 6983,
+        "cacheReadTokens": 532480,
+        "cacheWriteTokens": 0,
+        "totalTokens": 560169
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 21,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 21,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 21,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 21,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 21,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 560169,
+        "lastTotalTokens": 36251,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 16171
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 16801
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 17881
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 19054
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 19238
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 21234
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 21402
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 24394
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 26895
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 27026
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 28351
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 28689
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 29331
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 30936
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 31115
+          },
+          {
+            "turn": 1,
+            "step": 16,
+            "totalTokens": 31670
+          },
+          {
+            "turn": 1,
+            "step": 17,
+            "totalTokens": 32345
+          },
+          {
+            "turn": 1,
+            "step": 18,
+            "totalTokens": 33119
+          },
+          {
+            "turn": 1,
+            "step": 19,
+            "totalTokens": 33498
+          },
+          {
+            "turn": 1,
+            "step": 20,
+            "totalTokens": 34768
+          },
+          {
+            "turn": 1,
+            "step": 21,
+            "totalTokens": 36251
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 21,
+        "matched": 21,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:49:42.912Z",
+      "lastMessageAt": "2026-10-17T13:50:44.414Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/db088775-9176-40df-9876-9f0032c343e6/session.v4.jsonl.zstd",
+        "bytes": 104599,
+        "compressed": true,
+        "frames": 92,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "a7a2564a026ac7acc09e11bd7a79905814ae03a1a50e53ec3005fc3f6d17fd95"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 7,
+      "label": "Coding Agent (revision 2)",
+      "phase": "coding-revision-2",
+      "attempt": 2,
+      "attribution": "native-events",
+      "sessionId": "f5adad0a-83c5-437b-b030-27cdad08c66d",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:50:44.438Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 23,
+      "messagesWithUsage": 23,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 59593,
+        "outputTokens": 32961,
+        "cacheReadTokens": 1193984,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1286538
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 23,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 23,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 23,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 23,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 23,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "unknown",
+        "note": "既不等于总和也不单调，口径不明",
+        "sumOfTotalTokens": 1286538,
+        "lastTotalTokens": 47287,
+        "nonDecreasing": false,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 28698
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 32262
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 42867
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 49756
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 54917
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 56500
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 64401
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 66341
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 68555
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 71118
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 71800
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 72714
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 73214
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 74913
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 78786
+          },
+          {
+            "turn": 1,
+            "step": 16,
+            "totalTokens": 84495
+          },
+          {
+            "turn": 1,
+            "step": 17,
+            "totalTokens": 38620
+          },
+          {
+            "turn": 1,
+            "step": 18,
+            "totalTokens": 39096
+          },
+          {
+            "turn": 1,
+            "step": 19,
+            "totalTokens": 40312
+          },
+          {
+            "turn": 1,
+            "step": 20,
+            "totalTokens": 41404
+          },
+          {
+            "turn": 1,
+            "step": 21,
+            "totalTokens": 44045
+          },
+          {
+            "turn": 1,
+            "step": 22,
+            "totalTokens": 44437
+          },
+          {
+            "turn": 1,
+            "step": 23,
+            "totalTokens": 47287
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 23,
+        "matched": 23,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:50:45.699Z",
+      "lastMessageAt": "2026-10-17T13:54:01.188Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/f5adad0a-83c5-437b-b030-27cdad08c66d/session.v4.jsonl.zstd",
+        "bytes": 254289,
+        "compressed": true,
+        "frames": 104,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "4060d02cfc78b1f557dd02e466a43aa92e5eb2f50bad05db3d2337523725ea53"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 8,
+      "label": "Verifier (verify) (revision 2)",
+      "phase": "verify-revision-2",
+      "attempt": 2,
+      "attribution": "native-events",
+      "sessionId": "3139fda0-8eed-40d9-9d4c-326c51199f57",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:54:01.212Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 15,
+      "messagesWithUsage": 15,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 42651,
+        "outputTokens": 10698,
+        "cacheReadTokens": 614400,
+        "cacheWriteTokens": 0,
+        "totalTokens": 667749
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 15,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 15,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 15,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 15,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 15,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 667749,
+        "lastTotalTokens": 65946,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 17161
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 19348
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 22206
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 22973
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 23572
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 24309
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 46142
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 56190
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 57193
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 58577
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 62724
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 63220
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 63956
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 64232
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 65946
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 15,
+        "matched": 15,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:54:02.897Z",
+      "lastMessageAt": "2026-10-17T13:55:15.841Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/3139fda0-8eed-40d9-9d4c-326c51199f57/session.v4.jsonl.zstd",
+        "bytes": 138863,
+        "compressed": true,
+        "frames": 68,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "0cdd7aeda4f76d09d3adae3febfddaf1a238c871f7f5264460948d701a65bb9a"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 9,
+      "label": "Review Agent (revision 2)",
+      "phase": "review-revision-2",
+      "attempt": 2,
+      "attribution": "native-events",
+      "sessionId": "1095e693-db97-4f16-9191-d4b0605824fe",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:55:15.866Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 18,
+      "messagesWithUsage": 18,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 47773,
+        "outputTokens": 34708,
+        "cacheReadTokens": 1038208,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1120689
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 18,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 18,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 18,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 18,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 18,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 1120689,
+        "lastTotalTokens": 91513,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 28576
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 30695
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 35263
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 41026
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 47827
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 55172
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 55566
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 61450
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 63960
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 66266
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 69272
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 70862
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 74609
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 76818
+          },
+          {
+            "turn": 1,
+            "step": 15,
+            "totalTokens": 79052
+          },
+          {
+            "turn": 1,
+            "step": 16,
+            "totalTokens": 85050
+          },
+          {
+            "turn": 1,
+            "step": 17,
+            "totalTokens": 87712
+          },
+          {
+            "turn": 1,
+            "step": 18,
+            "totalTokens": 91513
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 18,
+        "matched": 18,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:55:17.741Z",
+      "lastMessageAt": "2026-10-17T13:57:58.535Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/1095e693-db97-4f16-9191-d4b0605824fe/session.v4.jsonl.zstd",
+        "bytes": 259861,
+        "compressed": true,
+        "frames": 81,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "d013371fc06a4c97a7b6d2fc880c05bc69b6477e10cdc868aa64568dd7009a38"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    },
+    {
+      "seq": 10,
+      "label": "Cache Collector (revision 2)",
+      "phase": "cache-revision-2",
+      "attempt": 2,
+      "attribution": "native-events",
+      "sessionId": "f51fbd4f-1d25-4d1e-9850-a582c301c089",
+      "parentSession": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "origin": "subagent",
+      "delegationDepth": 1,
+      "agentPreset": "standard",
+      "createdAt": "2026-10-17T13:57:58.560Z",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "providers": [
+        "deepseek-account"
+      ],
+      "models": [
+        "deepseek-flash"
+      ],
+      "messages": 14,
+      "messagesWithUsage": 14,
+      "messagesMissingUsage": 0,
+      "usage": {
+        "inputTokens": 7742,
+        "outputTokens": 6482,
+        "cacheReadTokens": 271872,
+        "cacheWriteTokens": 0,
+        "totalTokens": 286096
+      },
+      "fieldStates": {
+        "inputTokens": {
+          "value": 14,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "outputTokens": {
+          "value": 14,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheReadTokens": {
+          "value": 14,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "cacheWriteTokens": {
+          "value": 0,
+          "zero": 14,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        },
+        "totalTokens": {
+          "value": 14,
+          "zero": 0,
+          "null": 0,
+          "absent": 0,
+          "invalid": 0
+        }
+      },
+      "usageSemantics": {
+        "heuristic": "per-request-likely",
+        "note": "单调不减且总和大于最后一条，符合逐请求口径",
+        "sumOfTotalTokens": 286096,
+        "lastTotalTokens": 25371,
+        "nonDecreasing": true,
+        "sequence": [
+          {
+            "turn": 1,
+            "step": 1,
+            "totalTokens": 16163
+          },
+          {
+            "turn": 1,
+            "step": 2,
+            "totalTokens": 16633
+          },
+          {
+            "turn": 1,
+            "step": 3,
+            "totalTokens": 17077
+          },
+          {
+            "turn": 1,
+            "step": 4,
+            "totalTokens": 17528
+          },
+          {
+            "turn": 1,
+            "step": 5,
+            "totalTokens": 17719
+          },
+          {
+            "turn": 1,
+            "step": 6,
+            "totalTokens": 19285
+          },
+          {
+            "turn": 1,
+            "step": 7,
+            "totalTokens": 20403
+          },
+          {
+            "turn": 1,
+            "step": 8,
+            "totalTokens": 20916
+          },
+          {
+            "turn": 1,
+            "step": 9,
+            "totalTokens": 21546
+          },
+          {
+            "turn": 1,
+            "step": 10,
+            "totalTokens": 21822
+          },
+          {
+            "turn": 1,
+            "step": 11,
+            "totalTokens": 23405
+          },
+          {
+            "turn": 1,
+            "step": 12,
+            "totalTokens": 23680
+          },
+          {
+            "turn": 1,
+            "step": 13,
+            "totalTokens": 24548
+          },
+          {
+            "turn": 1,
+            "step": 14,
+            "totalTokens": 25371
+          }
+        ]
+      },
+      "duplicates": {
+        "duplicateSeq": [],
+        "duplicateTurnStep": [],
+        "replayedToolCallIds": [],
+        "identicalConsecutiveTotals": 0
+      },
+      "identityCheck": {
+        "checked": 14,
+        "matched": 14,
+        "mismatched": 0
+      },
+      "firstMessageAt": "2026-10-17T13:58:00.422Z",
+      "lastMessageAt": "2026-10-17T13:58:48.445Z",
+      "log": {
+        "path": "<DSH_HOME>/sessions/<group>/f51fbd4f-1d25-4d1e-9850-a582c301c089/session.v4.jsonl.zstd",
+        "bytes": 73228,
+        "compressed": true,
+        "frames": 61,
+        "failedFrames": 0,
+        "badLines": 0,
+        "sha256": "4ec39d139cf949ed3fba19c9b47424c1d56a6ffd2a386ef2ca6e55d42593046e"
+      },
+      "derivation": {
+        "possible": false,
+        "count": 0,
+        "tools": [],
+        "note": null
+      }
+    }
+  ],
+  "limitations": [
+    "只读日志推断：日志缺字段/坏帧/缺日志时判 INCOMPLETE，不输出\"在预算内\"",
+    "usage 是逐请求还是累计由启发式判断；未知时不做加减推断",
+    "cacheWriteTokens 为 0 只表示\"上报了 0\"，不代表 provider 不支持该字段",
+    "再派生会话单独列出：若某个子代理内部又派生了代理，其用量不在本报告的 sessions 里",
+    "没有价格信息，因此没有货币成本；token 数不等于费用",
+    "父会话默认排除：父会话包含与本次运行无关的对话，混入会高估用量",
+    "尝试轮次取自阶段名后缀 -revision-N 或标签 (revision N)：记录里没有真正的 attempt 字段，轮次是名字派生的，改名会让轮次失真"
+  ]
+}

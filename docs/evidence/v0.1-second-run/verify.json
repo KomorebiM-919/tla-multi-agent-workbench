@@ -1,0 +1,27 @@
+{
+  "run_id": "v0.1-second-run",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-16T20:01:08.401997+08:00",
+  "result": {
+    "command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": ".......................................................\n----------------------------------------------------------------------\nRan 55 tests in 0.479s\n\nOK\n",
+    "ran_tests": 55,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "00149d88e886465c9bde1c2a206a1baf1a8d0bdb4dc0647cb59f5a74b31207a7",
+        "bytes": 9947
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "6fb84eb2b9a900670ce5fe74aa3602757ebf2b97ba7d8043c8f42df73753d609",
+        "bytes": 24249
+      }
+    ],
+    "notes": "命令从仓库根目录执行，未改写、未增删参数。unittest 将进度与结果写入 stderr（55 个测试点、分隔线、统计行、OK 行），此处按原样记录该程序输出，未做摘要或改写。退出码 0 由独立捕获（写入运行环境临时文件后读回）取得；harness 未报告非零退出标记，与之一致。交付目录 examples/text-stats 下的 .test-scratch 仅含 .gitkeep 与若干临时子目录，不含 test_*.py 文件，未被 discover 收集。验证过程未修改任何交付文件、源码或测试文件。",
+    "generated_at": "2026-10-16T20:01:08.401997+08:00"
+  }
+}

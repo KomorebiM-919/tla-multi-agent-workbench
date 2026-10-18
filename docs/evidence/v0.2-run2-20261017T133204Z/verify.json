@@ -1,0 +1,28 @@
+{
+  "run_id": "v0.2-run2-20261017T133204Z",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-17T21:46:22.0982015+08:00",
+  "result": {
+    "command": "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.812s\n\nOK\n",
+    "ran_tests": 81,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a",
+        "bytes": 13008
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e",
+        "bytes": 37430
+      }
+    ],
+    "requirement_conflicts": [],
+    "notes": "Ran from repo root <repo-root> with the mandated single-variable env prefix. Output captured from stdout+stderr of that one command; the progress line holds exactly one '.' per test (81 test methods in the file), unmatched '-'. Final line 'OK' matches exit code 0. Artifact sha256 values were recomputed by binary reading after the test run. __pycache__ manifest is byte-identical before/after (no new .pyc, no rewrite), so no bytecode cache write occurred. No requirement conflicts found across R-01..R-37 / AC / BC.",
+    "generated_at": "2026-10-17T21:46:22.0982015+08:00"
+  }
+}

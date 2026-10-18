@@ -1,0 +1,1090 @@
+{
+  "tool": "tests/probe-text-stats-requirement.py",
+  "method": "independent derivation from the approved requirement text; the delivered test file is never imported",
+  "target": "<repo-root>\\examples\\text-stats\\text_stats.py",
+  "moduleSha256": "17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a",
+  "checks": [
+    {
+      "criterion": "AC-04",
+      "name": "reference_text.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-04",
+      "name": "reference_text.values",
+      "ok": true,
+      "detail": "actual=(20, 2, 2, 4) expected=(20, 2, 2, 4)"
+    },
+    {
+      "criterion": "AC-04",
+      "name": "reference_text.types",
+      "ok": true,
+      "detail": "{'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}"
+    },
+    {
+      "criterion": "AC-05",
+      "name": "whitespace_only_lines.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-05",
+      "name": "whitespace_only_lines.values",
+      "ok": true,
+      "detail": "actual=(5, 2, 0, 0) expected=(5, 2, 0, 0)"
+    },
+    {
+      "criterion": "AC-05",
+      "name": "whitespace_only_lines.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "crlf_pair.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "crlf_pair.values",
+      "ok": true,
+      "detail": "actual=(3, 2, 2, 2) expected=(3, 2, 2, 2)"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "crlf_pair.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 2}"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "latin1_accent.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "latin1_accent.values",
+      "ok": true,
+      "detail": "actual=(4, 1, 1, 1) expected=(4, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "latin1_accent.types",
+      "ok": true,
+      "detail": "{'char_count': 4, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "combining_accent.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "combining_accent.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 1) expected=(5, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-17",
+      "name": "combining_accent.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "BC-08",
+      "name": "code_points_not_bytes.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-08",
+      "name": "code_points_not_bytes.values",
+      "ok": true,
+      "detail": "actual=(2, 1, 1, 0) expected=(2, 1, 1, 0)"
+    },
+    {
+      "criterion": "BC-08",
+      "name": "code_points_not_bytes.types",
+      "ok": true,
+      "detail": "{'char_count': 2, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 0}"
+    },
+    {
+      "criterion": "AC-14",
+      "name": "single_bom.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-14",
+      "name": "single_bom.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 1) expected=(3, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-14",
+      "name": "single_bom.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-14",
+      "name": "double_bom.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-14",
+      "name": "double_bom.values",
+      "ok": true,
+      "detail": "actual=(4, 1, 1, 1) expected=(4, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-14",
+      "name": "double_bom.types",
+      "ok": true,
+      "detail": "{'char_count': 4, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "BC-03",
+      "name": "bom_twice_not_blank.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-03",
+      "name": "bom_twice_not_blank.values",
+      "ok": true,
+      "detail": "actual=(1, 1, 1, 0) expected=(1, 1, 1, 0)"
+    },
+    {
+      "criterion": "BC-03",
+      "name": "bom_twice_not_blank.types",
+      "ok": true,
+      "detail": "{'char_count': 1, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 0}"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "line_separator_u2028.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "line_separator_u2028.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "line_separator_u2028.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "paragraph_separator_u2029.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "paragraph_separator_u2029.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "paragraph_separator_u2029.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "vertical_tab_is_not_a_break.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "vertical_tab_is_not_a_break.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "vertical_tab_is_not_a_break.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "form_feed_is_not_a_break.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "form_feed_is_not_a_break.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "form_feed_is_not_a_break.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "next_line_85_is_not_a_break.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "next_line_85_is_not_a_break.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "BC-01",
+      "name": "next_line_85_is_not_a_break.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-02",
+      "name": "lone_cr_becomes_lf.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-02",
+      "name": "lone_cr_becomes_lf.values",
+      "ok": true,
+      "detail": "actual=(3, 2, 2, 2) expected=(3, 2, 2, 2)"
+    },
+    {
+      "criterion": "BC-02",
+      "name": "lone_cr_becomes_lf.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-02",
+      "name": "crlf_then_lone_cr.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-02",
+      "name": "crlf_then_lone_cr.values",
+      "ok": true,
+      "detail": "actual=(5, 3, 3, 3) expected=(5, 3, 3, 3)"
+    },
+    {
+      "criterion": "BC-02",
+      "name": "crlf_then_lone_cr.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 3, 'non_empty_line_count': 3, 'word_count': 3}"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "empty_text.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "empty_text.values",
+      "ok": true,
+      "detail": "actual=(0, 0, 0, 0) expected=(0, 0, 0, 0)"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "empty_text.types",
+      "ok": true,
+      "detail": "{'char_count': 0, 'line_count': 0, 'non_empty_line_count': 0, 'word_count': 0}"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "only_lf.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "only_lf.values",
+      "ok": true,
+      "detail": "actual=(1, 1, 0, 0) expected=(1, 1, 0, 0)"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "only_lf.types",
+      "ok": true,
+      "detail": "{'char_count': 1, 'line_count': 1, 'non_empty_line_count': 0, 'word_count': 0}"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "single_char.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "single_char.values",
+      "ok": true,
+      "detail": "actual=(1, 1, 1, 1) expected=(1, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "single_char.types",
+      "ok": true,
+      "detail": "{'char_count': 1, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "trailing_lf.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "trailing_lf.values",
+      "ok": true,
+      "detail": "actual=(2, 1, 1, 1) expected=(2, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "trailing_lf.types",
+      "ok": true,
+      "detail": "{'char_count': 2, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "trailing_two_lf.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "trailing_two_lf.values",
+      "ok": true,
+      "detail": "actual=(3, 2, 1, 1) expected=(3, 2, 1, 1)"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "trailing_two_lf.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 2, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "two_lines.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "two_lines.values",
+      "ok": true,
+      "detail": "actual=(3, 2, 2, 2) expected=(3, 2, 2, 2)"
+    },
+    {
+      "criterion": "AC-15",
+      "name": "two_lines.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-04",
+      "name": "two_trailing_breaks.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-04",
+      "name": "two_trailing_breaks.values",
+      "ok": true,
+      "detail": "actual=(21, 3, 2, 4) expected=(21, 3, 2, 4)"
+    },
+    {
+      "criterion": "BC-04",
+      "name": "two_trailing_breaks.types",
+      "ok": true,
+      "detail": "{'char_count': 21, 'line_count': 3, 'non_empty_line_count': 2, 'word_count': 4}"
+    },
+    {
+      "criterion": "BC-05",
+      "name": "blank_and_tab_lines.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-05",
+      "name": "blank_and_tab_lines.values",
+      "ok": true,
+      "detail": "actual=(5, 2, 0, 0) expected=(5, 2, 0, 0)"
+    },
+    {
+      "criterion": "BC-05",
+      "name": "blank_and_tab_lines.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}"
+    },
+    {
+      "criterion": "BC-06",
+      "name": "non_empty_from_same_split.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-06",
+      "name": "non_empty_from_same_split.values",
+      "ok": true,
+      "detail": "actual=(5, 3, 2, 2) expected=(5, 3, 2, 2)"
+    },
+    {
+      "criterion": "BC-06",
+      "name": "non_empty_from_same_split.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 3, 'non_empty_line_count': 2, 'word_count': 2}"
+    },
+    {
+      "criterion": "BC-07",
+      "name": "ideographic_space_is_blank.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-07",
+      "name": "ideographic_space_is_blank.values",
+      "ok": true,
+      "detail": "actual=(2, 1, 0, 0) expected=(2, 1, 0, 0)"
+    },
+    {
+      "criterion": "BC-07",
+      "name": "ideographic_space_is_blank.types",
+      "ok": true,
+      "detail": "{'char_count': 2, 'line_count': 1, 'non_empty_line_count': 0, 'word_count': 0}"
+    },
+    {
+      "criterion": "BC-07",
+      "name": "nbsp_is_blank.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-07",
+      "name": "nbsp_is_blank.values",
+      "ok": true,
+      "detail": "actual=(2, 1, 0, 0) expected=(2, 1, 0, 0)"
+    },
+    {
+      "criterion": "BC-07",
+      "name": "nbsp_is_blank.types",
+      "ok": true,
+      "detail": "{'char_count': 2, 'line_count': 1, 'non_empty_line_count': 0, 'word_count': 0}"
+    },
+    {
+      "criterion": "BC-27",
+      "name": "nbsp_and_ideographic_preserved.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-27",
+      "name": "nbsp_and_ideographic_preserved.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 3) expected=(5, 1, 1, 3)"
+    },
+    {
+      "criterion": "BC-27",
+      "name": "nbsp_and_ideographic_preserved.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 3}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "basic_words.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "basic_words.values",
+      "ok": true,
+      "detail": "actual=(11, 1, 1, 2) expected=(11, 1, 1, 2)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "basic_words.types",
+      "ok": true,
+      "detail": "{'char_count': 11, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "case_insensitive_count_separate.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "case_insensitive_count_separate.values",
+      "ok": true,
+      "detail": "actual=(17, 1, 1, 3) expected=(17, 1, 1, 3)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "case_insensitive_count_separate.types",
+      "ok": true,
+      "detail": "{'char_count': 17, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 3}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "hyphenated.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "hyphenated.values",
+      "ok": true,
+      "detail": "actual=(10, 1, 1, 1) expected=(10, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "hyphenated.types",
+      "ok": true,
+      "detail": "{'char_count': 10, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "apostrophe.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "apostrophe.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 1) expected=(5, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "apostrophe.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "typographic_apostrophe.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "typographic_apostrophe.values",
+      "ok": true,
+      "detail": "actual=(4, 1, 1, 1) expected=(4, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "typographic_apostrophe.types",
+      "ok": true,
+      "detail": "{'char_count': 4, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "double_hyphen_splits.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "double_hyphen_splits.values",
+      "ok": true,
+      "detail": "actual=(12, 1, 1, 2) expected=(12, 1, 1, 2)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "double_hyphen_splits.types",
+      "ok": true,
+      "detail": "{'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "triple_hyphen_single_word.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "triple_hyphen_single_word.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 1) expected=(5, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-18",
+      "name": "triple_hyphen_single_word.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_only.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_only.values",
+      "ok": true,
+      "detail": "actual=(7, 1, 1, 0) expected=(7, 1, 1, 0)"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_only.types",
+      "ok": true,
+      "detail": "{'char_count': 7, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 0}"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_split.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_split.values",
+      "ok": true,
+      "detail": "actual=(6, 1, 1, 1) expected=(6, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_split.types",
+      "ok": true,
+      "detail": "{'char_count': 6, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_inside.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_inside.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "digits_inside.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "underscore_splits.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "underscore_splits.values",
+      "ok": true,
+      "detail": "actual=(3, 1, 1, 2) expected=(3, 1, 1, 2)"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "underscore_splits.types",
+      "ok": true,
+      "detail": "{'char_count': 3, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "underscore_mixed.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "underscore_mixed.values",
+      "ok": true,
+      "detail": "actual=(11, 1, 1, 3) expected=(11, 1, 1, 3)"
+    },
+    {
+      "criterion": "AC-19",
+      "name": "underscore_mixed.types",
+      "ok": true,
+      "detail": "{'char_count': 11, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 3}"
+    },
+    {
+      "criterion": "AC-20",
+      "name": "non_ascii_single.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-20",
+      "name": "non_ascii_single.values",
+      "ok": true,
+      "detail": "actual=(4, 1, 1, 1) expected=(4, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-20",
+      "name": "non_ascii_single.types",
+      "ok": true,
+      "detail": "{'char_count': 4, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-20",
+      "name": "non_ascii_splits.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-20",
+      "name": "non_ascii_splits.values",
+      "ok": true,
+      "detail": "actual=(10, 1, 1, 2) expected=(10, 1, 1, 2)"
+    },
+    {
+      "criterion": "AC-20",
+      "name": "non_ascii_splits.types",
+      "ok": true,
+      "detail": "{'char_count': 10, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}"
+    },
+    {
+      "criterion": "AC-21",
+      "name": "leading_space_hyphen.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-21",
+      "name": "leading_space_hyphen.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 1) expected=(5, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-21",
+      "name": "leading_space_hyphen.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-21",
+      "name": "trailing_space_hyphen.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "AC-21",
+      "name": "trailing_space_hyphen.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 1) expected=(5, 1, 1, 1)"
+    },
+    {
+      "criterion": "AC-21",
+      "name": "trailing_space_hyphen.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "BC-09",
+      "name": "quote_prefix.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-09",
+      "name": "quote_prefix.values",
+      "ok": true,
+      "detail": "actual=(4, 1, 1, 1) expected=(4, 1, 1, 1)"
+    },
+    {
+      "criterion": "BC-09",
+      "name": "quote_prefix.types",
+      "ok": true,
+      "detail": "{'char_count': 4, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "BC-12",
+      "name": "combining_never_two_words.keys",
+      "ok": true,
+      "detail": "actual_keys=['char_count', 'line_count', 'non_empty_line_count', 'word_count']"
+    },
+    {
+      "criterion": "BC-12",
+      "name": "combining_never_two_words.values",
+      "ok": true,
+      "detail": "actual=(5, 1, 1, 1) expected=(5, 1, 1, 1)"
+    },
+    {
+      "criterion": "BC-12",
+      "name": "combining_never_two_words.types",
+      "ok": true,
+      "detail": "{'char_count': 5, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 1}"
+    },
+    {
+      "criterion": "AC-01",
+      "name": "empty_text_exit",
+      "ok": true,
+      "detail": "actual=(0, '', '') expected=(0, '', '')"
+    },
+    {
+      "criterion": "AC-01",
+      "name": "empty_text_exit_int",
+      "ok": true,
+      "detail": "int"
+    },
+    {
+      "criterion": "AC-02",
+      "name": "documented_one_liner",
+      "ok": true,
+      "detail": "actual=(0, ['True 0 int'], '') expected=(0, ['True 0 int'], '')"
+    },
+    {
+      "criterion": "AC-09",
+      "name": "programmatic_help",
+      "ok": true,
+      "detail": "actual=(0, '', '') expected=(0, '', '')"
+    },
+    {
+      "criterion": "AC-09",
+      "name": "programmatic_help_has_no_usage",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "criterion": "AC-12",
+      "name": "programmatic_missing_file",
+      "ok": true,
+      "detail": "actual=(1, '', '') expected=(1, '', '')"
+    },
+    {
+      "criterion": "AC-12",
+      "name": "programmatic_unknown_encoding_no_path",
+      "ok": true,
+      "detail": "actual=(1, '', '') expected=(1, '', '')"
+    },
+    {
+      "criterion": "AC-12",
+      "name": "programmatic_two_positional",
+      "ok": true,
+      "detail": "actual=(1, '', '') expected=(1, '', '')"
+    },
+    {
+      "criterion": "AC-12",
+      "name": "programmatic_directory_path",
+      "ok": true,
+      "detail": "actual=(1, '', '') expected=(1, '', '')"
+    },
+    {
+      "criterion": "BC-15",
+      "name": "programmatic_with_valid_encoding",
+      "ok": true,
+      "detail": "actual=(0, '', '') expected=(0, '', '')"
+    },
+    {
+      "criterion": "BC-15",
+      "name": "programmatic_text_still_countable",
+      "ok": true,
+      "detail": "{'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}"
+    },
+    {
+      "criterion": "BC-19",
+      "name": "argv_none_uses_sys_argv_without_program_name",
+      "ok": true,
+      "detail": "actual=(1, '', '') expected=(1, '', '')"
+    },
+    {
+      "criterion": "AC-06",
+      "name": "argv_none_reads_path_from_sys_argv",
+      "ok": true,
+      "detail": "actual=(0, '', '') expected=(0, '', '')"
+    },
+    {
+      "criterion": "AC-03",
+      "name": "empty_stdin",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 0', 'line_count: 0', 'non_empty_line_count: 0', 'word_count: 0'], '') expected=(0, ['char_count: 0', 'line_count: 0', 'non_empty_line_count: 0', 'word_count: 0'], '')"
+    },
+    {
+      "criterion": "AC-07",
+      "name": "sample_file_as_path",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '') expected=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '')"
+    },
+    {
+      "criterion": "AC-08",
+      "name": "sample_bytes_on_stdin",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '') expected=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '')"
+    },
+    {
+      "criterion": "BC-22",
+      "name": "output_format",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 12', 'line_count: 1', 'non_empty_line_count: 1', 'word_count: 2'], '') expected=(0, ['char_count: 12', 'line_count: 1', 'non_empty_line_count: 1', 'word_count: 2'], '')"
+    },
+    {
+      "criterion": "AC-09",
+      "name": "cli_help_exit_zero",
+      "ok": true,
+      "detail": "(0, b'')"
+    },
+    {
+      "criterion": "AC-09",
+      "name": "cli_help_mentions_path_and_encoding",
+      "ok": true,
+      "detail": "usage: text_stats.py [-h] [--encoding ENCODING] [path]\r\n\r\nPrint char/line/non-empty-line/word counts for text read from a PATH file or\r\nfrom standard input.\r\n\r\npositional arguments:\r\n  path           "
+    },
+    {
+      "criterion": "AC-09",
+      "name": "cli_help_has_no_traceback",
+      "ok": true,
+      "detail": "usage: text_stats.py [-h] [--encoding ENCODING] [path]\r\n\r\nPrint char/line/non-empty-line/word counts for text read from "
+    },
+    {
+      "criterion": "AC-10",
+      "name": "cli_error_missing_file",
+      "ok": true,
+      "detail": "(1, b'', [\"error: missing-file.txt: [Errno 2] No such file or directory: 'missing-file.txt'\"])"
+    },
+    {
+      "criterion": "AC-10",
+      "name": "cli_error_directory",
+      "ok": true,
+      "detail": "(1, b'', [\"error: examples/text-stats: [Errno 2] No such file or directory: 'examples/text-stats'\"])"
+    },
+    {
+      "criterion": "AC-10",
+      "name": "cli_error_unknown_encoding_without_path",
+      "ok": true,
+      "detail": "(1, b'', ['error: unknown encoding: no-such-codec'])"
+    },
+    {
+      "criterion": "AC-10",
+      "name": "cli_error_two_positional",
+      "ok": true,
+      "detail": "(1, b'', ['error: invalid arguments (unrecognized arguments: b.txt)'])"
+    },
+    {
+      "criterion": "AC-11",
+      "name": "undecodable_file",
+      "ok": true,
+      "detail": "(1, [\"error: .probe-broken-utf8.txt: 'utf-8' codec can't decode byte 0xff in position 3: invalid start byte\"])"
+    },
+    {
+      "criterion": "AC-22",
+      "name": "utf16_file",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '') expected=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '')"
+    },
+    {
+      "criterion": "AC-22",
+      "name": "encoding_does_not_change_stdin",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 12', 'line_count: 1', 'non_empty_line_count: 1', 'word_count: 2'], '') expected=(0, ['char_count: 12', 'line_count: 1', 'non_empty_line_count: 1', 'word_count: 2'], '')"
+    },
+    {
+      "criterion": "BC-13",
+      "name": "explicit_utf8_stdin",
+      "ok": true,
+      "detail": "actual=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '') expected=(0, ['char_count: 20', 'line_count: 2', 'non_empty_line_count: 2', 'word_count: 4'], '')"
+    },
+    {
+      "criterion": "AC-23",
+      "name": "imports_are_standard_library",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "criterion": "AC-23",
+      "name": "no_dependency_manifest",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "criterion": "AC-13",
+      "name": "module_guard_is_the_only_sys_exit",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "criterion": "AC-13",
+      "name": "main_returns_int_no_systemexit",
+      "ok": true,
+      "detail": "no raise SystemExit"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "sample_is_twenty_lf_bytes",
+      "ok": true,
+      "detail": "actual=(b'hello world\\nfoo bar\\n', 20) expected=(b'hello world\\nfoo bar\\n', 20)"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_char_count_20",
+      "ok": true,
+      "detail": "char_count: 20"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_line_count_2",
+      "ok": true,
+      "detail": "line_count: 2"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_non_empty_line_count_2",
+      "ok": true,
+      "detail": "non_empty_line_count: 2"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_word_count_4",
+      "ok": true,
+      "detail": "word_count: 4"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_char_count_12",
+      "ok": true,
+      "detail": "char_count: 12"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_char_count_0",
+      "ok": true,
+      "detail": "char_count: 0"
+    },
+    {
+      "criterion": "AC-25",
+      "name": "readme_has_no_stale_char_count_six",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "criterion": "AC-26",
+      "name": "no_bare_u2019",
+      "ok": true,
+      "detail": "bare U+2019 occurrences"
+    },
+    {
+      "criterion": "AC-27",
+      "name": "readme_declares_coverage",
+      "ok": true,
+      "detail": "signature present"
+    }
+  ],
+  "passed": 180,
+  "total": 180
+}

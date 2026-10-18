@@ -1,0 +1,30 @@
+{
+    "run_id":  "v0.1-run6-20261016T154400Z",
+    "agent":  "Verifier Agent",
+    "stage":  "verify",
+    "generated_at":  "2026-10-16T23:58:27.361734+08:00",
+    "result":  {
+                   "command":  "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+                   "exit_code":  "0",
+                   "raw_output":  ".................................................................................\r\n----------------------------------------------------------------------\r\nRan 81 tests in 1.178s\r\n\r\nOK\r\n",
+                   "ran_tests":  81,
+                   "result_marker":  "OK",
+                   "artifacts":  [
+                                     {
+                                         "path":  "examples/text-stats/text_stats.py",
+                                         "sha256":  "56fdd9449b4c7b28b427515840e14480cfb352f7795796953ad9086190bc7990",
+                                         "bytes":  11184
+                                     },
+                                     {
+                                         "path":  "examples/text-stats/test_text_stats.py",
+                                         "sha256":  "39892a7d96ec0f3177c06ccc01bb06e62ab30c4df413277b7c9a18bceb8aa84e",
+                                         "bytes":  30828
+                                     }
+                                 ],
+                   "requirement_conflicts":  [
+
+                                             ],
+                   "notes":  "Independent rerun of the normalized acceptance command from the repository root; unittest reports to stderr, so stdout and stderr were merged at OS level with cmd 2\u003e\u00261 to record the full text. The dot count on the progress line equals ran_tests (81 dots for 81 tests). Exit code was 0 and the trailing marker was OK, so exit_code, raw_output and result_marker agree. No files were modified; sha256 values were recomputed over raw bytes after this rerun. Requirement consistency was cross-checked against docs/evidence/v0.1-run6-20261016T154400Z/requirement.json (consistency_check.self_checked = true; its notes state every AC/BC numeric example was recomputed and no mutually exclusive expectation for the same call and input exists, including the previously disputed AC-05 char_count for CRLF input, now fixed to 5); no requirement conflict was found.",
+                   "generated_at":  "2026-10-16T23:58:27.361734+08:00"
+               }
+}

@@ -1,0 +1,167 @@
+{
+  "run_id": "v0.2-run1-20261017T121445Z",
+  "agent": "Review Agent",
+  "stage": "review",
+  "generated_at": "2026-10-17T20:30:24.5474296+08:00",
+  "result": {
+    "verdict": "APPROVED",
+    "criteria_check": [
+      {
+        "criterion": "AC-01 程序化注入 main([], stdin_text=\"\") 返回 int 0，双流为空，不读 stdin",
+        "satisfied": true,
+        "evidence": "text_stats.py:286-325：stdin_text is not None 走 programmatic 分支，只返回 EXIT_OK，不写 sys.stdout/sys.stderr。独立验证脚本把 sys.stdin 换成 read() 即抛异常的替身并以 redirect_stdout/stderr 捕获，main([], stdin_text='') 返回 0（type int），out==out==''；test_text_stats.py:542-563 另用 subprocess.DEVNULL 证明不阻塞、不读 stdin。"
+      },
+      {
+        "criterion": "AC-02 文档化 python -c 一行输出恰为 True 0 int",
+        "satisfied": true,
+        "evidence": "按需求原样执行 python -c \"import text_stats as t; code = t.main([], stdin_text=''); print(callable(t.main), code, type(code).__name__)\"（cwd=examples/text-stats）：退出码 0，stdout.splitlines()==['True 0 int']（恰 1 行），stderr 为空；test_text_stats.py:565-581 同断言。"
+      },
+      {
+        "criterion": "AC-03 无 PATH、stdin 立即 EOF：退出 0、四行全 0、stderr 空且不阻塞",
+        "satisfied": true,
+        "evidence": "subprocess.run([python, text_stats.py], stdin=DEVNULL, cwd=examples/text-stats)：退出码 0，stdout 解码后 splitlines() 为 char_count: 0 / line_count: 0 / non_empty_line_count: 0 / word_count: 0，stderr==b''，约 0.2 秒内结束。text_stats.py:316-324；test_text_stats.py:623-636。"
+      },
+      {
+        "criterion": "AC-04 count_text 返回恰四键整数 dict 且为 20/2/2/4",
+        "satisfied": true,
+        "evidence": "独立验证：count_text('hello world\\nfoo bar\\n') 为 dict、len==4、键集合=={char_count,line_count,non_empty_line_count,word_count}、四值 type(x) is int、元组==(20,2,2,4)。text_stats.py:116-121；test_text_stats.py:267-282。"
+      },
+      {
+        "criterion": "AC-05 \"  \\r\\n \\r\\n\" 为 5/2/0/0，char_count 非 6",
+        "satisfied": true,
+        "evidence": "独立验证 count_text('  \\r\\n \\r\\n')=={'char_count':5,'line_count':2,'non_empty_line_count':0,'word_count':0}。text_stats.py:101-105、117（先剥 BOM，再 CRLF→LF，再 CR→LF）；test_text_stats.py:308-320（并 assertNotEqual 6）。"
+      },
+      {
+        "criterion": "AC-06 argv 语义：argv=None 取 sys.argv[1:]；显式 argv 不含程序名；路径被当作 PATH",
+        "satisfied": true,
+        "evidence": "把 sys.argv 设为 ['text_stats.py','missing-file.txt'] 后 main() 返回 1，与 main(['missing-file.txt'], stdin_text='') 一致（程序名不被当作位置参数）；cwd=examples/text-stats 时 main(['sample_input.txt']) 返回 0 且输出四行 20/2/2/4。text_stats.py:206-224、282-288；test_text_stats.py:858-880。"
+      },
+      {
+        "criterion": "AC-07 命令行 python text_stats.py sample_input.txt 得 20/2/2/4",
+        "satisfied": true,
+        "evidence": "subprocess [python, text_stats.py, sample_input.txt]（cwd=examples/text-stats）：退出码 0，splitlines 恰 4 行 char_count: 20 / line_count: 2 / non_empty_line_count: 2 / word_count: 4，stderr 空。test_text_stats.py:638-642。"
+      },
+      {
+        "criterion": "AC-08 sample_input.txt 字节经 stdin 重定向得同样 20/2/2/4",
+        "satisfied": true,
+        "evidence": "读取 sample_input.txt 原始 20 字节作为子进程 stdin：退出码 0，四行与 AC-07 完全相同（20/2/2/4），stderr 空；同时与文件路径结果逐字节一致（BC-24）。test_text_stats.py:644-653。"
+      },
+      {
+        "criterion": "AC-09 --help：命令行 0/含 PATH 与 --encoding/stderr 空；程序化 0 且静默",
+        "satisfied": true,
+        "evidence": "命令行 --help：退出码 0，stdout 同时含 'PATH' 与 '--encoding'（且含 usage），stderr 空；程序化 main(['--help'], stdin_text='') 返回 0、out/err 均空串。text_stats.py:227-239（quiet 时重定向到丢弃缓冲）、287-295；test_text_stats.py:597-602、655-661。"
+      },
+      {
+        "criterion": "AC-10 不存在文件 / 目录 PATH：退出 1、stdout 空、stderr 恰一行 error: 且无 Traceback",
+        "satisfied": true,
+        "evidence": "实测 missing-file.txt：exit 1、stdout==b''、stderr=='error: missing-file.txt: [Errno 2] No such file or directory...' 单行；目录 examples/text-stats：exit 1、stdout==b''、stderr 单行 'error: ... Permission denied ...'；均无 Traceback。text_stats.py:305-310、169-178；test_text_stats.py:689-699。"
+      },
+      {
+        "criterion": "AC-11 非法编码 / 两个位置参数 / 非法 UTF-8 文件：退出 1（非 2）、stdout 空、stderr 单行 error:",
+        "satisfied": true,
+        "evidence": "实测三类：--encoding no-such-codec 无 PATH → exit 1、stdout 空、stderr 'error: unknown encoding: no-such-codec'；a.txt b.txt → exit 1、stderr 'error: invalid arguments (unrecognized arguments: b.txt)'（argparse 的 exit/error 被改为抛 _ParserExit，text_stats.py:196-203）；对 0xf3 开头非法 UTF-8 的 .pyc 文件 → exit 1、stderr 单行解码错误。均非 2、无 Traceback；test_text_stats.py:701-721。"
+      },
+      {
+        "criterion": "AC-12 程序化受控错误（缺文件 / 非法编码）返回 1 且双流为空",
+        "satisfied": true,
+        "evidence": "独立验证（sys.stdin 为禁读替身，重定向捕获）：main(['missing-file.txt'], stdin_text='')==(1,'','')；main(['--encoding','no-such-codec'], stdin_text='')==(1,'','')。text_stats.py:297-310（编码校验先于选输入）；test_text_stats.py:604-617。"
+      },
+      {
+        "criterion": "AC-13 退出码仅 0/1；main 返回 int 不抛 SystemExit；仅模块入口 sys.exit(main())",
+        "satisfied": true,
+        "evidence": "AST 扫描 text_stats.py：sys.exit 调用仅出现在第 329 行模块入口 if __name__ == '__main__': sys.exit(main())，所有函数体内无 sys.exit；main([], stdin_text='') 直接返回 int 0 不抛 SystemExit；实测 7 种场景退出码集合为 {0,1}。text_stats.py:328-329；test_text_stats.py:771-792。"
+      },
+      {
+        "criterion": "AC-14 归一化：只剥一个前导 BOM；U+2028 不是换行",
+        "satisfied": true,
+        "evidence": "count_text('\\ufeffabc')['char_count']==3；count_text('\\ufeff\\ufeffabc')['char_count']==4；count_text('a'+U+2028+'b') line_count==1、char_count==3。text_stats.py:101-102、111-114；test_text_stats.py:364-380。"
+      },
+      {
+        "criterion": "AC-15 line_count 九组表",
+        "satisfied": true,
+        "evidence": "独立验证全部命中：''→0、'\\n'→1、'a'→1、'a\\n'→1、'a\\nb'→2、'a\\n\\n'→2、'hello world\\nfoo bar\\n'→2、'hello world\\nfoo bar\\n\\n'→3、'  \\n\\t\\n'→2。text_stats.py:107-114；test_text_stats.py:414-428。"
+      },
+      {
+        "criterion": "AC-16 line/non_empty 出自同一次切分",
+        "satisfied": true,
+        "evidence": "count_text('  \\n\\t\\n') line_count 2、non_empty_line_count 0；count_text('a\\n\\n') line_count 2、non_empty_line_count 1；两项在 text_stats.py:111-119 由同一个 lines 列表计算。test_text_stats.py:447-454。"
+      },
+      {
+        "criterion": "AC-17 char_count 按归一化码点：20 / a\\r\\nb=3 / café=4 / cafe+U+0301=5",
+        "satisfied": true,
+        "evidence": "独立验证：样例 20；count_text('a\\r\\nb')=={3,2,2,2}；'caf\\u00e9' char 4；'cafe\\u0301' char 5（无 NFC/NFD 归一化，text_stats.py:99-105）。test_text_stats.py:370-395。"
+      },
+      {
+        "criterion": "AC-18 word_count 基本规则（含 it+U+2019+s=1、hello--world=2）",
+        "satisfied": true,
+        "evidence": "独立验证：hello world=2、Hello hello HELLO=3、well-known=1、don't=1、it\\u2019s=1、a-b-c=1、hello--world=2。正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 见 text_stats.py:78-85；test_text_stats.py:482-489。"
+      },
+      {
+        "criterion": "AC-19 数字与下划线不是单词字符",
+        "satisfied": true,
+        "evidence": "独立验证：123 456=0、abc123=1、a1b=2、a_b=2、foo_bar baz=3。test_text_stats.py:491-503；正则只含 [A-Za-z]。"
+      },
+      {
+        "criterion": "AC-20 非 ASCII：café=1、café-mocha=2、cafe+U+0301=1（且 char_count 5，绝不为 2 词）",
+        "satisfied": true,
+        "evidence": "独立验证：'caf\\u00e9' word 1；'caf\\u00e9-mocha' word 2（在 \\u00e9 处断开）；'cafe\\u0301' word 1、char_count 5，且 word_count!=2。test_text_stats.py:505-529。"
+      },
+      {
+        "criterion": "AC-21 连接符须两侧紧邻 ASCII 字母",
+        "satisfied": true,
+        "evidence": "独立验证：' -abc'=1、'abc- '=1、\"'abc\"=1；正则连接符组 [A-Za-z]+(?:joiner[A-Za-z]+)* 保证连接符两侧必须紧邻字母。text_stats.py:78-85；test_text_stats.py:531-536。"
+      },
+      {
+        "criterion": "AC-22 --encoding 只作用于文件（UTF-16 文件 20/2/2/4），不改变 stdin 解码",
+        "satisfied": true,
+        "evidence": "UTF-16 样例文件：test_text_stats.py:798-803 断言 --encoding utf-16 得四行 20/2/2/4；我单独运行 text_text_stats.EncodingTests.test_ac22_encoding_option_decodes_a_utf16_file，Ran 1 test, OK。stdin 不受影响：我实测 ASCII 'hello world\\n' 字节 + --encoding utf-16 得 12/1/1/2（text_stats.py:316-321 用 sys.stdin.read()）。反向验证：对无 BOM 文件使用 utf-16 返回 1，证明该选项确实只作用于文件解码（text_stats.py:131-154、300-310）。"
+      },
+      {
+        "criterion": "AC-23 仅标准库，无依赖清单",
+        "satisfied": true,
+        "evidence": "AST 解析：text_stats.py 导入 argparse/codecs/contextlib/io/re/sys；test_text_stats.py 导入 ast/builtins/contextlib/io/os/re/subprocess/sys/unittest/text_stats，全部在 sys.stdlib_module_names 内。examples/text-stats 下不存在 requirements.txt/pyproject.toml/setup.py/Pipfile（Test-Path 均为 False）。test_text_stats.py:886-913。"
+      },
+      {
+        "criterion": "AC-24 写入边界：仅四个交付文件；不新增 __pycache__；其它目录无改动",
+        "satisfied": true,
+        "evidence": "git status --porcelain -- examples/text-stats 仅 3 个 M（README.md、test_text_stats.py、text_stats.py），无未跟踪项；sample_input.txt 未改动但经字节断言为固定 20 字节样例；git status --porcelain --untracked-files=no 全仓库无交付目录之外的被跟踪文件改动。两次以 PYTHONDONTWRITEBYTECODE=1 复跑后 __pycache__ 内两个 .pyc 的 mtime 仍为 20:27:08（Verifier 未设该变量时产生的旧产物），未新增文件。补充：tests/review-run-evidence.py 为 20:20:02 生成的编排复核工具（早于 coding 阶段报告 20:26），非本轮交付改动。"
+      },
+      {
+        "criterion": "AC-25 样例与文档自洽：sample 20 字节；README 20/2/2/4、12/1/1/2、0/0/0/0；char_count 5 非 6",
+        "satisfied": true,
+        "evidence": "sample_input.txt 原始字节==b'hello world\\nfoo bar\\n'、len==20、不以 UTF-8 BOM 开头。README.md 含三个完整代码块（20/2/2/4、12/1/1/2、0/0/0/0）与 count_text(\"  \\r\\n \\r\\n\") 及其 'char_count': 5，全文不存在 {'char_count': 6；CRLF 示例 a\\r\\nb\\rc 的 5/3/3/3 与 count_text 实测一致。test_text_stats.py:931-951。"
+      },
+      {
+        "criterion": "AC-26 无裸 U+2019，连接符写作 \\u2019 转义或 U+2019 标注",
+        "satisfied": true,
+        "evidence": "逐行扫描 text_stats.py、test_text_stats.py、README.md：凡是含 U+2019 的行都同时含 '\\u2019' 或 'U+2019' 标注，无裸字符；三文件均出现 '\\u2019' 与 'U+2019'（text_stats.py:74-79、README.md:25、test_text_stats.py:54-57）。test_text_stats.py:953-969。"
+      },
+      {
+        "criterion": "AC-27 规范命令退出 0、76 用例 OK 无 failure/error/skip；README 覆盖声明与编号标注一致",
+        "satisfied": true,
+        "evidence": "独立复跑 python -m unittest discover -s examples/text-stats -p \"test_*.py\"（设置 PYTHONDONTWRITEBYTECODE=1）：Ran 76 tests in 1.885s，OK，退出码 0，输出仅测试点与 OK，无 failure/error/skip（测试文件无 skip/expectedFailure）。README.md:132 声明覆盖 BC-01 至 BC-27 与 AC-01 至 AC-27；脚本化核对测试文件中 AC-01..AC-27、BC-01..BC-27 共 54 个标签全部出现；test_text_stats.py:971-982。"
+      }
+    ],
+    "issues": [],
+    "independent_test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "independent_test_exit_code": "0",
+    "independent_test_output": "............................................................................\n----------------------------------------------------------------------\nRan 76 tests in 1.885s\n\nOK\n",
+    "artifacts_after": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc",
+        "bytes": 13046
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990",
+        "bytes": 39783
+      }
+    ],
+    "requirement_conflicts": [],
+    "consistency_note": "none：Coding Agent 自述的 76 用例/退出码 0、Verifier 原始输出的 Ran 76 tests/OK、我自己的复跑结果（Ran 76 tests in 1.885s, OK, exit 0）三者一致；我复跑前后两个交付文件的 sha256 与字节数均与 Verifier 的 artifacts 完全相同（a540ff4a...、f97e9493...，13046/39783 字节），未发现验证前后文件被改动。工作区补充说明（不构成需求冲突）：tests/review-run-evidence.py 是 20:20:02 生成、供编排层复核本证据目录的工具，早于 coding 阶段（其报告 20:26），非交付改动；examples/text-stats/__pycache__ 内 .pyc 的 mtime 为 20:27:08（Verifier 未设 PYTHONDONTWRITEBYTECODE 时产生，已被根 .gitignore 忽略），我两次复跑均设置 PYTHONDONTWRITEBYTECODE=1，未新增 .pyc。",
+    "summary": "逐条读取 text_stats.py（329 行）、test_text_stats.py（986 行）、README.md 与样例后独立复跑规范命令：Ran 76 tests、OK、退出码 0，与 Verifier 一致；独立脚本复核 count_text 全部数值表、两类调用作用域、五类受控错误、argv 语义、--encoding 与 stdin 行为，均通过。全部 27 条验收条件均满足，未发现需求内部冲突、依赖越界或交付目录外写入；两个交付文件的 sha256 与 Verifier 记录完全一致。结论：APPROVED。",
+    "report_file": "docs/evidence/v0.2-run1-20261017T121445Z/review.json",
+    "generated_at": "2026-10-17T20:30:24.5474296+08:00"
+  }
+}

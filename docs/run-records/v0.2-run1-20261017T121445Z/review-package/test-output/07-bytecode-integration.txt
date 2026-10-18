@@ -1,0 +1,16 @@
+# 07-bytecode-integration
+# command: node tests/bytecode-integration.test.mjs
+# exit code: 0
+# duration: 3.2s
+
+运行期写入边界集成测试（真实 python 子进程）
+生产脚本：workflows\three-agent-mvp.js
+
+PASS  受控环境前缀真的进入 python 子进程 → OK
+PASS  干净目录用受控环境前缀运行规范命令 → 无新缓存且 OK
+PASS  已存在缓存用受控环境前缀运行 → 缓存不被重写且 OK
+PASS  未设置环境的真实运行新生成了 __pycache__ → BYTECODE_CACHE_WRITTEN（不得 ok）
+PASS  报告 env_applied=false（环境未到达测试进程）→ BYTECODE_ENV_NOT_APPLIED（不得 ok）
+PASS  两阶段都没有交回 bytecode_scope → BYTECODE_SCOPE_UNMEASURED（不得 ok）
+
+场景：6/6 通过；断言：45 项通过，0 项失败

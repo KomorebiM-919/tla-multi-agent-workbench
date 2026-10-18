@@ -1,0 +1,57 @@
+# workflow-result.json ↔ 磁盘证据 交叉检查
+
+- 返回值：`docs/evidence/v0.1-run6-20261016T154400Z/workflow-result.json`
+- 证据目录：`docs/evidence/v0.1-run6-20261016T154400Z`
+- 返回值摘要：`ok=True status=OK attempts=2`
+- 检查项：30，失败：0
+
+## evidenceFiles 实测
+
+- `docs/evidence/v0.1-run6-20261016T154400Z/.run-owner.json (187 B, sha256=0b547e190dff696c)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/preflight.json (3537 B, sha256=3295e5e268e34d27)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/requirement.json (24629 B, sha256=6b429ac87303b868)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json (7418 B, sha256=9ba0407276d02282)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/verify.json (1358 B, sha256=0832d6b7ec39ca24)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/review.json (19427 B, sha256=bf71e0e74890122c)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json (5928 B, sha256=b43338700de65ea8)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json (2501 B, sha256=94fadce9500fdba0)`
+- `docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json (17649 B, sha256=c14d9ba263f3ab0d)`
+
+## 逐项结果
+
+- PASS 返回值含 ok（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 status（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 runId（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 evidenceDir（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 attempts（keys=_derivedTail,_harnessTruncation,attempts,attemptsDetail,criteriaIds,error,errors,evidenceDir,evidenceFiles,maxCodingAttempts,ok,originalRequirement,ownerMarkerPath,pipeline,preflight,requirement,requi）
+- PASS 返回值含 finalDecision（逐字或显式标注的推导值）（逐字=False 推导=True）
+- PASS finalDecision 属推导值且已显式标注（不作为逐字证据）（harness 截断了返回值，推导值仅供核对，原始记录以证据 JSON 为准）
+- PASS 返回值 runId 与证据目录末段一致（runId=v0.1-run6-20261016T154400Z dir=v0.1-run6-20261016T154400Z）
+- PASS evidenceFiles 非空（len=9）
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/.run-owner.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/preflight.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/requirement.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/verify.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/review.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/coding-report-revision-2.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/verify-revision-2.json
+- PASS evidenceFiles 项存在：docs/evidence/v0.1-run6-20261016T154400Z/review-revision-2.json
+- PASS 证据目录内含关键文件名（preflight/requirement 至少各一）
+- PASS 存在 verify.json（docs/evidence/v0.1-run6-20261016T154400Z\verify.json）
+- PASS 存在 review.json（docs/evidence/v0.1-run6-20261016T154400Z\review.json）
+- PASS 第 1 次尝试 verify/review 产物路径集合一致（verify/review）（verify=['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py'] review=['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']）
+- PASS 第 1 次尝试 verify/review 产物 sha256 一致（{}）
+- PASS 第 2 次尝试 verify/review 产物路径集合一致（verify-revision-2/review-revision-2）（verify=['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py'] review=['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']）
+- PASS 第 2 次尝试 verify/review 产物 sha256 一致（{}）
+- PASS 第 2 次（最终）verify.artifacts sha256 与磁盘原始字节一致：examples/text-stats/text_stats.py
+- PASS 第 2 次（最终）verify.artifacts sha256 与磁盘原始字节一致：examples/text-stats/test_text_stats.py
+- PASS 第 2 次（最终）review.artifacts_after sha256 与磁盘原始字节一致：examples/text-stats/text_stats.py
+- PASS 第 2 次（最终）review.artifacts_after sha256 与磁盘原始字节一致：examples/text-stats/test_text_stats.py
+- PASS criteria_check 的 ID 集合与 criteriaIds 一致（missing=[] unknown=[]）
+
+## 说明（不作为失败）
+
+- 第 1 次尝试的产物已被后续修订覆盖 ['examples/text-stats/test_text_stats.py']；仍与磁盘一致 ['examples/text-stats/text_stats.py']
+
+结论：全部一致

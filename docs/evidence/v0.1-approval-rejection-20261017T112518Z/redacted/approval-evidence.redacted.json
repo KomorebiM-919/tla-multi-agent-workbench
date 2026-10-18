@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 3,
+  "sessionFile": "<用户主目录已脱敏>\\.dsh\\sessions\\--D-AI-TLA-tla-multi-agent-workbench--\\session-3f96bf08-83ae-48d6-a239-0223d4b1c12c\\session.v4.jsonl.zstd",
+  "decode": {
+    "frames": 8362,
+    "badFrames": 0,
+    "badLines": 0
+  },
+  "correlation": {
+    "effectiveCallId": "call_00_K4tzXwBaomhNd0DjLDB77970",
+    "marker": "[tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]",
+    "sessionMeta": {
+      "id": "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+      "cwd": "<repo-root>",
+      "parentSession": null,
+      "delegationDepth": 0,
+      "origin": null
+    },
+    "policyAtCall": {
+      "seq": 2,
+      "value": "ask"
+    },
+    "modeAtCall": {
+      "seq": 1,
+      "value": "workspace-write"
+    },
+    "askCount": 1,
+    "ask": {
+      "id": "862f2e25-97cb-43b4-a2d2-bd85374c71f9",
+      "toolName": "pwsh",
+      "callId": "call_00_K4tzXwBaomhNd0DjLDB77970",
+      "reason": "escalate sandbox to danger-full-access: TLA V0.1 审批拒绝测试（runId v0.1-approval-rejection-20261017T112518Z）：在仓库外新建目标文件 <repo-parent>\\tla-approval-rejection-f207d040-ac96-4fce-ad54-470d91d2e7ed.txt 并写入标记 [tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]，用于验证宿主审批被拒绝后该操作没有发生；目标已存在时 New-Item 直接失败，不会覆盖任何既有文件。请选择拒绝 / Deny。",
+      "seq": 13127,
+      "time": 1792236549927
+    },
+    "decisionCount": 1,
+    "decision": {
+      "id": "862f2e25-97cb-43b4-a2d2-bd85374c71f9",
+      "outcomeRaw": "rejected",
+      "outcome": "rejected",
+      "seq": 13128,
+      "time": 1792236702549
+    },
+    "toolCallCount": 1,
+    "toolCall": {
+      "callId": "call_00_K4tzXwBaomhNd0DjLDB77970",
+      "name": "pwsh",
+      "seq": 13126,
+      "time": 1792236549921,
+      "argumentsParsed": true,
+      "sandboxPermission": "danger-full-access",
+      "justification": "TLA V0.1 审批拒绝测试（runId v0.1-approval-rejection-20261017T112518Z）：在仓库外新建目标文件 <repo-parent>\\tla-approval-rejection-f207d040-ac96-4fce-ad54-470d91d2e7ed.txt 并写入标记 [tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]，用于验证宿主审批被拒绝后该操作没有发生；目标已存在时 New-Item 直接失败，不会覆盖任何既有文件。请选择拒绝 / Deny。",
+      "commandText": "New-Item -ItemType File -Path '<repo-parent>\\tla-approval-rejection-f207d040-ac96-4fce-ad54-470d91d2e7ed.txt' -Value '[tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]' -ErrorAction Stop",
+      "commandSha256": "sha256:9d4c1bda6974a9825ac976da29f7c043f3fa26d62ef0abd8c25e105dd70e72e0",
+      "commandLength": 194
+    },
+    "toolResultCount": 1,
+    "toolResult": {
+      "toolCallId": "call_00_K4tzXwBaomhNd0DjLDB77970",
+      "isError": true,
+      "textLength": 139,
+      "textSha256": "sha256:a1648f8ff57192c79a4f52a7c2ae32e0986cabc4ec7537234966f7ee74faf131",
+      "denialTextPresent": true,
+      "seq": 13129,
+      "time": 1792236702551
+    },
+    "problems": []
+  }
+}

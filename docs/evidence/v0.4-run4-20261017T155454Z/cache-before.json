@@ -1,0 +1,22 @@
+{
+  "cache_dir": "examples/text-stats/__pycache__",
+  "collected_at": "2026-10-17T23:54:54+08:00",
+  "entries": [
+    {
+      "bytes": 66316,
+      "mtime_ms": 1792240028919,
+      "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+      "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+    },
+    {
+      "bytes": 14885,
+      "mtime_ms": 1792244851273,
+      "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+      "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+    }
+  ],
+  "note": "缓存目录存在，列出 2 个 .pyc 文件",
+  "run_id": "v0.4-run4-20261017T155454Z",
+  "snapshot_label": "cache-before",
+  "tool": "tests/collect-cache-state.py"
+}

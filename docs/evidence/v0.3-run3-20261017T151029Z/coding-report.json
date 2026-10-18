@@ -1,0 +1,95 @@
+{
+  "run_id": "v0.3-run3-20261017T151029Z",
+  "agent": "Coding Agent",
+  "stage": "coding",
+  "generated_at": "2026-10-17T23:21:40.5381675+08:00",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "purpose": "交付实现：count_text(text) 纯函数（BOM 归一化 + CRLF/CR 转 LF + 码点/行/非空行/ASCII 单词四项统计）与 main(argv=None, stdin_text=None) 双作用域入口；仅返回 int 退出码，sys.exit 只在模块入口出现一次；本轮仅更新模块文档字符串中一处编号标注（AC-08 → AC-22），实现逻辑保持已符合本轮口径。"
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "unittest 测试集（83 个用例）：逐条覆盖 AC-01–AC-25 并为每条 BC 至少一个用例；本轮修正 .test-scratch 自建口径说明、BC-22/AC-21 编号语义漂移（BC-22 用例改标 BC-17、新增 BC-22 唯一期望用例、AC-21 改为读取分工用例）、补充程序化非法 UTF-8 静默用例与 AC-08(c) 断言。"
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "中文使用文档：统计口径表、命令行/程序化两种调用作用域、退出码表、可复制示例（20/2/2/4、12/1/1/2、CRLF 5/3/3/3、UTF-16LE 4/1/1/1）、规范测试命令与 PYTHONDONTWRITEBYTECODE=1 运行说明、BC-01–BC-26 速查表；本轮修正 .test-scratch 必须已存在的过时说法与 BC-17/BC-19/BC-20/BC-22 编号语义，并补 AC-21 读取分工与编号语义优先级条目。"
+      },
+      {
+        "path": "examples/text-stats/sample_input.txt",
+        "purpose": "样例输入：内容恰为 hello world + LF + foo bar + LF（20 字节、LF 结尾）；本轮校验其字节与 README 的 20/2/2/4 逐字自洽，内容已符合要求，故未改动。"
+      }
+    ],
+    "implementation_summary": "在 examples/text-stats 内完成 Coding 阶段交付。text_stats.py 提供 count_text(text)（先剥一个前导 U+FEFF，再把 CRLF、CR 依次替换为 LF，只按 LF 切分且末尾换行不新增空行；char_count 取归一化后 len、line_count 与 non_empty_line_count 出自同一次切分、word_count 用 re 匹配 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*），以及 main(argv=None, stdin_text=None)（stdin_text is None 走命令行：成功写 4 行、受控错误写单行 error:、--help 写用法并退出 0；stdin_text 非 None 走程序化：两个流全静默、只返回 0/1）。argparse 的 error/exit 被 _UsageErrorParser 覆盖为抛 _ParserExit，杜绝 argparse 默认的退出码 2；--encoding 先用 codecs.lookup 校验再读文件，且只作用于文件解码（open 用 newline=\"\" 保留原始换行），stdin 走 sys.stdin.read()。sys.exit(main()) 仅在 if __name__ == \"__main__\" 内出现一次。测试文件补齐本轮口径所需的用例并修正编号漂移：BC-22 改为“同一类调用、同一输入只有一个期望值”的用例（原非 UTF-8 一致性并入 BC-17，用例改标 test_bc17_...），AC-21 改为读取分工用例（AST 校验 replace 只出现在 count_text、源码无 splitlines、文件原始换行与 count_text 结果一致 5/3/3/3），新增程序化非法 UTF-8 文件静默用例与 AC-08(c) 断言，测试全部自建自删 examples/text-stats/.test-scratch 下的临时文件。README 与测试中 .test-scratch 必须已存在/需人工 ACL 的过时说法已改为自建口径，遗留 tmp* 目录既非前提也不会被删除。测试仅用标准库，未新增任何依赖声明文件。最终以规范命令（带 PYTHONDONTWRITEBYTECODE=1 前缀）实跑：83 个用例通过，退出码 0；运行前后 examples/text-stats/__pycache__ 两个既有 .pyc 的 bytes、mtime_ms、sha256 完全一致。",
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": "...................................................................................\n----------------------------------------------------------------------\nRan 83 tests in 1.836s\n\nOK",
+    "requirement_conflicts": [],
+    "report_file": "docs/evidence/v0.3-run3-20261017T151029Z/coding-report.json",
+    "generated_at": "2026-10-17T23:21:40.5381675+08:00",
+    "acceptance_criteria_addressed": [
+      "AC-01 程序化调用返回 int 0、两个流为空、不读进程 stdin（哨兵 sys.stdin）",
+      "AC-02 文档化一行命令输出恰为 `True 0 int`、进程退出码 0",
+      "AC-03 命令行无 PATH、stdin 立即 EOF → 4 行全 0、退出码 0、不阻塞",
+      "AC-04 count_text 返回键集合恰为四项且值为 int，空串全 0，不读流不读文件",
+      "AC-05 python text_stats.py sample_input.txt → 20/2/2/4、退出码 0",
+      "AC-06 stdin 为 hello world+LF → 12/1/1/2、退出码 0",
+      "AC-07 同一文本经 PATH 与经 stdin 两次 4 行数值完全相同",
+      "AC-08 归一化：单/双前导 BOM、a+CRLF+b → 3/2/2/2、a+CRLF+b+CR+c → 5/3/3/3",
+      "AC-09 U+2028/U+2029/U+000B/U+000C/U+001C–U+001E/U+0085 不算换行；count_text 不用 str.splitlines",
+      "AC-10 九组 line_count / non_empty_line_count 期望全部命中",
+      "AC-11 字符数按归一化后码点（café 4 vs cafe+U+0301 5，不做 NFC/NFD）",
+      "AC-12 单词规则整张表（连接符、数字下划线切分、非 ASCII 字母不计、大小写不归并）",
+      "AC-13 命令行 4 行格式正则、无标题无空行、stderr 为空",
+      "AC-14 五类受控错误退出码 1（非 2）、stdout 为空、stderr 恰一行 error: 且无 Traceback",
+      "AC-15 五类程序化受控错误均返回 1 且两个流为空（含非法 UTF-8 文件与非法编码名）",
+      "AC-16 --help：命令行给用法退出 0 / 程序化静默返回 0，均不输出 4 行统计",
+      "AC-17 inspect.signature 默认值、argv=None 取 sys.argv[1:]、sys.exit 恰一次且在 __main__ 块内、直接调用不抛 SystemExit",
+      "AC-18 main 只返回整数退出码，数值只能由 count_text 取得（12/1/1/2）",
+      "AC-19 程序化给可读 PATH → 返回 0 且两个流为空",
+      "AC-20 UTF-16LE 文件按 --encoding 解码 → 4/1/1/1；--encoding 不改变 stdin 解码；非法编码名退出 1",
+      "AC-21 文件读取保留原始换行、归一化只在 count_text 一处、无 splitlines；文件与 count_text 同为 5/3/3/3",
+      "AC-22 sample_input.txt 20 字节 LF 结尾、README 的 20/2/2/4 与 12/1/1/2 自洽、无 char_count: 6、三份文件无裸 U+2019",
+      "AC-23 编号一致：AC-01–AC-25 / BC-01–BC-26，测试中 limit=25、range(1,26)、range(1,27)",
+      "AC-24 examples/text-stats 内无 requirements.txt / pyproject.toml / setup.py / Pipfile / poetry.lock",
+      "AC-25 两份 Python 文件 import 只含标准库与同目录 text_stats"
+    ],
+    "deviations_from_requirement": [],
+    "bytecode_scope": {
+      "env_applied": true,
+      "env_variable": "PYTHONDONTWRITEBYTECODE",
+      "cache_dir": "examples/text-stats/__pycache__",
+      "entries_before": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14885,
+          "mtime_ms": 1792244851273,
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ],
+      "entries_after": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14885,
+          "mtime_ms": 1792244851273,
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ]
+    }
+  }
+}

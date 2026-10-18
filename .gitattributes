@@ -1,0 +1,34 @@
+# 样本输入文件的字节是验收条件的一部分：AC-11 要求它恰好是 "hello world\nfoo bar\n"
+# （20 个码点、2 行）。本机 core.autocrlf=true 时，检出与 `git archive` 导出都会把行尾
+# 变成 CRLF，于是 examples/text-stats 的 test_ac22 在干净副本里必然失败（无人值守加固 D
+# 的实测发现）。这里只固定这一个数据文件的行尾，不改动其它文件的既有处理方式。
+examples/text-stats/sample_input.txt text eol=lf
+
+# 证据与运行记录按字节记录哈希：只要检出/导出改写了行尾，"工作区字节 == Git blob ==
+# 记录 sha256"这条校验链就会断。2026-10-17 的 v0.2-run1 现场里 `.run-owner.json` 由
+# 认领工具以 CRLF 写出，故这两个目录禁用行尾转换（-text），原样入库；
+# 同时关闭该路径的 whitespace 检查（diff --check 会把 CR 误报为行尾空白）。
+docs/evidence/v0.2-run1-20261017T121445Z/** -text -whitespace
+docs/run-records/v0.2-run1-20261017T121445Z/** -text
+
+# 审查包自带 SHA256SUMS.txt（本机实测输出，含 CRLF）：同样按字节入库才能复算。
+docs/review/** -text -whitespace
+
+# 交付源码与说明的行尾固定为 LF：证据里记录的是 LF 字节的 sha256，检出后必须一致。
+examples/text-stats/text_stats.py text eol=lf
+examples/text-stats/test_text_stats.py text eol=lf
+examples/text-stats/README.md text eol=lf
+
+# 编排脚本是"执行前校验"的比较对象：`git show <SHA>:workflows/three-agent-mvp.js` 的字节
+# 必须与工作区一致，否则本机 core.autocrlf=true 会在下次检出时把它变成 CRLF，
+# 使 tests/preflight-workflow-script.mjs 的逐字节比对失去意义（2026-10-17 v0.3-run3 之后加固）。
+workflows/three-agent-mvp.js text eol=lf
+
+docs/evidence/v0.1-approval-rejection-20261017T112518Z/** text eol=lf
+
+# 运行记录与证据目录都带自证哈希（`SHA256SUMS.txt`、`usage-report.json` 的“同输入必得同字节”）。
+# 本机 `core.autocrlf=true`：若这些路径按文本处理，检出与 `git archive` 导出都会把 LF 改成 CRLF，
+# “工作区字节 == Git blob == 记录 sha256”这条链在干净副本里就断了。
+# 2026-10-17 归档 v0.4-run4 时发现此前只覆盖了 v0.2-run1 一个目录，现按目录整体禁用行尾转换。
+docs/evidence/** -text -whitespace
+docs/run-records/** -text -whitespace

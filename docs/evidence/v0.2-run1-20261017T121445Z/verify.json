@@ -1,0 +1,28 @@
+{
+  "run_id": "v0.2-run1-20261017T121445Z",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-17T20:28:15.328120+08:00",
+  "result": {
+    "command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": "............................................................................\r\n----------------------------------------------------------------------\r\nRan 76 tests in 1.888s\r\n\r\nOK\r\n",
+    "ran_tests": 76,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "a540ff4a5de84a303a207a80822234d47f1690361870157eacfa4d10ade35bdc",
+        "bytes": 13046
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "f97e9493a018e9253a65fb979a269a12dd199f0f8f35092beff8d18ba185a990",
+        "bytes": 39783
+      }
+    ],
+    "requirement_conflicts": [],
+    "notes": "按注入的规范化命令原样执行，未改写、未增删参数；该命令未设 PYTHONDONTWRITEBYTECODE，运行后在 examples/text-stats/__pycache__ 下生成/更新了 .pyc（该路径已被仓库根 .gitignore 第 2 条 __pycache__/ 忽略）；模块文件与测试文件的 sha256 均在本次复跑之后重新计算，与复跑前一致。",
+    "generated_at": "2026-10-17T20:28:15.328120+08:00"
+  }
+}

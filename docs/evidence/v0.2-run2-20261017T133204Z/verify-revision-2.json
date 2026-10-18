@@ -1,0 +1,61 @@
+{
+  "run_id": "v0.2-run2-20261017T133204Z",
+  "agent": "Verifier Agent",
+  "stage": "verify",
+  "generated_at": "2026-10-17T21:54:40.0953914+08:00",
+  "result": {
+    "command": "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "exit_code": "0",
+    "raw_output": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.906s\n\nOK\n",
+    "ran_tests": 81,
+    "result_marker": "OK",
+    "artifacts": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "sha256": "17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a",
+        "bytes": 13008
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "sha256": "caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e",
+        "bytes": 37430
+      }
+    ],
+    "bytecode_scope": {
+      "env_applied": true,
+      "env_variable": "PYTHONDONTWRITEBYTECODE",
+      "cache_dir": "examples/text-stats/__pycache__",
+      "entries_before": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919.3315,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14885,
+          "mtime_ms": 1792244851273.0972,
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ],
+      "entries_after": [
+        {
+          "path": "examples/text-stats/__pycache__/test_text_stats.cpython-313.pyc",
+          "bytes": 66316,
+          "mtime_ms": 1792240028919.3315,
+          "sha256": "24e090c3a58ff13f3ba76e24e621b8727a2cc82bfd5eb0414f9c7c37d4317280"
+        },
+        {
+          "path": "examples/text-stats/__pycache__/text_stats.cpython-313.pyc",
+          "bytes": 14885,
+          "mtime_ms": 1792244851273.0972,
+          "sha256": "453ece51d21091ab7e7cec1f73a281b8ff85dd96dd47705005376e3ed9b82d2b"
+        }
+      ]
+    },
+    "requirement_conflicts": [],
+    "generated_at": "2026-10-17T21:54:40.0953914+08:00",
+    "notes": "工作目录：仓库根 <repo-root>；交付目录 examples/text-stats 存在。规范化命令按注入形式原样执行一次（同一条命令内含受控环境前缀 PYTHONDONTWRITEBYTECODE=1，未追加其它环境变量或命令），真实退出码 0。unittest 的 dot 输出与统计行走 stderr，stdout 为空；raw_output 为二者合并后的原始内容。artifacts 的两个 sha256/bytes 均在本次复跑之后按原始字节（二进制读取）重新计算。运行前后 __pycache__ 清单逐项比对：文件数、bytes、mtime_ms、sha256 全部相同，未新增也未重写 .pyc。运行中发现 examples/text-stats/.test-scratch/ 下存在历史遗留、ACL 受限的 tmp* 子目录（Get-ChildItem -Recurse 在其上被拒绝访问），与需求 open_questions 第 2 条描述一致，未做任何清理。requirement.json 的 AC/BC 逐条阅读未发现对同一调用给出互斥期望的两条条文，requirement_conflicts 为空数组。"
+  }
+}

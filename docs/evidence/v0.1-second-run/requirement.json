@@ -1,0 +1,87 @@
+{
+  "run_id": "v0.1-second-run",
+  "agent": "Requirement Agent",
+  "stage": "requirement",
+  "generated_at": "2026-10-16T19:51:07.6021408+08:00",
+  "result": {
+    "goal": "在既有实现基础上改进 examples/text-stats 下的 Python 文本统计命令行工具：读取文件路径或标准输入的一段文本，输出总字符数、总行数、非空行数、英文单词数四项统计，同时提供可被单元测试直接调用的纯函数接口与命令行入口，并把上一轮暴露的 4 个缺陷（行数口径矛盾、多余位置参数退出码、冗余转发函数、文档连接符错误）连同需求缺陷一并修正；仅使用 Python 标准库。",
+    "scope_in": [
+      "SI-01 纯函数接口：交付目录 examples/text-stats 下的模块 text_stats.py 暴露 count_text(text: str) -> dict，参数为已解码的字符串，返回恰好含四个整数键的 dict：char_count、line_count、non_empty_line_count、word_count，其取值规则由 BC-01 至 BC-06 唯一确定。",
+      "SI-02 命令行入口：同模块暴露 main(argv: list[str] | None = None) -> int，返回进程退出码，使测试可直接调用而不必启动真实进程；模块的 __main__ 入口直接调用 main 并把返回值交给 sys.exit。",
+      "SI-03 命令行用法：python text_stats.py [PATH]，给出 PATH 时读取该文件，省略时读取标准输入全部文本；命令行统计结果通过调用 count_text 得到，与纯函数接口逐项一致（BC-16）。",
+      "SI-04 四项输出的口径修正（缺陷 a）：line_count 采用 Python str.splitlines() 语义，且该语义是行数的唯一权威定义：'a\\n' -> 1 行、'\\n' -> 1 行、'a\\nb' -> 2 行；文档与测试中不得再出现任何与之矛盾的换行结尾计数值（BC-01、BC-03）。",
+      "SI-05 多余位置参数的处理（缺陷 b）：位置参数上限为 1 个；给出 2 个及以上位置参数时属用法错误，必须与其它错误路径一致——标准输出为空、标准错误至少一行以 'error: ' 开头的英文消息、退出码为 1；不得使用 argparse 默认的退出码 2，不得抛出未捕获的异常（BC-14、AC-13）。",
+      "SI-06 删除冗余转发函数（缺陷 c）：删除实现中任何仅做“单行转发到 main”的函数（当前实现中的 _cli 即属此类），__main__ 入口直接调用 main；并禁止再引入新的转发包装函数（BC-17、AC-14）。",
+      "SI-07 文档连接符写法修正（缺陷 d）：README.md 描述英文单词连接符时，必须让 ASCII 撇号 U+0027 与右单引号 U+2019 可辨认——凡用引号形式书写 U+2019 时必须同时给出码位标注（写法 \u2019 或 U+2019），或用显式转义 \\u2019；不得出现两个外观相同、实际码位不同的撇号却无任何区分标注（AC-15）。",
+      "SI-08 文档：交付目录内 README.md 更新四项统计判定规则、命令行用法（含至少一个可直接复制的示例命令及其期望输出）、测试运行命令，以及与 BC 编号一致的规则引用与退出码约定（成功 0、失败 1）。",
+      "SI-09 测试：交付目录 examples/text-stats 下提供仅依赖 unittest 的测试 test_text_stats.py；测试必须覆盖 AC-02 至 AC-10 的每条给定输入→期望输出，并以真实子进程（或等价的 sys.exit(main([...])) 调用）校验命令行入口、退出码与四行输出格式。",
+      "SI-10 测试与需求一致（避免重犯需求缺陷）：既有测试中凡与本需求 BC 规则冲突的断言（如把 'hello world\\nfoo bar\\n' 的 line_count 断言为 3、把 'cafe\\u0301' 的 word_count 断言为 2）必须改为符合 BC 的期望值后保留为回归测试，禁止为迁就旧断言而保留矛盾口径，也禁止把“需求自相矛盾”当作已实现行为固化下来（BC-18、BC-19、AC-11）。",
+      "SI-11 依赖边界：仅使用 Python 标准库模块（sys、re、argparse、unittest、codecs、io 等），不新建 requirements.txt / pyproject.toml / setup.py / Pipfile 等依赖清单。"
+    ],
+    "scope_out": [
+      "SO-01 不统计词频、唯一词数、最长行、平均行长、字符种类分布等需求未列出的指标。",
+      "SO-02 不提供 4 行 'key: value' 之外的输出格式（不增加 --json、--csv、--format、--table 等开关）。",
+      "SO-03 不实现递归目录遍历、通配符展开、多文件批量统计或跨文件汇总。",
+      "SO-04 不实现文本修改、排序、过滤、高亮、格式化或写回文件的功能。",
+      "SO-05 不实现编码自动探测（chardet 之类）或字节数统计模式。",
+      "SO-06 不引入任何第三方依赖（pytest、chardet、click、typer、rich、numpy、pandas 等一律禁止）。",
+      "SO-07 不实现交互式界面、GUI、Web 服务、网络访问、日志文件写入、配置文件读取或环境变量配置。",
+      "SO-08 不按字形簇（grapheme cluster）或终端显示宽度计数，不做 Unicode 归一化（NFC/NFD）比较或规范化。",
+      "SO-09 不改变四项输出的标签名与顺序，不改变成功路径恰好 4 行、失败路径 stdout 为空的既有外部契约。",
+      "SO-10 不修改 examples/text-stats 之外的任何仓库文件，尤其不修改 AGENTS.md、agents/、workflows/、docs/evidence/v0.1-first-run/ 下的内容。"
+    ],
+    "acceptance_criteria": [
+      "AC-01（纯函数接口形状）：在 examples/text-stats 目录执行 `python -c \"from text_stats import count_text; d = count_text('a'); print(type(d).__name__, sorted(d), [type(v).__name__ for v in d.values()])\"`，标准输出为 `dict ['char_count', 'line_count', 'non_empty_line_count', 'word_count'] ['int', 'int', 'int', 'int']`，且值不含 bool。",
+      "AC-02（空文本）：count_text('') 返回 {'char_count': 0, 'line_count': 0, 'non_empty_line_count': 0, 'word_count': 0}。依据 BC-01/BC-03/BC-04/BC-06。",
+      "AC-03（以换行结尾的文本 + 仅换行符 / 连续换行）：以下四条断言同时成立：count_text('hello world\\n') 返回 {'char_count': 12, 'line_count': 1, 'non_empty_line_count': 1, 'word_count': 2}；count_text('\\n') 返回 {'char_count': 1, 'line_count': 1, 'non_empty_line_count': 0, 'word_count': 0}；count_text('a\\n\\n') 返回 {'char_count': 3, 'line_count': 2, 'non_empty_line_count': 1, 'word_count': 1}；count_text('a\\nb') 的 line_count 为 2。依据 BC-01/BC-02/BC-03（唯一行数口径，禁止出现 3 行之类的第二种断言）。",
+      "AC-04（只含空白行的文本）：count_text('\\n\\n') 返回 {'char_count': 2, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}；count_text('  \\n\\t \\n') 返回 {'char_count': 6, 'line_count': 2, 'non_empty_line_count': 0, 'word_count': 0}；count_text('\\t\\n')['non_empty_line_count'] 为 0；count_text('\\u3000\\n')['non_empty_line_count'] 为 0；count_text('\\u00a0x\\n')['non_empty_line_count'] 为 1。依据 BC-04/BC-05。",
+      "AC-05（行数口径三段式：无结尾换行 / 单个结尾换行 / 两个结尾换行）：count_text('hello world\\nfoo bar\\n') 返回 {'char_count': 20, 'line_count': 2, 'non_empty_line_count': 2, 'word_count': 4}；count_text('hello world\\nfoo bar')（无结尾换行）的 line_count 为 2、char_count 为 19；count_text('hello world\\nfoo bar\\n')['line_count'] 为 2 而 count_text('hello world\\nfoo bar\\n\\n')['line_count'] 为 3。本条目是该输入行数的唯一期望值。",
+      "AC-06（英文单词判定：大小写、连字符、撇号、数字）：以下断言全部成立：count_text('Hello hello HELLO')['word_count'] == 3；count_text('well-known')['word_count'] == 1；count_text('a-b-c')['word_count'] == 1；count_text('hello--world')['word_count'] == 2；count_text('-abc')['word_count'] == 1；count_text(\"don't\")['word_count'] == 1；count_text('it\\u2019s')['word_count'] == 1；count_text('123 456')['word_count'] == 0；count_text('abc123')['word_count'] == 1；count_text('3rd')['word_count'] == 1；count_text('a1b')['word_count'] == 2；count_text('a_b')['word_count'] == 2；count_text('foo_bar baz')['word_count'] == 3。依据 BC-06/BC-07/BC-08/BC-10。",
+      "AC-07（英文单词判定：非 ASCII 字符，含组合字符与既有一致性要求）：以下断言全部成立：count_text('caf\\u00e9')['word_count'] == 1（char_count 为 4）；count_text('cafe\\u0301')['word_count'] == 1（char_count 为 5，组合重音符 U+0301 计 1 个字符但不是单词字符）；count_text('na\\u00efve')['word_count'] == 2；count_text('\\u4e2d\\u6587')['word_count'] == 0；count_text('abc\\u4e2d\\u6587def')['word_count'] == 2；count_text('caf\\u00e9-mocha')['word_count'] == 2。依据 BC-06/BC-09；任何断言非 ASCII 文本得到与 [A-Za-z]+ 语义不符的词数（如把 'cafe\\u0301' 断言为 2）都不允许出现。",
+      "AC-08（命令行读取文件）：在 examples/text-stats 下写入 sample_input.txt，内容为 'hello world\\nfoo bar\\n'（20 个字符），执行 `python text_stats.py sample_input.txt`，退出码为 0，标准输出恰好为四行且顺序固定：`char_count: 20`、`line_count: 2`、`non_empty_line_count: 2`、`word_count: 4`（不得出现多余空行、警告或提示文本；line_count 不得为 3）。",
+      "AC-09（命令行读取标准输入）：执行 `printf 'hello world\\n' | python text_stats.py`（Windows 等价：`'hello world' | python text_stats.py`），退出码为 0，标准输出四行依次为 `char_count: 12`、`line_count: 1`、`non_empty_line_count: 1`、`word_count: 2`；在标准输入立即可读到 EOF 时（等价 `python text_stats.py < /dev/null`）退出码为 0，标准输出四行全为 0，程序不得阻塞等待输入。",
+      "AC-10（文件路径的错误路径）：文件不存在（如 `python text_stats.py missing-file.txt`）时：退出码为 1，标准输出为空字符串，标准错误至少一行以 'error: ' 开头；传入目录路径、无法解码的文件（如字节内容 b'\\xff\\xfe\\x00bad'）、以及 `--encoding no-such-codec` 时行为完全相同（退出码 1、stdout 为空、stderr 以 'error: ' 开头），且标准错误中不含 'Traceback' 字样。",
+      "AC-11（缺陷 b 的修复：多余位置参数退出码为 1）：执行 `python text_stats.py sample_input.txt extra.txt`（两个位置参数，无论文件是否存在），退出码为 1（不得为 2），标准输出为空，标准错误至少一行以 'error: ' 开头；三个及以上位置参数同样为退出码 1。该行为以真实子进程或 `sys.exit(main([...]))` 的方式检查。",
+      "AC-12（缺陷 c 的修复：无冗余转发函数，入口直接调用 main）：在 examples/text-stats 目录执行命令 `python -c \"import inspect, text_stats as t; names=[n for n,f in vars(t).items() if inspect.isfunction(f) and f.__module__=='text_stats' and 'return main(' in inspect.getsource(f)]; print('FORWARDERS', names)\"`，标准输出为 `FORWARDERS []`（模块中不存在 _cli 之类仅把调用转发给 main 的函数）；再执行 `python -c \"import text_stats as t; code = t.main([], stdin_text=''); print(callable(t.main), code, type(code).__name__)\"`，标准输出为 `True 0 int`，证明 main 可直接调用并返回整数退出码；模块 __main__ 入口直接调用 main，不经过任何中间包装函数。",
+      "AC-13（缺陷 c 的修复：命令行仍可正常工作）：执行 `python text_stats.py --help` 退出码为 0 且标准输出包含 PATH 相关说明；执行 `python text_stats.py sample_input.txt` 的退出码为 0 且输出与 AC-08 一致；即删除转发函数后命令行入口行为不变。",
+      "AC-14（单元测试可一键运行且全绿，且不含与需求规则冲突的断言）：在仓库根目录执行 `python -m unittest discover -s examples/text-stats -p \"test_*.py\" -v` 退出码为 0，无 failure、无 error，测试数不少于 15；测试源码中不存在把 'hello world\\nfoo bar\\n' 的 line_count 断言为 3、或把 'cafe\\u0301' 的 word_count 断言为 2 的语句（用 findstr / grep 检索 `line_count: 3`、`line_count\"\\] , 3` 等具体写法与 `'cafe\\u0301'` 附近的值，必须查不到）。",
+      "AC-15（缺陷 d 的修复：README 连接符可辨认）：examples/text-stats/README.md 中描述连接符的文字里，每处以引号形式出现的 U+2019 都带有可辨认标注（同一行内出现 `\\u2019` 或 `U+2019` 或 `\\u2019` 的转义写法之一）；文件中不存在“两个外观相同但码位不同（U+0027 与 U+2019）的撇号并列出现且无任何码位标注”的句子。检查方式：读取 README.md 中含 'word_count' 或 '连接符' 或 '撇号' 的行，逐行确认上述条件。",
+      "AC-16（文档可执行性）：examples/text-stats/README.md 中至少有一个可直接复制的命令行示例，按原文执行后其标准输出与文档记载的期望输出逐字符一致（含 `line_count` 与 `char_count` 的值）；README.md 中给出的测试运行命令执行后退出码为 0。",
+      "AC-17（依赖边界可检查）：对 examples/text-stats 下所有 .py 文件检索以 import / from 开头的行，被导入的顶层模块均属于 Python 标准库；且交付目录内不存在 requirements.txt、pyproject.toml、setup.py、Pipfile。"
+    ],
+    "boundary_conditions": [
+      "BC-01 字符数口径：char_count = len(normalize(text))，其中 normalize 先剥离一个前导 '\\ufeff'（仅当它是文本首字符时，且只剥离这一个），再执行 BC-02 的换行归一化；长度按 Unicode 码点计（Python len(str)），不按字节、不按字形簇、不按显示宽度。例子：char_count('a\\u4e2d') == 2；char_count('\\U0001F600') == 1；char_count('\\ufeffhi\\n') == 3（BOM 被剥离）；char_count('') == 0；char_count('\u3000') == 1。",
+      "BC-02 换行归一化（唯一权威定义）：在 char_count 与 line_count 之前，把 '\\r\\n' 替换为 '\\n'，再把剩余的 '\\r' 替换为 '\\n'（与 Python io 通用换行一致）；其它字符一律不改写（尤其不得把 U+2028、U+2029、\\x0b、\\x0c、\\x85 改写成 '\\n'）。例子：char_count('a\\r\\nb') == 3（'\\r\\n' 归一化后只计 1 个字符）；char_count('a\\rb') == 3；char_count('a\\u2028b') == 3 且 line_count('a\\u2028b') == 1（U+2028 不产生新行）。",
+      "BC-03 行数口径（唯一、无歧义；缺陷 a 的判定规则）：归一化文本 T 的行数定义为 line_count = len(T.splitlines())，即完全采用 Python str.splitlines() 的语义；该定义是行数的唯一权威依据，任何与之冲突的历史表述都以本条为准。等价说法：以 \\n 切分所得片段个数，且当 T 以 \\n 结尾（或 T 为空）时丢弃末尾的空片段。具体判定表：'' -> 0；'\\n' -> 1；'a\\n' -> 1（以换行结尾不产生额外空行）；'a' -> 1；'a\\nb' -> 2；'a\\n\\n' -> 2；'hello world\\nfoo bar\\n' -> 2；'hello world\\nfoo bar\\n\\n' -> 3。",
+      "BC-04 非空行口径：先按 BC-03 得到行列表 L = T.splitlines()，再令 non_empty_line_count = L 中满足 line.strip() != '' 的元素个数；'非空白' 采用 Python str.strip() 的空白定义（空格、\\t、\\n、\\r、\\f、\\v 以及 Unicode 空白如全角空格 '\\u3000'、不换行空格 '\\u00a0'）。例子：non_empty_line_count('a\\n \\n') == 1；non_empty_line_count('\\t\\n') == 0；non_empty_line_count('\\u3000\\n') == 0；non_empty_line_count('\\u00a0x\\n') == 1；non_empty_line_count('\\n') == 0。",
+      "BC-05 行数不变量：对任意输入恒有 0 <= non_empty_line_count <= line_count；line_count == 0 时 non_empty_line_count == 0；line_count == 0 当且仅当输入（归一化后）为空字符串。",
+      "BC-06 英文单词的字符集：单词字符只有 ASCII 字母 a-z 与 A-Z；ASCII 数字、下划线、非 ASCII 字母（é、中、Д 等）、组合用记号（如 U+0301）都不是单词字符；判定方式为在归一化文本上执行正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 的 findall 并取匹配个数。例子：word_count('abc123') == 1；word_count('123') == 0；word_count('a1b') == 2；word_count('3rd') == 1；word_count('a_b') == 2；word_count('foo_bar baz') == 3。",
+      "BC-07 大小写规则：不区分大小写做合并，每个出现的 [A-Za-z]+ 字母片段各计 1，不做小写化归并。例子：word_count('Hello hello HELLO') == 3；word_count('ABC') == 1。",
+      "BC-08 连接符（连字符与撇号）规则：只有三种连接符可把两个字母片段连成 1 个单词——ASCII 连字符 '-'、ASCII 撇号 U+0027、右单引号 U+2019；连接条件是连接符两侧紧邻的字符都是 ASCII 字母，且一次只允许一个连接符连接两段（连续两个连接符 '--' 不能连接，因此两段各计 1 个单词）。例子：word_count('well-known') == 1；word_count(\"don't\") == 1；word_count('it\\u2019s') == 1；word_count('rock\\u2019n') == 1；word_count('a-b-c') == 1；word_count('hello--world') == 2；word_count('-abc') == 1；word_count('abc-') == 1。",
+      "BC-09 非 ASCII 字母与组合字符不参与连接：非 ASCII 字母与组合用记号既不是单词字符，也不能充当 BC-08 的连接符，它们只终止其前的字母片段。由此：word_count('caf\\u00e9') == 1 且 word_count('cafe\\u0301') == 1（两者都只有 ASCII 字母片段 'caf'/'cafe'，U+00E9 与 U+0301 都不是连接符）；word_count('caf\\u00e9-mocha') == 2（'-' 左侧紧邻的是 'é' 而非 ASCII 字母，故不连接）；word_count('cafe\\u0301-mocha') == 2；word_count('na\\u00efve') == 2；word_count('\\u4e2d\\u6587') == 0；word_count('abc\\u4e2d\\u6587def') == 2。任何与正则 [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)* 结果不符的词数断言均属错误。",
+      "BC-10 数字与下划线不连接单词：ASCII 数字与 '_' 不是单词字符，会把字母片段切开。例子：word_count('a1b') == 2；word_count('foo_bar baz') == 3；word_count('1984') == 0。",
+      "BC-11 输入解码与 BOM：从文件读取时默认按 UTF-8 解码；--encoding NAME 可覆盖解码编码；解码后若文本以单个 '\\ufeff' 开头，则按 BC-01 剥离该字符后再统计（因此 BOM 不计入 char_count），无论使用默认编码还是显式 --encoding 都执行同样的剥离；读取文件时必须禁用通用换行转换（newline=''，即保留 \\r\\n 原样）以便与纯函数口径一致（BC-16）。从标准输入读取时按 Python 文本模式（sys.stdin.read()）取得文本，该文本可能已由 Python 的通用换行完成 \\r\\n -> \\n 转换；此项与环境相关、不作为验收断言。例子：字节 EF BB BF 后接 'hi\\n' 的文件 -> char_count 3、line_count 1、word_count 1；count_text('\\ufeffhi\\n')['char_count'] == 3。",
+      "BC-12 输出格式稳定性：成功路径的标准输出恰好 4 行，每行形如 '<key>: <value>'，<key> 依次为 char_count、line_count、non_empty_line_count、word_count，冒号后恰好一个 ASCII 空格，<value> 为十进制整数（无前导零、无千位分隔符、无正号），行尾为单个 '\\n'，不得输出多余空行、警告或提示文本。",
+      "BC-13 错误路径统一语义：以下情形一律视为错误——位置参数多于 1 个、文件不存在/是目录/不可读（OSError）、解码失败（UnicodeDecodeError）、--encoding 指定的编码名未知（LookupError）。错误时：标准退出码为 1；标准输出不输出任何字符；标准错误至少输出一行以 'error: ' 开头的英文消息（消息中应包含出错的路径或编码名）。不得抛出未捕获的异常，不得打印 traceback。",
+      "BC-14 位置参数上限与退出码（缺陷 b 的判定规则）：命令行位置参数最多接受 1 个；解析器（argparse）的用法错误必须与其它错误路径一致——退出码为 1、stdout 为空、stderr 以 'error: ' 开头；严禁沿用 argparse 默认的 exit code 2。main(argv) 遇到用法错误时返回整数 1，不得让 SystemExit 逃逸出 main。例子：main(['a.txt', 'b.txt']) 返回 1；`python text_stats.py a.txt b.txt` 退出码为 1 且 stderr 以 'error: ' 开头。",
+      "BC-15 纯函数与命令行一致性：命令行路径必须复用 count_text 的判定逻辑；对同一段文本，count_text 的返回值与命令行 4 行输出中的数值必须逐项相等，不得存在两套口径；四项统计也不得由命令行另行实现一遍。",
+      "BC-16 入口唯一性与无冗余转发（缺陷 c 的判定规则）：模块中不得存在仅做“单行转发/包装”的函数（当前实现中的 _cli(argv) -> main(argv) 即属此类，必须删除）；__main__ 入口必须直接 `sys.exit(main())`；不得引入新的同义转发函数。判定方式：模块级命名空间中除 count_text 与 main 外，不得存在任何函数体等价于 `return main(argv)` 的包装函数。",
+      "BC-17 规范优先级（避免重犯需求缺陷）：当交付目录内既有文档（README.md、模块 docstring、测试注释）或既有测试中出现与本需求 BC-01 至 BC-19 相矛盾的数值表述时，一律以本需求为准，实现者必须修正文档与测试中的矛盾值，不得把矛盾保留在交付物中，也不得把“规范自相矛盾”固化成期望行为。例子：不得再出现 line_count 同时为 2 与 3 的两种断言，也不得出现 'cafe\\u0301' 的 word_count 同时为 1 与 2 的两种断言。",
+      "BC-18 测试文件必须自洽：examples/text-stats/test_text_stats.py 中不得存在任何与 BC-01 至 BC-17 冲突的断言（包括但不限于把 'hello world\\nfoo bar\\n' 的 line_count 断言为 3、把 'cafe\\u0301' 的 word_count 断言为 2、把多余位置参数的退出码断言为 2）；既有测试用例如与新规则冲突，应按新规则更新期望值后保留（不得为迁就旧断言而保留旧口径）。",
+      "BC-19 术语与输出标签固定：四项结果的键名与输出标签严格为 char_count、line_count、non_empty_line_count、word_count；'非空行' 指 strip() 后仍含字符的行；'英文单词' 按 BC-06 至 BC-10 判定；'总行数' 按 BC-03 判定。"
+    ],
+    "open_questions": [
+      "OQ-01 需求未指定 README 与注释的语言；按 AGENTS.md 第 1 节（技术文档可用中文解释、标识符与命令用英文）默认中文说明 + 英文标识符与标签。",
+      "OQ-02 需求未指定 --encoding 开关是否保留；本需求保留既有 --encoding NAME 行为（默认 utf-8，未知编码名按 BC-13 报错），因为它已存在于既有实现且不扩大功能范围。",
+      "OQ-03 需求未指定是否提供除 count_text/main 之外的分项辅助函数（如 line_count(text)、word_count(text)）；不强制提供，但若提供则其返回值必须与 count_text 的对应键逐项相等（受 BC-15 约束）。",
+      "OQ-04 交付目录内 .test-scratch/ 下有 11 个上一轮遗留、ACL 拒绝访问的 tmp* 子目录（详见 docs/evidence/v0.1-first-run/coding-report-revision-2.json 与 docs/evidence/v0.1-second-run/preflight.json）；本需求要求测试只在该目录写入平铺文件、不新建子目录，但清理这些遗留目录不在本次范围内（需要人工处理 ACL）。",
+      "OQ-05 需求未指定对已有模块 docstring 中“需求 AC/BC 引用”的保留方式；本需求要求改用本轮的 BC 编号引用（见 SI-07、SI-08、BC-17）。"
+    ],
+    "consistency_check": {
+      "self_checked": true,
+      "conflicts": [],
+      "notes": "已逐条交叉核对 AC-01 至 AC-17 与 BC-01 至 BC-19，未发现无法同时成立的组合。核对要点：(1) 行数只有一套口径——BC-03（= str.splitlines()），AC-03/AC-05/AC-08 引用的全部行数值与之一致（'a\\n'->1、'\\n'->1、'a\\n\\n'->2、'hello world\\nfoo bar\\n'->2、'hello world\\nfoo bar\\n\\n'->3），文档中历史出现的“3 行”表述被 BC-17 明确禁止，不再作为断言存在；(2) 字符数按 BC-01/BC-02 核对：'\\n\\n'->2、'  \\n\\t \\n'->6、'hello world\\n'->12、'hello world\\nfoo bar'->19、'hello world\\nfoo bar\\n'->20、'\\ufeffhi\\n'->3、'cafe\\u0301'->5、'caf\\u00e9'->4，与 AC-02/03/04/05/07 一致；(3) 单词数全部由 BC-06 的正则重算复核：'cafe\\u0301'->1 与 'caf\\u00e9'->1（AC-07，与 BC-09 一致，历史“2”的断言被删除）、'na\\u00efve'->2、'caf\\u00e9-mocha'->2、'hello--world'->2、'a-b-c'->1、'abc123'->1、'a1b'->2、'a_b'->2、'Hello hello HELLO'->3；(4) 退出码只有一种约定——BC-13/BC-14 规定所有错误路径（含多余位置参数）为 1，AC-10/AC-11 与之一致，argparse 默认的 2 被明确禁止，无第二条规则要求 2；(5) AC-12/AC-13 与 BC-16 一致（删除转发函数但保持命令行行为），AC-14 与 BC-18 一致（测试不得残留矛盾断言），AC-15 与 SI-07 一致。所有条目标题涉及的具体期望值均由本条规则自身可推导，未发现任何断言与其所依据规则相矛盾。"
+    },
+    "generated_at": "2026-10-16T19:51:07.6021408+08:00"
+  }
+}

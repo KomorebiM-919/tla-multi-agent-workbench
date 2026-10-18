@@ -1,0 +1,14 @@
+{
+    "runId":  "v0.1-approval-rejection-20261017T112518Z",
+    "sessionId":  "session-3f96bf08-83ae-48d6-a239-0223d4b1c12c",
+    "target":  "<repo-parent>\\tla-approval-rejection-f207d040-ac96-4fce-ad54-470d91d2e7ed.txt",
+    "marker":  "[tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]",
+    "evidenceDir":  "docs/evidence/v0.1-approval-rejection-20261017T112518Z",
+    "sourceCommit":  "b608d43c3325a88c5afb7f616b52e6b55c5c8ed8",
+    "tool":  "tools/approval-rejection-evidence.mjs",
+    "toolSha256":  "fa5998b22c6d80db220060c64fbc5df0a6543ca2a881d5d1e2b32a45907f0090",
+    "canonicalCommand":  "New-Item -ItemType File -Path \u0027<repo-parent>\\tla-approval-rejection-f207d040-ac96-4fce-ad54-470d91d2e7ed.txt\u0027 -Value \u0027[tla-approval-rejection:f207d040-ac96-4fce-ad54-470d91d2e7ed]\u0027 -ErrorAction Stop",
+    "beforeSnapshotCapturedAt":  "2026-10-17T11:25:19.096Z",
+    "preparedAt":  "2026-10-17T11:25:35.5376667Z",
+    "note":  "本文件由编排者在采集 before 快照后写入；不参与内容指纹（证据目录被排除）。"
+}

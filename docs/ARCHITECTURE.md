@@ -18,7 +18,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的技术架构说明。本�
 
 #### 本机安装版（本机实测，2026-10-16）
 
-- 安装目录 `D:\AI\Deepseek Harness`，Electron 桌面应用，版本号 `44.0.0`（`version` 文件），nightly 更新通道，发布者 Hangzhou DeepSeek Artificial Intelligence Co., Ltd.（`resources/app-update.yml`）。
+- 安装目录 `<harness-install-dir>`，Electron 桌面应用，版本号 `44.0.0`（`version` 文件），nightly 更新通道，发布者 Hangzhou DeepSeek Artificial Intelligence Co., Ltd.（`resources/app-update.yml`）。
 - 捆绑运行时：Node.js 24.18.1、pnpm 11.7.0（`resources/runtime/versions.json`）。
 - 家目录 `~/.dsh` 内含：`sessions/`（会话）、`storages/`（存储）、`llm-deepseek/`（DeepSeek 模型适配器目录）、`profiles/`（当前仅初始化 `desktop` 配置文件）、`.credentials.yaml`（凭据文件，内容不读取、不复用）。
 
@@ -217,7 +217,32 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 - MVP 成功的判据是**可核验的产物**：三个 Agent 的实际执行记录、任务输入输出、代码产物、测试结果与审核结论；**不接受仅模拟角色文字的演示**。
 - 五角色完整流水线（需求 → 讨论 → 编码 → 审核 → 测试）仍为 V0.1 扩展目标，不取消，但不作为首次运行成功的前提。
 
-仓库侧只维护：角色提示词（`agents/`，规划中）、工作流脚本（`workflows/`，规划中）、测试与文档。不包含任何自研编排运行时。
+仓库侧只维护：角色提示词（`agents/`）、工作流脚本（`workflows/`）、证据目录排他认领等门禁小工具（`tools/`）、测试与文档。不包含任何自研编排运行时。
+
+**编排层门禁（V0.1 已实现，证据驱动）**：编排脚本自己持有成功判定，不依赖任何角色的自述——需求合并（验收 ID 唯一性、需求自检冲突）、阶段报告冲突优先停跑、
+Coding 自述的**内部一致性**（命令 / 退出码 / `test_succeeded` / 输出摘录四者自洽）、Verifier 与 Review 的独立复跑是否真实执行（用例数 > 0 且两侧一致）、
+文件指纹**恰好覆盖**配置的交付文件（缺项、无关文件、重复路径一律拒绝）、预检 fail-closed（真实路径必须在仓库内、无链接逃逸、路径无未规范化点段、
+解析路径与配置目标一一对应、预检自报的认领前状态必须与认领工具实测的 `evidence_dir_state_before` 一致且只接受"尚不存在/空目录"、`problems` 必须为空）、证据目录由 `tools/claim_evidence_dir.py` 以 `O_EXCL` **排他认领**（已有认领不得覆写）、
+时间戳必须是合法日历时间且落在"编排层实际时间"附近的运行窗口内——**启动时钟与阶段检查时钟分开**：`runStartedAt` 只与脚本启动时刻比较，
+每个 Agent 返回后都重新读取当前时间，用它判断该阶段的时间戳是否"来自未来"；**运行期写入边界按全运行账本判定**：编排层在启动任何子代理之前先采集
+`cacheBaseline`（必填参数），Coding / Verifier / Review 各自交回执行前后清单，**Review 自报的清单就是本轮最后一个观测点**，
+相邻两点之间出现新增 / 重写 / 删除都拒绝（`BYTECODE_CACHE_CHANGED_ACROSS_RUN`），"两个验证阶段各自前后不变"只是必要条件；
+"重写"按内容身份（`bytes` + `sha256`）判定，`mtime_ms` 允许 5 毫秒的表示精度差（同一文件被不同 Agent 报成整数毫秒与浮点毫秒）。
+**证明边界**：容差只吸收表示差，不构成"内容相同即没写过"——把内容改回原样且 mtime 变化不超过 5 毫秒的写入不可观测，
+Review 返回之后的写入也不在门禁内，由运行结束后的确定性工具 `tests/collect-cache-state.py` 事后补采（0 次模型调用、不参与判定），
+返回值 `finalDecision.cacheCoverage` 原样写出这段未观测窗口。**子代理调用预算**：`task.maxAgentCalls`（默认 8、范围 1–32）在每次调用**启动前**检查，
+到上限即返回 `AGENT_CALL_BUDGET_EXCEEDED`、账本里留下 `started: false` 的那一项；原先每轮额外启动的只读 `Cache Collector` 阶段
+已删除（它是调用超限的直接原因），改用上述确定性工具。注意能力边界：**调用次数可以硬限制，单个子代理内部的 token 消耗无法由编排层硬限制**。
+任一条不满足即返回明确状态码、不以 `ok: true` 收场
+（完整状态码表见 `workflows/README.md`，回归测试与认领集成测试见 `tests/`）。
+
+**脚本传递的宿主约束（2026-10-17 核实）**：`workflow` 工具的入参只有 `script`(string) / `meta`(object) / `args`，
+**没有"从文件读脚本"的参数**；真正的 schema 支持子集校验发生在 `agent()` 调用链内部（`dsh-workflow-ptc` 的 `assertObjectJsonSchema`），
+因此宿主**没有零调用的校验接口**。`v0.3-run3` 的手工转录漂移（漏掉 `REVIEW_SCHEMA.properties.issues.items.type`）就是在第 5 次调用前
+才被宿主拒绝的，前 4 次调用已花掉。对应的两道防线：执行前用 `tests/preflight-workflow-script.mjs` 把"待提交载荷"与固定提交的源码字节
+逐字节比对、并对全部 5 个 schema 跑宿主子集规则的本地实现（**0 次模型调用，但本地 PASS 不等于宿主已接受**）；
+运行内用 `args.selfCheck` 只固定**静态 schema 指纹**（提示词指纹是夹具产物，只能按真实输入逐阶段核对，未固定的字段写进
+`scriptSelfCheck.unchecked`）。"实际提交的文本 = 校验过的载荷"这一步无法由工具保证，仍只能靠运行后的原生事件核对。
 
 ## 7. 风险与未验证项（跟踪清单）
 
@@ -235,3 +260,4 @@ TLA 本体是一个 LangGraph Python 应用（自接 langchain-deepseek 等模�
 | 10 | Codex 是否有比 `packages/subagent/subagent-codex/README.md` 更完整的专题接入文档（`docs/subsystems/README.md` 索引全文未核验）；`codex` 是否作为 wire protocol 存在于 hand-declared `api` 取值中 | 未核实 | Codex 接入方式 |
 | 11 | 审批强制拦截的实际覆盖范围未验证：提示词与 Agent 自觉只是软约束，宿主沙箱/审批策略究竟覆盖哪些危险操作，需以拒绝审批负面测试逐项确认 | 未验证（V0.1 拒绝审批测试） | 「危险操作被拦截」的可信度 |
 | 12 | ChatGPT Plus 订阅经官方 `openai-codex` OAuth 或 `subagent-codex` 在 DSH 内委派 Codex 任务的实际可用性（须区分订阅权益与独立 API 计费；不承诺模型可用性与额度） | 未验证（V0.2 独立验收项） | Codex 委派可行性 |
+| 13 | `workflow` 工具的返回值会被宿主截断（run 5 实测：约 1.5 万字符未到达调用方），因此长返回值**不能**直接当作逐字证据；且 workflow 内部的子代理会话不出现在调用会话的 `list_agents` 树中，无法从返回值取得会话 id | 已实测（工具侧限制，工作区按实测设计证据方式） | 编排层取证方式：返回值须落盘并显式标注截断/推导部分，原生执行证据改用 DSH 会话日志按「父会话 + 时间窗」筛选 |

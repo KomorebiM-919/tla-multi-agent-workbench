@@ -1,0 +1,77 @@
+{
+    "run_id":  "v0.1-run3-20261016T150153Z",
+    "agent":  "Verifier Agent",
+    "stage":  "preflight",
+    "generated_at":  "2026-10-16T23:04:05.3863427+08:00",
+    "result":  {
+                   "mode":  "preflight",
+                   "repo_root":  "<repo>",
+                   "repo_root_realpath":  "<repo>",
+                   "evidence_dir":  "docs/evidence/v0.1-run3-20261016T150153Z",
+                   "evidence_dir_state":  "missing",
+                   "evidence_dir_entries":  [
+
+                                            ],
+                   "evidence_dir_realpath":  "<repo>\\evidence\\v0.1-run3-20261016T150153Z",
+                   "evidence_dir_claimed":  true,
+                   "owner_marker_path":  "docs/evidence/v0.1-run3-20261016T150153Z/.run-owner.json",
+                   "link_components":  [
+
+                                       ],
+                   "prompt_files":  [
+                                        {
+                                            "path":  "agents/requirement-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/coding-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/review-agent.md",
+                                            "exists":  true
+                                        },
+                                        {
+                                            "path":  "agents/verifier-agent.md",
+                                            "exists":  true
+                                        }
+                                    ],
+                   "target_dir":  "examples/text-stats",
+                   "target_dir_state":  "present",
+                   "target_dir_realpath":  "<repo>\\examples\\text-stats",
+                   "resolved_paths":  [
+                                          "<repo>",
+                                          "<repo>",
+                                          "<repo>\\evidence",
+                                          "<repo>\\evidence\\v0.1-run3-20261016T150153Z",
+                                          "<repo>\\evidence\\v0.1-run3-20261016T150153Z\\.run-owner.json",
+                                          "<repo>\\evidence\\v0.1-run3-20261016T150153Z\\preflight.json",
+                                          "<repo>\\evidence\\v0.1-first-run",
+                                          "<repo>\\evidence\\v0.1-second-run",
+                                          "<repo>\\REQUIREMENT-CALIBER.md",
+                                          "<repo>\\examples",
+                                          "<repo>\\examples\\text-stats",
+                                          "<repo>\\examples\\text-stats\\text_stats.py",
+                                          "<repo>\\examples\\text-stats\\test_text_stats.py",
+                                          "<repo>\\examples\\text-stats\\sample_input.txt",
+                                          "<repo>\\examples\\text-stats\\README.md",
+                                          "<repo>\\agents\\requirement-agent.md",
+                                          "<repo>\\agents\\coding-agent.md",
+                                          "<repo>\\agents\\review-agent.md",
+                                          "<repo>\\agents\\verifier-agent.md",
+                                          "<repo>\\workflows\\three-agent-mvp.js",
+                                          "<repo>\\tests\\workflow-logic.test.mjs"
+                                      ],
+                   "problems":  [
+                                    "evidence dir docs/evidence/v0.1-run3-20261016T150153Z did not exist before this run (state=missing, entries=[]); this run created it, wrote .run-owner.json and preflight.json, so no historical evidence was overwritten and no other run's claim file was present. Prior evidence lives in separate dirs docs/evidence/v0.1-first-run (9 entries) and docs/evidence/v0.1-second-run (12 entries), both untouched.",
+                                    "Git worktree is dirty on branch feat/v0.1-three-agent-mvp: M agents/verifier-agent.md, M tests/workflow-logic.test.mjs, M workflows/three-agent-mvp.js, ?? docs/REQUIREMENT-CALIBER.md, ?? docs/evidence/v0.1-run3-20261016T150153Z/, ?? docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md, ?? docs/evidence/v0.1-second-run/commit-5034985.diff. The modified agents/verifier-agent.md is the role prompt this run must obey; the prompt files supplied by the orchestrator and the on-disk file may therefore differ from the committed baseline.",
+                                    "examples/text-stats/.test-scratch/ still holds 12 stale temp entries (tmp5yuml3ir, tmpd5umizfc, tmpetnaz6yp, tmph71ek5k4, tmpjagfdglo, tmpl8ymy245, tmpmwydd9c8, tmpo0q7hkbr, tmptlafhlu7, tmptwz6gew6, tmpzjkypr0o, tmp_011ki5g) plus .gitkeep; unlike the previous run these are now readable. Pre-existing state inside the delivery dir that may pollute a later test replay.",
+                                    "examples/text-stats/__pycache__/ contains 2 bytecode files (test_text_stats.cpython-313.pyc, text_stats.cpython-313.pyc) dated 2026-10-16T20:10:20+08:00; stale derived artifacts inside the delivery dir.",
+                                    "No path component from the repository root down to the delivery dir or the evidence dir is a symlink, junction or other reparse point: Get-Item Attributes/LinkType are empty for <repo>, docs, docs\\evidence, docs\\evidence\\v0.1-run3-20261016T150153Z, examples and examples\\text-stats, and fsutil reparsepoint query returns 'Error 4390: The file or directory is not a reparse point' for each of them. No resolved path leaves the repository root, so link_components is empty.",
+                                    "The string v0.1-run3-20261016T150153Z was not found in any of workflows/*.js, tests/*.mjs or docs/*.md, so the run id is not yet referenced by the orchestrator script.",
+                                    "This agent is a delegated subagent: only .run-owner.json and preflight.json were written, plus the evidence directory created to hold them. No credentials file was read, no network access was made, and no git write operation was performed."
+                                ],
+                   "generated_at":  "2026-10-16T23:04:05.3863427+08:00",
+                   "notes":  "Preflight is read-only apart from the two mandated writes (.run-owner.json then preflight.json). The .run-owner.json claim was written first, as instructed, with claimedAt 2026-10-16T23:03:41.9179242+08:00. Timestamp obtained in-run via PowerShell Get-Date -Format o. Branch: feat/v0.1-three-agent-mvp."
+               }
+}

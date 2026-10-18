@@ -1,0 +1,13 @@
+# 01-delivery-unit-tests
+# command: python -m unittest discover -s examples/text-stats -p test_*.py
+# exit code: 0
+# duration: 2.1s
+# timed out: no
+
+
+--- stderr ---
+.................................................................................
+----------------------------------------------------------------------
+Ran 81 tests in 1.979s
+
+OK

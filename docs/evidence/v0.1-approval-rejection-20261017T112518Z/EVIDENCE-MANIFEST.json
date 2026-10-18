@@ -1,0 +1,148 @@
+{
+  "runId": "v0.1-approval-rejection-20261017T112518Z",
+  "generatedAt": "2026-10-17T11:40:00Z 前后",
+  "rule": "原件一律不改；含 SID 或用户目录的文件只提交 redacted 派生副本，并在此记录原始与派生哈希。",
+  "committedOriginals": [
+    {
+      "file": "README.md",
+      "bytes": 7508,
+      "sha256": "3b17e09f588fa4fde704618b4cc501781b96cd33174e6407ab41778ba952eaec",
+      "disposition": "committed（本目录说明：结论表述、两次判定、文件处置、脱敏规则、复算方法）"
+    },
+    {
+      "file": "VERDICT.md",
+      "bytes": 749,
+      "sha256": "8395397f0bd4ff9ce1dc91634a1af6062446940ab44aa9114810dcbc34f321bc",
+      "disposition": "committed（原件，无 SID / 用户目录）"
+    },
+    {
+      "file": "commands.log",
+      "bytes": 260,
+      "sha256": "0813ac508d02e39f431bb1dcb238261abc98a339d1e4996a83d4c730e660db6c",
+      "disposition": "committed（原件，无 SID / 用户目录）"
+    },
+    {
+      "file": "human-observation.md",
+      "bytes": 2723,
+      "sha256": "97d5f9b4aa706abebb5e59c854aa38d4b4d64f371cd974e78e02f082f9761448",
+      "disposition": "committed（原件，无 SID / 用户目录）"
+    },
+    {
+      "file": "run-inputs.json",
+      "bytes": 1071,
+      "sha256": "846fabe91956c684d6724c369350e8f33a5dccea5839d22e6b486019a41fcceb",
+      "disposition": "committed（原件，无 SID / 用户目录）"
+    },
+    {
+      "file": "verification.json",
+      "bytes": 929,
+      "sha256": "2fd43a20268b769ef6b45e053e03aed5d978e49cb2a7682c91a9db35b95368c9",
+      "disposition": "committed（原件，无 SID / 用户目录）"
+    }
+  ],
+  "derived": [
+    {
+      "original": "state-before.json",
+      "derived": "redacted/state-before.redacted.json",
+      "originalBytes": 41998,
+      "originalSha256": "80886418a26a76289881d09bcce69634f787ca8bb802c9e4091af4428d23e7e8",
+      "derivedBytes": 41925,
+      "derivedSha256": "2e0d466cacf262b970971c7c550ce4d72678ed994d6f51e727a1d680543e97da",
+      "rule": "S-1-5-21-<rid> → S-1-5-21-<已脱敏>；C:\\Users\\<name> → <用户主目录已脱敏>；其余字节不变",
+      "redactions": {
+        "sids": 2,
+        "userHomePaths": 0
+      },
+      "jsonValid": true
+    },
+    {
+      "original": "state-after.json",
+      "derived": "redacted/state-after.redacted.json",
+      "originalBytes": 42244,
+      "originalSha256": "51a238d9cfdf3504635a29024448fd9e07b7533c93284c94058f940399a7a7b9",
+      "derivedBytes": 42171,
+      "derivedSha256": "1a8395841b49931981b40e6597fd0d8646ee430def2925bcfb032f9d3ac236bc",
+      "rule": "S-1-5-21-<rid> → S-1-5-21-<已脱敏>；C:\\Users\\<name> → <用户主目录已脱敏>；其余字节不变",
+      "redactions": {
+        "sids": 2,
+        "userHomePaths": 0
+      },
+      "jsonValid": true
+    },
+    {
+      "original": "approval-evidence.json",
+      "derived": "redacted/approval-evidence.redacted.json",
+      "originalBytes": 3116,
+      "originalSha256": "307c81232b4cd14ff2a1d22c9de42ab9b8907662923e342f55198d2e4001abde",
+      "derivedBytes": 3105,
+      "derivedSha256": "2432651a36c0e4d8858d9da338687edf763aed13e1329fdbae11ff3f2b27cfce",
+      "rule": "S-1-5-21-<rid> → S-1-5-21-<已脱敏>；C:\\Users\\<name> → <用户主目录已脱敏>；其余字节不变",
+      "redactions": {
+        "sids": 0,
+        "userHomePaths": 1
+      },
+      "jsonValid": true
+    }
+  ],
+  "localOnly": [
+    {
+      "file": ".acl-after.tmp",
+      "bytes": 256,
+      "sha256": "d60c1a45e4645cceeb0510e5c1e31f1ecf44f99909e3e3be6d6c3d5dee486490",
+      "disposition": "local-only（含本机用户 SID，不公开；SDDL 全文已进入两份快照的 permissions.sddl）"
+    },
+    {
+      "file": ".acl-before.tmp",
+      "bytes": 256,
+      "sha256": "d60c1a45e4645cceeb0510e5c1e31f1ecf44f99909e3e3be6d6c3d5dee486490",
+      "disposition": "local-only（含本机用户 SID，不公开；SDDL 全文已进入两份快照的 permissions.sddl）"
+    },
+    {
+      "file": "approval-evidence.json",
+      "bytes": 3116,
+      "sha256": "307c81232b4cd14ff2a1d22c9de42ab9b8907662923e342f55198d2e4001abde",
+      "disposition": "原件 local-only；已提交 redacted/ 下的派生副本"
+    },
+    {
+      "file": "state-after.json",
+      "bytes": 42244,
+      "sha256": "51a238d9cfdf3504635a29024448fd9e07b7533c93284c94058f940399a7a7b9",
+      "disposition": "原件 local-only；已提交 redacted/ 下的派生副本"
+    },
+    {
+      "file": "state-before.json",
+      "bytes": 41998,
+      "sha256": "80886418a26a76289881d09bcce69634f787ca8bb802c9e4091af4428d23e7e8",
+      "disposition": "原件 local-only；已提交 redacted/ 下的派生副本"
+    }
+  ],
+  "logs": [
+    {
+      "original": "tests/.scratch/unattended/v4/verify-1.log（tests/.scratch，未入库）",
+      "derived": "logs/verify-run1-exit3.txt",
+      "originalBytes": 75,
+      "originalSha256": "57f45d2148bb253616e7c1a394b55d00e6782d68019f62b1b599ee15667ff37c",
+      "derivedBytes": 71,
+      "derivedSha256": "24c40f608f98917c953b0a27004643e6e86a646f16b78c2180cc76859d00ee94",
+      "rule": "去掉 UTF-8 BOM，其余字节不变",
+      "note": "人工观察缺失时的第一次判定：machine PASS / final INCOMPLETE / exit 3（verification.json 已被第二次运行覆盖）"
+    },
+    {
+      "original": "tests/.scratch/unattended/v4/verify-2.log（tests/.scratch，未入库）",
+      "derived": "logs/verify-run2-exit0.txt",
+      "originalBytes": 69,
+      "originalSha256": "5654019abe22cf10a8116d2b2451ffff513ae53019f234fc6c145c3b642729b1",
+      "derivedBytes": 65,
+      "derivedSha256": "1652aa7aa12cfdf539e3b1e4a20e5f2d61e64350ca351ce91f1c52c1f5b567eb",
+      "rule": "去掉 UTF-8 BOM，其余字节不变",
+      "note": "归档人工确认后的第二次判定：machine PASS / final PASS / exit 0"
+    }
+  ],
+  "sha256sums": {
+    "file": "SHA256SUMS.txt",
+    "bytes": 981,
+    "sha256": "34b0b888d9e56244cb0764b106689d0f7c841c8443beb13e82c1336f718b9de9",
+    "covers": 11,
+    "note": "MANIFEST 与 SHA256SUMS 自身不进入清单；两者都用本表与 SHA256SUMS.txt 复算"
+  }
+}

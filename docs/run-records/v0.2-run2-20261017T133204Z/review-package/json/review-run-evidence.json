@@ -1,0 +1,403 @@
+{
+  "runId": "v0.2-run2-20261017T133204Z",
+  "checkedAt": "2026-10-17T14:15:12.371091+00:00",
+  "passed": 70,
+  "total": 70,
+  "checks": [
+    {
+      "check": "owner.runId",
+      "ok": true,
+      "detail": "v0.2-run2-20261017T133204Z"
+    },
+    {
+      "check": "owner.claimedAt",
+      "ok": true,
+      "detail": "2026-10-17T21:37:08.327030+08:00"
+    },
+    {
+      "check": "owner.claimedBy",
+      "ok": true,
+      "detail": "verifier-preflight"
+    },
+    {
+      "check": "owner.claimMode",
+      "ok": true,
+      "detail": "exclusive-create (O_EXCL)"
+    },
+    {
+      "check": "preflight.state_before",
+      "ok": true,
+      "detail": "missing"
+    },
+    {
+      "check": "preflight.claim_created",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "preflight.claim_exit_code",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "requirement.criteria_nonempty",
+      "ok": true,
+      "detail": "25"
+    },
+    {
+      "check": "requirement.boundary_nonempty",
+      "ok": true,
+      "detail": "26"
+    },
+    {
+      "check": "requirement.criteria_ids_present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "requirement.criteria_ids_unique",
+      "ok": true,
+      "detail": "25"
+    },
+    {
+      "check": "requirement.self_checked",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "requirement.no_conflicts",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "check": "coding.files_within_scope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "coding.test_exit_code_zero",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "check": "verify.command_is_canonical",
+      "ok": true,
+      "detail": "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\""
+    },
+    {
+      "check": "verify.exit_code_zero",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "check": "verify.ran_tests",
+      "ok": true,
+      "detail": "81"
+    },
+    {
+      "check": "verify.ok_marker",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "verify.no_failed_marker",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "verify.not_all_skipped",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "verify.artifacts_no_duplicate_paths",
+      "ok": true,
+      "detail": "[\"examples/text-stats/text_stats.py\", \"examples/text-stats/test_text_stats.py\"]"
+    },
+    {
+      "check": "verify.artifacts_exact_set",
+      "ok": true,
+      "detail": "['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']"
+    },
+    {
+      "check": "verify.artifacts_match_disk",
+      "ok": true,
+      "detail": "{\"recorded\": {\"examples/text-stats/text_stats.py\": \"17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a\", \"examples/text-stats/test_text_stats.py\": \"caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e\"}, \"disk\": {\"examples/text-stats/test_text_stats.py\": \"caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e\", \"examples/text-stats/text_stats.py\": \"17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a\"}}"
+    },
+    {
+      "check": "review.verdict_approved",
+      "ok": true,
+      "detail": "APPROVED"
+    },
+    {
+      "check": "review.criteria_check_nonempty",
+      "ok": true,
+      "detail": "25"
+    },
+    {
+      "check": "review.criteria_ids_present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "review.criteria_cover_all",
+      "ok": true,
+      "detail": "{\"missing\": [], \"unknown\": []}"
+    },
+    {
+      "check": "review.criteria_no_duplicates",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "review.criteria_all_satisfied",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "review.independent_command_is_canonical",
+      "ok": true,
+      "detail": "$env:PYTHONDONTWRITEBYTECODE = '1'; python -m unittest discover -s examples/text-stats -p \"test_*.py\""
+    },
+    {
+      "check": "review.independent_exit_code_zero",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "check": "review.independent_ran_tests",
+      "ok": true,
+      "detail": "81"
+    },
+    {
+      "check": "review.independent_ok_marker",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "review.ran_matches_verifier",
+      "ok": true,
+      "detail": "{\"review\": 81, \"verifier\": 81}"
+    },
+    {
+      "check": "review.artifacts_no_duplicate_paths",
+      "ok": true,
+      "detail": "[\"examples/text-stats/text_stats.py\", \"examples/text-stats/test_text_stats.py\"]"
+    },
+    {
+      "check": "review.artifacts_exact_set",
+      "ok": true,
+      "detail": "['examples/text-stats/test_text_stats.py', 'examples/text-stats/text_stats.py']"
+    },
+    {
+      "check": "review.artifacts_equal_verify",
+      "ok": true,
+      "detail": "{\"examples/text-stats/text_stats.py\": \"17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a\", \"examples/text-stats/test_text_stats.py\": \"caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e\"}"
+    },
+    {
+      "check": "review.artifacts_match_disk",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "coding.conflicts_declared",
+      "ok": true,
+      "detail": "list"
+    },
+    {
+      "check": "coding.conflicts_empty",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "check": "verify.conflicts_declared",
+      "ok": true,
+      "detail": "list"
+    },
+    {
+      "check": "verify.conflicts_empty",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "check": "review.conflicts_declared",
+      "ok": true,
+      "detail": "list"
+    },
+    {
+      "check": "review.conflicts_empty",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "check": "mapping.available",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "mapping.clauses_nonempty",
+      "ok": true,
+      "detail": "37"
+    },
+    {
+      "check": "mapping.requirement_ids_unique",
+      "ok": true,
+      "detail": "[\"R-01\", \"R-02\", \"R-03\", \"R-04\", \"R-05\", \"R-06\", \"R-07\", \"R-08\", \"R-09\", \"R-10\", \"R-11\", \"R-12\", \"R-13\", \"R-14\", \"R-15\", \"R-16\", \"R-17\", \"R-18\", \"R-19\", \"R-20\", \"R-21\", \"R-22\", \"R-23\", \"R-24\", \"R-25\", \"R-26\", \"R-27\", \"R-28\", \"R-29\", \"R-30\", \"R-31\", \"R-32\", \"R-33\", \"R-34\", \"R-35\", \"R-36\", \"R-37\"]"
+    },
+    {
+      "check": "mapping.covers_requirement_clauses",
+      "ok": true,
+      "detail": "{\"missing\": [], \"unknown\": []}"
+    },
+    {
+      "check": "mapping.criteria_ids_known",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "check": "mapping.covers_all_criteria",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "check": "time.preflight.valid",
+      "ok": true,
+      "detail": "2026-10-17T21:37:12.2768869+08:00"
+    },
+    {
+      "check": "time.requirement.valid",
+      "ok": true,
+      "detail": "2026-10-17T21:39:53.3094265+08:00"
+    },
+    {
+      "check": "time.coding.valid",
+      "ok": true,
+      "detail": "2026-10-17T21:45:02.0796017+08:00"
+    },
+    {
+      "check": "time.verify.valid",
+      "ok": true,
+      "detail": "2026-10-17T21:46:22.0982015+08:00"
+    },
+    {
+      "check": "time.review.valid",
+      "ok": true,
+      "detail": "2026-10-17T21:48:34.3963255+08:00"
+    },
+    {
+      "check": "time.claim_before_stages",
+      "ok": true,
+      "detail": "[\"2026-10-17T21:37:08.327030+08:00\", \"2026-10-17T21:37:12.276886+08:00\"]"
+    },
+    {
+      "check": "time.order.requirement_after_preflight",
+      "ok": true,
+      "detail": "[\"2026-10-17T21:37:12.276886+08:00\", \"2026-10-17T21:39:53.309426+08:00\"]"
+    },
+    {
+      "check": "time.order.coding_after_requirement",
+      "ok": true,
+      "detail": "[\"2026-10-17T21:39:53.309426+08:00\", \"2026-10-17T21:45:02.079601+08:00\"]"
+    },
+    {
+      "check": "time.order.verify_after_coding",
+      "ok": true,
+      "detail": "[\"2026-10-17T21:45:02.079601+08:00\", \"2026-10-17T21:46:22.098201+08:00\"]"
+    },
+    {
+      "check": "time.order.review_after_verify",
+      "ok": true,
+      "detail": "[\"2026-10-17T21:46:22.098201+08:00\", \"2026-10-17T21:48:34.396325+08:00\"]"
+    },
+    {
+      "check": "time.within_window",
+      "ok": true,
+      "detail": "682.119439"
+    },
+    {
+      "check": "workspace.base_head_recorded",
+      "ok": true,
+      "detail": "e59467b8219435c2f6c85daba1f2196a1616ea53"
+    },
+    {
+      "check": "workspace.delivery_files_changed",
+      "ok": true,
+      "detail": "examples/text-stats/README.md, examples/text-stats/test_text_stats.py, examples/text-stats/text_stats.py"
+    },
+    {
+      "check": "workspace.tracked_sources_within_scope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "workspace.orchestrator_tools",
+      "ok": true,
+      "detail": "（无）"
+    },
+    {
+      "check": "workspace.allow_scope_exclusions",
+      "ok": true,
+      "detail": "tests/mutation-text-stats.py, tests/preflight-claim-integration.test.mjs, tests/review-run-evidence.py, tests/run-review-suite.py, tests/workflow-logic.test.mjs, workflows/three-agent-mvp.js"
+    },
+    {
+      "check": "workspace.non_source_changes",
+      "ok": true,
+      "detail": "docs/ARCHITECTURE.md, docs/ROADMAP.md, tests/README.md, workflows/README.md"
+    },
+    {
+      "check": "workspace.untracked_within_scope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "check": "workspace.allow_scope_exclusions_untracked",
+      "ok": true,
+      "detail": "tests/test_mutation_gate.py"
+    }
+  ],
+  "failures": [],
+  "diskSha256": {
+    "examples/text-stats/test_text_stats.py": "caaca9d4a12d21db6ca4ae2a0ccf8be741e64537cf6f85ecd5100ae48ef2af1e",
+    "examples/text-stats/text_stats.py": "17e12277ecfc019034256362ff9d6f2d26260339d0f324c86cf16dc7a78cc79a"
+  },
+  "expectedCriteriaIds": [
+    "AC-01",
+    "AC-02",
+    "AC-03",
+    "AC-04",
+    "AC-05",
+    "AC-06",
+    "AC-07",
+    "AC-08",
+    "AC-09",
+    "AC-10",
+    "AC-11",
+    "AC-12",
+    "AC-13",
+    "AC-14",
+    "AC-15",
+    "AC-16",
+    "AC-17",
+    "AC-18",
+    "AC-19",
+    "AC-20",
+    "AC-21",
+    "AC-22",
+    "AC-23",
+    "AC-24",
+    "AC-25"
+  ],
+  "allowScope": [
+    "tests/workflow-harness.mjs",
+    "tests/workflow-logic.test.mjs",
+    "workflows/three-agent-mvp.js",
+    "tests/bytecode-integration.test.mjs",
+    "tests/extract-native-events.mjs",
+    "tests/mutation-text-stats.py",
+    "tests/probe-text-stats-requirement.py",
+    "tests/run-review-suite.py",
+    "tests/preflight-claim-integration.test.mjs",
+    "tests/review-run-evidence.py",
+    "tests/test_mutation_gate.py"
+  ]
+}

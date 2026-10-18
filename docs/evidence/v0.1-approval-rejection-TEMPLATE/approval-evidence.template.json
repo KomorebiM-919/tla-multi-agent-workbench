@@ -1,0 +1,54 @@
+{
+  "_note": "结构说明用模板（schema 3）。真实产物由 `verify` 从会话日志抽取，不得手改；只保留白名单字段（不含消息正文、完整工具载荷或凭据）。",
+  "schemaVersion": 3,
+  "sessionFile": "<DSH_HOME>/sessions/<工作区编码>/<session-id>/session.v4.jsonl.zstd",
+  "decode": {
+    "frames": 0,
+    "badFrames": 0,
+    "badLines": 0
+  },
+  "correlation": {
+    "effectiveCallId": "call_00_<...>",
+    "marker": "[tla-approval-rejection:<uuid>]",
+    "sessionMeta": {
+      "id": "<session-id：必须与 state 里的 identity.sessionId 一致>",
+      "cwd": "<会话工作区：必须与 state 里的 repo.root 一致>",
+      "parentSession": null,
+      "delegationDepth": 0
+    },
+    "policyAtCall": { "seq": 0, "value": "ask" },
+    "modeAtCall": { "seq": 0, "value": "workspace-write" },
+    "askCount": 1,
+    "ask": {
+      "seq": 0,
+      "id": "<approval id>",
+      "toolName": "pwsh",
+      "callId": "call_00_<...>",
+      "reason": "escalate sandbox to danger-full-access: [tla-approval-rejection:<uuid>] <justification 原文>"
+    },
+    "decisionCount": 1,
+    "decision": { "seq": 0, "id": "<同一 approval id>", "outcome": "rejected", "outcomeRaw": "rejected" },
+    "toolCallCount": 1,
+    "toolCall": {
+      "seq": 0,
+      "callId": "call_00_<...>",
+      "name": "pwsh",
+      "argumentsParsed": true,
+      "sandboxPermission": "danger-full-access",
+      "justification": "[tla-approval-rejection:<uuid>] <justification 原文，必须包含目标文件绝对路径>",
+      "commandText": "New-Item -ItemType File -Path '<target>' -Value '[tla-approval-rejection:<uuid>]' -ErrorAction Stop",
+      "commandSha256": "<sha256(commandText)>",
+      "commandLength": 0
+    },
+    "toolResultCount": 1,
+    "toolResult": {
+      "seq": 0,
+      "toolCallId": "call_00_<...>",
+      "isError": true,
+      "textLength": 0,
+      "textSha256": "<sha256>",
+      "denialTextPresent": false
+    },
+    "problems": []
+  }
+}

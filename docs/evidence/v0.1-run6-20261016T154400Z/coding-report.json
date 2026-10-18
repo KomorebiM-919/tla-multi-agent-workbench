@@ -1,0 +1,49 @@
+{
+  "run_id": "v0.1-run6-20261016T154400Z",
+  "agent": "Coding Agent",
+  "stage": "coding",
+  "generated_at": "2026-10-16T23:52:17+08:00",
+  "result": {
+    "files_created": [
+      {
+        "path": "examples/text-stats/text_stats.py",
+        "purpose": "Improved the existing standard-library text statistics tool: count_text() returns exactly the four integer keys under the single authoritative caliber (normalise one leading U+FEFF, CRLF then lone CR to LF, split on LF only, trailing LF opens no extra line, word regex [A-Za-z]+(?:[-'\\u2019][A-Za-z]+)*), main(argv, stdin_text) keeps the two call scopes apart (explicit stdin_text returns only an exit code and touches no process stream; stdin_text None runs the CLI and writes exactly four '<key>: <value>' lines), every handled error (missing/unreadable/directory path, decode failure, unknown --encoding, more than one positional argument) exits 1 with an 'error: ' line and no traceback instead of argparse's 2, the redundant single-line forwarding helpers _normalize/_split_lines/_count_lines are gone so count_text and main call the real logic directly, and the dead 'if text is None' branch in main() was removed."
+      },
+      {
+        "path": "examples/text-stats/test_text_stats.py",
+        "purpose": "Unit tests for both contracts (grew 77 -> 81 tests): added a CRLF/lone-CR mixed input (AC-02/AC-14: 'a\\r\\nb\\rc' = 5/3/3/3), a test that a programmatic empty-text call never touches or blocks on sys.stdin (AC-13, via a stdin whose read() raises), a programmatic unknown-encoding error test (AC-19), an AST test that nothing but the __main__ guard calls main() and that no wrapper named run/_main exists (AC-20), plus strengthened the U+2019 readability test (AC-21) and the one-line-forwarder test (BC-21) to walk the module AST instead of doing substring checks."
+      },
+      {
+        "path": "examples/text-stats/README.md",
+        "purpose": "Documentation kept in step with this round's authority: the stale 'unreachable AC-05 value 6 / awaiting human ruling' section was replaced by a worked example fixing \"  \\r\\n \\r\\n\" at char_count 5 (never 6) with a field-by-field basis table and the statement that run 5's recorded conflict is dissolved; added a char-count comparison table (BC-02/03/08) and a priority note that AC-05 is 5. All copy-paste examples still agree with sample_input.txt and with AC-01..AC-14."
+      },
+      {
+        "path": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json",
+        "purpose": "Evidence artifact for this coding stage: envelope (run_id/agent/stage/generated_at) plus the exact result object returned to the pipeline."
+      }
+    ],
+    "implementation_summary": "No behavioural change was needed: a re-run of my independent audit over AC-01..AC-20 (line boundaries, normalisation order, BOM handling, char/line/non-empty/word calibers, both call scopes, all five error paths, --help, standard-library-only imports, guard shape, README example consistency) reported AUDIT FAILURES: 0 both before and after my edits, so the four statistics and the CLI output were already correct. What I fixed were the surviving defects the requirement named: (1) README still described the previous round's AC-05 char_count 6 as an unreachable value awaiting a human ruling, contradicted by this round's authoritative 5 -- rewritten with a worked example and a char-count table; (2) text_stats.py carried a dead branch in main() (an 'if text is None' check after the path/stdin branches that no execution path could reach) -- main() was restructured into path-branch / programmatic-branch / stdin-branch with a single 'if not programmatic' write, preserving the rule that a programmatic call still reports an unreadable PATH or a bad --encoding as an error while writing nothing; (3) the module docstring now states the programmatic-call contract and the AC-05 figure explicitly. Tests were extended from 77 to 81 to cover AC-02/AC-13/AC-19/AC-20 directly and the AC-21/BC-21 checks were made real AST checks instead of substring probes (one self-inflicted failure along the way: 'assertNotIn(\"_main\", source)' matched the \"__main__\" guard, fixed by inspecting parsed top-level function names). No bare U+2019 character exists anywhere in the delivery directory, so AC-21 already held. Dependencies remain Python standard library only and no dependency manifest was added.",
+    "acceptance_criteria_addressed": [
+      "AC-01/AC-04/BC-04/BC-05/BC-06/BC-07 single line-split caliber: trailing LF adds no extra line ('a\\n'=1, 'a\\nb'=2, 'a\\n\\n'=2, 'hello world\\nfoo bar\\n'=2, ''=0, '  \\n\\t\\n'=2 lines with 0 non-empty)",
+      "AC-02/AC-14/BC-01: only LF/CR/CRLF end a line; U+2028, U+2029, \\x0b, \\x0c, \\x1c, \\x1d, \\x1e, \\x85 stay in the line content and count as characters; 'a\\r\\nb\\rc' = char 5 / line 3 / non-empty 3 / word 3",
+      "AC-03/BC-02/BC-03/BC-08 char_count as normalized code points: BOM stripped once ('\\ufeffabc'=3, '\\ufeff\\ufeffabc'=4), CRLF counts 1 char ('a\\r\\nb'=3), '  \\r\\n \\r\\n' = 5",
+      "AC-05: count_text('  \\r\\n \\r\\n') == {char_count 5, line_count 2, non_empty_line_count 0, word_count 0} -- the value once documented as 6 is now fixed at 5 in code, tests and README",
+      "AC-06..AC-09/BC-09..BC-12 word caliber: 'well-known'/'don't'/'it\\u2019s'/'a-b-c' = 1, 'hello--world' = 2, '123 456' = 0, 'abc123' = 1, 'a1b'/'a_b'/'foo_bar baz' = 2/2/3, ' -abc'/'abc- '/'\\'abc' = 1, 'caf\\u00e9-mocha' = 2",
+      "AC-10/AC-13/BC-15/BC-17 programmatic scope: main([], stdin_text='') and main([], stdin_text=REFERENCE_TEXT) return 0 with empty stdout/stderr without reading sys.stdin",
+      "AC-11..AC-13/BC-16/BC-19/BC-13 CLI scope: sample file -> char_count 20/line_count 2/non_empty_line_count 2/word_count 4; piped 'hello world\\n' -> 12/1/1/2; empty stdin -> 0/0/0/0, exactly four '<key>: <value>' lines",
+      "AC-15..AC-18/BC-18 error contract: missing file, unknown --encoding and two positional arguments all exit 1 with a single 'error: ' stderr line, empty stdout, no traceback, never argparse's 2; --help exits 0 with usage text",
+      "AC-19/BC-22 dependency boundary: delivery .py files import only argparse/codecs/re/io/contextlib/subprocess/sys/unittest/ast/os and no dependency manifest exists in the directory",
+      "AC-20/BC-21 no one-line forwarding functions remain and the guard is 'if __name__ == \"__main__\": sys.exit(main())' as the only caller of main()",
+      "AC-21/BC-24 the connector character is identifiable: no bare U+2019 in any delivery file; the regex uses the \\u2019 escape beside an explicit U+2019 code-point note",
+      "AC-22/BC-23 README examples match sample_input.txt and reproduce the CLI output verbatim; AC-23 unittest discovery passes 81/81 covering both the pure function and the subprocess CLI path"
+    ],
+    "test_command": "python -m unittest discover -s examples/text-stats -p \"test_*.py\"",
+    "test_succeeded": true,
+    "test_exit_code": "0",
+    "test_output_excerpt": ".................................................................................\n----------------------------------------------------------------------\nRan 81 tests in 1.160s\n\nOK",
+    "deviations_from_requirement": [],
+    "requirement_conflicts": [],
+    "report_file": "docs/evidence/v0.1-run6-20261016T154400Z/coding-report.json",
+    "generated_at": "2026-10-16T23:52:17+08:00"
+  }
+}

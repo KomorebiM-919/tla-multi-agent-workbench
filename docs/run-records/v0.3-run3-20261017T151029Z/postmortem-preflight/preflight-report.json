@@ -1,0 +1,98 @@
+{
+  "tool": "tests/preflight-workflow-script.mjs",
+  "commit": "ad52050d0cd18dfe26053397b35474a8f6f6d2e9",
+  "repoFile": "workflows/three-agent-mvp.js",
+  "payload": {
+    "path": "tests/.scratch/payload-ad52050.js",
+    "bytes": 141953,
+    "sha256Raw": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8",
+    "sha256Normalized": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8",
+    "trailingNewlines": 1
+  },
+  "source": {
+    "bytes": 141953,
+    "sha256Raw": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8",
+    "sha256Normalized": "05c62896fa0772278eb0cac98b1e11742da3b89da9f6b46691189c1a6b7435e8",
+    "trailingNewlines": 1
+  },
+  "comparison": {
+    "rawIdentical": true,
+    "normalizedIdentical": true,
+    "firstDifference": null,
+    "byteDelta": 0
+  },
+  "bytePolicy": {
+    "rule": "唯一允许的规范化：去掉结尾所有换行符后补一个 \"\\n\"",
+    "identical": "逐字节相同",
+    "normalizedOnly": "仅末尾换行差异 → 记为 normalized-identical，同时保留原始与规范化哈希",
+    "anythingElse": "注释、空行、缩进、判定代码只要变一个字节就是不通过（不尝试\"语义等价\"判断）"
+  },
+  "schemas": {
+    "capturedCalls": 8,
+    "distinct": 5,
+    "checked": [
+      {
+        "label": "Verifier (preflight)",
+        "labels": [
+          "Verifier (preflight)"
+        ],
+        "phase": "preflight",
+        "sha256": "da03fcd5f4f5fca11fd2b07d0143f5de2e0397fdc6d51c21b891d566598d4e14",
+        "violations": []
+      },
+      {
+        "label": "Requirement Agent",
+        "labels": [
+          "Requirement Agent"
+        ],
+        "phase": "requirement",
+        "sha256": "a0d42bacc73a995951f11eb3c4b2d5c46c2b69a68352307f6831709338c2c2e8",
+        "violations": []
+      },
+      {
+        "label": "Coding Agent",
+        "labels": [
+          "Coding Agent",
+          "Coding Agent (revision 2)"
+        ],
+        "phase": "coding",
+        "sha256": "0ef9165403713d7892f04b192e36a2c10c058189b96da9e09191f87ef005e994",
+        "violations": []
+      },
+      {
+        "label": "Verifier (verify)",
+        "labels": [
+          "Verifier (verify)",
+          "Verifier (verify) (revision 2)"
+        ],
+        "phase": "verify",
+        "sha256": "9e54a2b77de39d4dd282ed0ca25dc715ef25a72d76d57cfc5217aa2a2fd7ef12",
+        "violations": []
+      },
+      {
+        "label": "Review Agent",
+        "labels": [
+          "Review Agent",
+          "Review Agent (revision 2)"
+        ],
+        "phase": "review",
+        "sha256": "86557712e8e7b1525326bd809f1e1b287828adc61a49e807feb185032357f695",
+        "violations": []
+      }
+    ],
+    "invalid": [],
+    "allValid": true,
+    "payloadError": null
+  },
+  "hostCapabilities": {
+    "machineScriptTransfer": "unsupported-by-tool-schema",
+    "machineScriptTransferDetail": "workflow 工具入参只有 script(string) / meta(object) / args(object)；引擎 API ctx.workflowEngine.start({ script, meta, args }) 同样接收脚本文本。没有任何\"从文件路径读取脚本\"的参数。",
+    "zeroCallSchemaValidation": "unavailable",
+    "zeroCallSchemaValidationDetail": "schema 支持子集校验发生在 agent() 调用内部（宿主侧 readAgentOptions），没有\"先校验再启动\"的零调用接口；本工具的 schema 检查是本地模拟，规则照抄宿主实现，但结论只代表本地。",
+    "agentCalls": {
+      "real": 0,
+      "simulated": 8
+    }
+  },
+  "verdict": "PASS"
+}
