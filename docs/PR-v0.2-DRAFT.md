@@ -50,6 +50,12 @@ V0.2 的离线原型与安全基础设施，**不是**"多模型协作已验收"
   是夹具漏了 `read` 那一步（详见 `docs/V0.2-FS-OBSERVATION.md`）。
 - **仍未验证**：成员在中等完整性令牌下真正写盘；read-before-write 契约在真实宿主里完整走通；
   从实现到复审通过的完整返工链。用户暂缓第五条宿主实验是**授权边界**，不是技术失败根因。
+- **之后的三次受控启动尝试都在宿主创建前结束**，各自暴露一个可离线修复的缺陷，也因此没有新增
+  任何模型请求：①插件检出被本机 `core.autocrlf=true` 改写成 CRLF，指纹不符（`PLUGIN_NOT_VERIFIED`，
+  已用 `.gitattributes` 修复）；②overlay 只换 `baseURL` 没写 `apiKeyEnv`，宿主启动后止于
+  `MISSING_CREDENTIAL`（已加 `overlay:credentials` 预检）；③启动器把 overlay `insert:` 注入、
+  宿主不补 `name` 的预算插件当成未知模型适配器（`PROVIDER_UNKNOWN`），而离线检查器用的是另一套
+  分类器——两边判断分歧（已统一：`coverage:launcher-classifier`，见 `docs/V0.2-B1-MATRIX.md` §16）。
 - 全轮假模型请求（按原始日志去重复算）：13 次运行、**闸门放行 130 / 上游到达 130**（成功 115、
   错误 3、没答完 3、响应未知 9），**真实外部模型调用 0 次**。旧文案里的 `84/100` 只含
   repair3+repair4(+repair5)，漏了 B-1 四次运行的 9 次与 closure 的 21 次；更正见

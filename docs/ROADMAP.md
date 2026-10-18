@@ -108,6 +108,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 - 生效配置检查与模板化 overlay（2026-10-18，零成本；用户按 `m23122` 任务书；**状态：待独立复核**）：把判据从"overlay 文本"换成"宿主合并后的配置"。`tools/overlay-template.mjs` 是唯一允许的 overlay 生成方式（回环闸门、专用假凭据名、账号渠道与 `web-search-deepseek` 关闭、证据路径在 run 目录内、`modelRequests ≤ 40`），`tools/inspect-effective-config.mjs` 用启动器同一个 `buildInvocation` 取 `--dump-config` 做 8 项判定（含 `credential:no-other-env` 与 `coverage:every-enabled-provider`），并接进 `tools/experiment-command.mjs`：不通过就不打印启动命令。负例重放上一轮失败的 overlay 得 `provider:llm-deepseek — apiKeyEnv null`，模板输出 8 项全过（`docs/V0.2-B1-MATRIX.md` §15）。这一轮仍未启动宿主。
 
+- 第三次受控启动尝试与判断统一（2026-10-18，零成本；用户按 `m23122` 任务书；**状态：待独立复核**）：外层拿到 Medium 令牌（`S-1-16-8192`）后，启动器在**宿主进程创建前**以 `PROVIDER_UNKNOWN: tla-prelaunch-budget` 拒绝——overlay 用 `insert:` 注入的预算插件没有 `name`，启动器把它当未知模型适配器，而生效配置检查器的另一套分类器把它当共享管线。闸门放行 0、插件预占 0（无挂载、无 `reserved` 事件）、上游模型请求 0、宿主进程 0 个；按"任何失败即停止本轮"结束，未重跑。修复（`26021ab`）：启动器按 id 认识自己的出勤插件、模板把包名写进 `insert:` 条目、生效配置检查新增第 9 项 `coverage:launcher-classifier`（用启动器自己的分类器判同一份 dump），并修正 fixture 里写错的适配器名 + 新增漂移守卫。净检出 `v02-run4` @ `26021ab` 上离线复验：`FIDELITY OK`、`STATIC PREFLIGHT OK`、9 项配置检查全过。成员真实写盘与完整返工闭环**仍未验证**（`docs/V0.2-B1-MATRIX.md` §16）。
+
 - **验收状态**：条件 1（至少两个不同模型在同一工作流中协作且可复现）**未满足**——本轮没有任何**真实外部**模型调用（阶段 2 只接本机假模型服务），只具备配置、计划与"请求前计数"能力；条件 2（跨轮次恢复）未开始。**不得**把本轮隔离原型当作 V0.2 验收通过。
 ### 功能规划
 
