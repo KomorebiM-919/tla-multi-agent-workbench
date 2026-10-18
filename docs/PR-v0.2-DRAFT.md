@@ -1,7 +1,7 @@
 # V0.2 分支的 PR 文案（待人工在 GitHub 上粘贴）
 
 - 分支：`feat/v0.2-component-reuse` → `main`
-- 远端提交：`6dd8b1b`（本文件更新时 `feat/v0.2-component-reuse` 的远端 tip）
+- 远端提交：本文件随代码一起推送，**不自指 SHA**；推送后的 tip 以报告里的 `git ls-remote` 输出为准
 - base 说明：本分支从 `release/v0.1-public`（`5e8ef41`）切出，所以它**包含尚未合并的 V0.1 交付**。
   相对 `5e8ef41` 的范围才是 V0.2 新增；不要把 `main..head` 的全部差异算成 V0.2 的工作。
 - 建议标题：
@@ -40,14 +40,20 @@ V0.2 的离线原型与安全基础设施，**不是**"多模型协作已验收"
 
 ## 明确未完成
 
-- 返工闭环**没有跑完**。前三次宿主实验止于夹具缺陷（工作区路径、端口占用、规则缺 `maxUses`）；
-  第四次（`repair4`）账本四阶段 26/26 对账 `COMPLETE`、关联 ID 26 条逐条配对，但队员的 `write`
-  被 read-before-write 拒绝、夹具又把错误消息当成"完成"。第五次（`repair5`，改用正式反应式
-  引擎按结构化工具结果推进）：16 次闸门放行、16 条到达假上游、关联 ID 16/16 配对，但成员会话
-  里的 `write` 被本机沙箱 ACL 挡住（`SetFileSecurityW EACCES (Win32 5)`），项目文件改前改后
-  sha256 相同、测试仍 1 条失败，闭环没有发生。详见 `docs/V0.2-B1-MATRIX.md` §8、§9。
-- 全轮假模型请求：闸门放行合计 100、上游收到合计 100（其中一次失败运行的 1 次差额原因未知，
-  一次运行不完整，第五次有 3 次请求未完成响应），**真实外部模型调用 0 次**。
+- **宿主返工闭环没有跑完**。前三次宿主实验止于夹具缺陷（工作区路径、端口占用、规则缺 `maxUses`）；
+  `repair4` 账本 26/26 对账 `COMPLETE`、关联 ID 26 条逐条配对，但夹具当时把错误消息当成"完成"；
+  `repair5`（正式反应式引擎）16 次放行、16 条到达、关联 ID 16/16 配对，但成员 `write` 被本机沙箱
+  ACL 挡住（`SetFileSecurityW EACCES (Win32 5)`），项目文件改前改后 sha256 相同、测试仍 1 条失败。
+  收尾跑了四次 closure（`run2` 5 次放行、`run3` 2 次、`run4` 14 次），都在**中等完整性令牌**
+  （`Medium Mandatory Level`）下完成，最后一次推进到队员写 `src/note.txt` 被
+  `file has not been read` 拒绝——复盘确认该文件**从未被读**（第 11 条请求直接写），宿主的拒绝是对的，
+  是夹具漏了 `read` 那一步（详见 `docs/V0.2-FS-OBSERVATION.md`）。
+- **仍未验证**：成员在中等完整性令牌下真正写盘；read-before-write 契约在真实宿主里完整走通；
+  从实现到复审通过的完整返工链。用户暂缓第五条宿主实验是**授权边界**，不是技术失败根因。
+- 全轮假模型请求（按原始日志去重复算）：13 次运行、**闸门放行 130 / 上游到达 130**（成功 115、
+  错误 3、没答完 3、响应未知 9），**真实外部模型调用 0 次**。旧文案里的 `84/100` 只含
+  repair3+repair4(+repair5)，漏了 B-1 四次运行的 9 次与 closure 的 21 次；更正见
+  `docs/V0.2-B1-MATRIX.md` §12.2 与 `docs/V0.2-EXPERIMENT-LEDGER.md`。
 - 跨进程预算、按角色配额、fallback、多会话并发：未实现，未验证。
 - 闸门不是宿主级强制保护：覆盖率校验依赖 CLI `--dump-config` 的输出，换一个未受保护的
   端点即可绕开（`docs/V0.2-PRELAUNCH-GATE.md` §5 有实测）。
@@ -57,13 +63,16 @@ V0.2 的离线原型与安全基础设施，**不是**"多模型协作已验收"
 
 ```bash
 node tests/v02-gate.test.mjs            # 18 场景 / 187 断言（TLA_REAL_PROFILE 时再多 2 项）
-node tests/v02-ledger.test.mjs          # 50 项
-node tests/v02-prelaunch-budget.test.mjs # 10 场景 / 46 项
+node tests/v02-ledger.test.mjs          # 59 项
+node tests/v02-prelaunch-budget.test.mjs # 11 场景 / 53 项
 node tests/v02-orchestration.test.mjs   # 12 场景 / 267 项
 node tests/v02-reactive-model.test.mjs  # 41 项（结构化工具结果判定）
 node tests/workflow-logic.test.mjs      # 114 场景 / 547 项
 node tests/preflight-claim-integration.test.mjs # 6 场景 / 59 项
-node tests/v02-repair-rehearsal.test.mjs # 36 项：返工序列预演 + 隔离项目 fail→pass（不是宿主验证）
+node tests/v02-repair-rehearsal.test.mjs # 38 项：返工序列预演 + 隔离项目 fail→pass（不是宿主验证）
+node tests/v02-repair-loop.test.mjs      # 55 项：30 次决策的返工/复审闭环离线预演（失败分支全覆盖）
+node tests/v02-repair-protocol.test.mjs  # 123 项：脱敏协议夹具哈希校验 + 14 条历史请求回放
+node tests/v02-fs-observation.test.mjs   # 20 项：read-before-write 契约的离线模型
 ```
 
 ## 为什么没有直接建 PR

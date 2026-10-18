@@ -71,7 +71,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
   - 启动前拦截器 `orchestration/interceptors/prelaunch-budget.mjs` + 真实接线插件 `orchestration/interceptor-plugin/`：宿主形状的 `agent/request` 监听器，在请求发出前同步预占、超限抛错（**零新增发送**）。**已在隔离 profile 的真实宿主上验证**：额度耗尽时假服务端零新增请求、重启不重置额度、监听器异常 fail-closed；同时实测到"插件激活失败只警告、不 fail-closed"（无预算跑到 2567 次请求，全轮含失败证据共 2580 次假模型 HTTP 请求），因此"装上了"永远不等于"预算生效"，**该缺口已登记为付费实验的前置阻塞**。夹具测试 11 场景 / 53 断言，真实宿主实验见 [`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)
   - 离线复跑：`node orchestration/cli.mjs plan --config orchestration/examples/plan-agent-teams.json --pricing orchestration/data/pricing-snapshot.portkey-72e1084.json --host-catalog orchestration/data/host-catalog.dsh-0.2.0-rc.2.json --now 2026-10-17T18:00:00Z`（退出码 0 = ready，2 = blocked）
   - 启动闸门 `orchestration/gate/` + 启动器 `tools/gated-run.mjs`（同日的后续修复）：本地 HTTP 代理只绑 `127.0.0.1`、**默认拒绝**，只有"有效租约 + 额度未用尽"才建立上游连接；启动器在启动宿主前校验生效配置的 `baseURL` 指向闸门，读到新鲜挂载心跳才发租约、心跳过期则撤销并终止宿主。真实宿主故障注入的上游请求数：插件缺失 **0**（闸门 403、宿主退出码 3）、正常挂载 1（退出码 0）、额度耗尽 1（第 2 次在插件层被拒）、**插件完全不参与拒绝时仍为 1**（第 2 次由闸门 403 BUDGET_EXHAUSTED）、心跳过旧 **0 新增**（退出码 3）、存在未受保护 provider 实例时**拒绝启动**。实现、故障矩阵与**未证明项**见 [`docs/V0.2-PRELAUNCH-GATE.md`](docs/V0.2-PRELAUNCH-GATE.md)；闸门只是本地实验工具，不是宿主级强制保护：**实测把同一 provider 的 `baseURL` 换个回环端点，宿主就直接把请求发给该端点并正常返回，闸门完全看不到**（run G）；因此保护强度等于"生效配置里每个 provider 实例都指向闸门"这条覆盖率校验，而不是闸门本身存在
-  - 测试 `tests/v02-orchestration.test.mjs`（12 个场景 / 267 项断言）、`tests/v02-prelaunch-budget.test.mjs`（11 个场景 / 53 项断言）与 `tests/v02-gate.test.mjs`（18 个场景 / 187 项断言；设 TLA_REAL_PROFILE 指向隔离 profile 时再多 2 项）、`tests/v02-reactive-model.test.mjs`（反应式假模型引擎 41 项断言：只认结构化的 `tool_result`/`is_error`/`tool_use_id`，失败文本里的成功字样、历史里的旧 `attempt_id`、空结果、跨会话串状态都不算推进）、`tests/v02-repair-rehearsal.test.mjs`（38 项断言：26 次状态迁移的返工序列预演 + 隔离小项目 fail→pass→回退再 fail；**合成工具往返与预演不等于宿主验证**）与 `tests/v02-b1-scenarios.test.mjs`（5 个确定性场景）；含针对"半上取整""2^53 中间量溢出""缓存写被丢弃""兼容即 ready""缓存缺价被当成上界""重启静默重置额度""无租约仍放行""用调用方给的配置文件冒充生效配置""长跑被 mounted 年龄误杀""卸载后迟到心跳被接受""自带模型端点的随包组件被白名单放过""未 claim 的成员请求共用会话键""写失败的报错被当成完成""轮询额度按 6 次写死""同一个失败原地重试到无限"十六处真实缺陷的回归断言；另有插件登记的版本与构建指纹核对（同名不同版本、同版本不同字节、证据缺失都拒绝启动），以及账本复算的六阶段口径（`tools/recompute-ledger.mjs`：预占 / 闸门放行 / 上游收到 / 成功响应 / 错误响应 / 没答完分开计数，连接中断与客户端实收在没有对应证据时保持 `unknown`，缺日志、截断日志、只写一半的日志一律标 INCOMPLETE，回归见 `tests/v02-ledger.test.mjs` 59 项断言）。测试本身不联网、不调模型
+  - 测试 `tests/v02-orchestration.test.mjs`（12 个场景 / 267 项断言）、`tests/v02-prelaunch-budget.test.mjs`（11 个场景 / 53 项断言）与 `tests/v02-gate.test.mjs`（18 个场景 / 187 项断言；设 TLA_REAL_PROFILE 指向隔离 profile 时再多 2 项）、`tests/v02-reactive-model.test.mjs`（反应式假模型引擎 41 项断言：只认结构化的 `tool_result`/`is_error`/`tool_use_id`，失败文本里的成功字样、历史里的旧 `attempt_id`、空结果、跨会话串状态都不算推进）、`tests/v02-repair-rehearsal.test.mjs`（38 项断言：26 次状态迁移的返工序列预演 + 隔离小项目 fail→pass→回退再 fail；**合成工具往返与预演不等于宿主验证**）与 `tests/v02-b1-scenarios.test.mjs`（5 个确定性场景）、`tests/v02-repair-loop.test.mjs`（55 项断言：30 次决策走完返工与复审流程，失败分支与 `maxUses` 上限逐条断言）、`tests/v02-repair-protocol.test.mjs`（123 项断言：脱敏夹具哈希与无泄漏校验 + 14 条历史请求回放）、`tests/v02-fs-observation.test.mjs`（20 项断言：读后写契约的离线模型，路径写法归一、跨会话不授权、读后变化与并发创建）；含针对"半上取整""2^53 中间量溢出""缓存写被丢弃""兼容即 ready""缓存缺价被当成上界""重启静默重置额度""无租约仍放行""用调用方给的配置文件冒充生效配置""长跑被 mounted 年龄误杀""卸载后迟到心跳被接受""自带模型端点的随包组件被白名单放过""未 claim 的成员请求共用会话键""写失败的报错被当成完成""轮询额度按 6 次写死""同一个失败原地重试到无限"十六处真实缺陷的回归断言；另有插件登记的版本与构建指纹核对（同名不同版本、同版本不同字节、证据缺失都拒绝启动），以及账本复算的六阶段口径（`tools/recompute-ledger.mjs`：预占 / 闸门放行 / 上游收到 / 成功响应 / 错误响应 / 没答完分开计数，连接中断与客户端实收在没有对应证据时保持 `unknown`，缺日志、截断日志、只写一半的日志一律标 INCOMPLETE，回归见 `tests/v02-ledger.test.mjs` 59 项断言）。测试本身不联网、不调模型
   - 启动器自己读配置（配置绑定）：`tools/gated-run.mjs` 用与启动宿主**同一条命令、同一 profile、同一 patch 列表、同一工作目录**去问宿主"你的生效配置是什么"，把输出落盘并记 sha256，再核对其中**每一个启用中的 provider 实例**的 `baseURL` 是否指向本次闸门；取不到配置（`CONFIG_UNREADABLE`）、覆盖情况不明（`CONFIG_COVERAGE_UNKNOWN`）、没有任何受保护 provider（`NO_GATED_PROVIDER`）、存在未受保护实例（`PROVIDER_NOT_GATED`）时一律拒绝启动（宿主不启动、上游 0 请求）。`--dump-config-from` 与 `--allow-ungated-providers` 已删除，不存在"用调用方文件替代生效配置"或"放宽覆盖率"的开关。真实宿主 run I/J/K 证据与拒绝码含义见 [`docs/V0.2-PRELAUNCH-GATE.md`](docs/V0.2-PRELAUNCH-GATE.md) §7.1；实验前逐项清单见 [`docs/V0.2-FIRST-REAL-EXPERIMENT-CHECKLIST.md`](docs/V0.2-FIRST-REAL-EXPERIMENT-CHECKLIST.md)
   - 结论与清单：[`docs/V0.2-REUSE-DECISIONS.md`](docs/V0.2-REUSE-DECISIONS.md)、[`docs/V0.2-ARCHITECTURE.md`](docs/V0.2-ARCHITECTURE.md)、[`docs/V0.2-MOBILE-CHANNEL.md`](docs/V0.2-MOBILE-CHANNEL.md)、[`docs/V0.2-INTEGRATION-PLAN.md`](docs/V0.2-INTEGRATION-PLAN.md)（阶段 1/2 已执行，阶段 3 付费协作**未授权**）、[`docs/V0.2-PERMISSION-PREFLIGHT.md`](docs/V0.2-PERMISSION-PREFLIGHT.md)、[`docs/V0.2-STAGE12-EVIDENCE.md`](docs/V0.2-STAGE12-EVIDENCE.md)（隔离环境实测记录）、[`docs/V0.2-PRELAUNCH-GATE.md`](docs/V0.2-PRELAUNCH-GATE.md)（启动闸门：设计、故障矩阵、限制）
 
@@ -86,10 +86,36 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ### 当前能力状态（2026-10-18）
 
-- **可用的**：V0.1 演示流水线（5 角色各 1 次调用、交付测试 97 项、编排复核 28/28；所有者基于审核报告确认"本轮演示功能验收通过"，不等于平台完成）；V0.2 的离线规划/预算分配/价格查询 CLI（`orchestration/cli.mjs`）；本地启动闸门与预算插件——**已在隔离 profile 的真实宿主 + 回环假模型上验证**：额度耗尽时零新增外发、配置与覆盖率不匹配时拒绝启动、未受保护的 provider 实例存在时拒绝启动。
-- **只在隔离环境证明过、不能当产品能力**：真实宿主 + 假模型下的派工与 followup 调度；自动返工**只证明到"插件生成修复/复审任务并自动派工"**，未证明"worker 改完文件、复审通过、下游解锁"。第五次实验（repair5，2026-10-18）用正式反应式引擎 + 结构化的 `tool_result` 判定重跑：16 次闸门放行、16 条到达假上游、关联 ID 16/16 逐条配对、队长/成员/复审的请求都能按会话区分，但**闭环仍未完成**——成员会话里的 `write` 被本机沙箱的 ACL 授权挡住（`SetFileSecurityW EACCES (Win32 5)`，与 `pwsh` 的 `SetNamedSecurityInfoW failed (Win32 5)` 同源），项目文件保持缺陷版（改前改后 sha256 都是 `3C1B1584…5460`，测试仍 1 条失败），另有我自己的两处夹具缺陷把这一轮提前耗尽（轮询额度 6 用完就停、写失败后重读只允许再写一次）。同一轮还做了权限预检：在全新的最小项目上同样是 `write` 失败、文件哈希不变，本机复现证明"写字节成功、复制 DACL 失败"——**根因是这条启动链路带低完整性/受限令牌，宿主继承后无法修改 DACL**，与项目 ACL、嵌套 worktree、链接都无关；按用户要求只写解除方案（单条启动命令改在中等完整性令牌下运行）并停止，没有改 ACL、没有关沙箱、没有把宿主整体切到 `danger-full-access`，详见 [`docs/V0.2-PERMISSION-PREFLIGHT.md`](docs/V0.2-PERMISSION-PREFLIGHT.md)。账本按六阶段复算：16 到达 / 13 成功响应 / 0 错误响应 / 3 没答完（旧版假服务的错误分支不写结束事件），`clientReceived` 与连接中断保持 `unknown`，因此仍是 `INCOMPLETE`；详见 [`docs/V0.2-B1-MATRIX.md`](docs/V0.2-B1-MATRIX.md) §8–§10。取消/超时终止只证明"已转发"。
-- **未完成**：真实付费多模型协作（真实外部模型调用 **0** 次）、跨 provider 实测（现有路由只有 DeepSeek 系）、fallback 跨路由共享总额、多会话并发、跨进程预算、按角色配额、手机通道、智能推荐与价格实时化。
-- **最短复算**：`node tests/v02-orchestration.test.mjs`、`node tests/v02-gate.test.mjs`、`node tests/v02-ledger.test.mjs`、`node tests/v02-reactive-model.test.mjs`、`node tests/v02-repair-rehearsal.test.mjs`；账本 `node tools/recompute-ledger.mjs --json <run-dir>`。返工序列的预演（合成工具往返 + 隔离小项目 fail→pass）**不等于**宿主验证。
+按"有没有代码 / 有没有在真实宿主上跑过 / 能不能声称做到"三栏分开写，避免把离线证明当成产品能力。
+
+**已实现（代码在库，离线测试全绿）**
+
+- V0.1 演示流水线（5 角色各 1 次调用；交付测试 97 项；编排层独立复核 28/28）。
+- V0.2 离线规划/预算分配/价格查询 CLI（`orchestration/cli.mjs`，价格带 `channel`、含宿主目录核对）。
+- 本地启动闸门 `orchestration/gate/` + 启动器 `tools/gated-run.mjs` + 预算插件 `orchestration/interceptor-plugin/`：租约、挂载证明、心跳、额度、`runId` 绑定、覆盖率校验、插件版本与构建指纹校验。
+- 账本 `tools/recompute-ledger.mjs`（六阶段），反应式假模型 `tests/lib/reactive-model.mjs`。
+- 本次收口新增：正式返工策略 `tests/fixtures/repair-loop-policy.v2.json`、30 步预演 `tests/v02-repair-loop.test.mjs`（55 项断言）、脱敏协议夹具 + 回放 `tests/v02-repair-protocol.test.mjs`（123 项断言）、读后写契约模型 `tests/lib/observation-model.mjs` 与 `tests/v02-fs-observation.test.mjs`（20 项断言）、再脱敏工具 `tools/redact-protocol.mjs`。
+
+**已实测（真实宿主 + 回环假模型；真实外部模型调用 0 次）**
+
+- 保护链：额度耗尽零新增外发、重启不重置额度、监听器异常 fail-closed、插件缺失时闸门 403、心跳过期拒绝、配置/覆盖率不匹配拒绝启动、插件版本或字节不符拒绝启动。
+- 派工与 followup 调度；自动返工**只到**"插件生成修复/复审任务并自动派工"。
+- 四次 closure 运行（21 次放行）都在中等完整性令牌下完成（启动日志打印 `Medium Mandatory Level (S-1-16-8192)`）。
+- 账本按原始日志复算：13 次运行、**放行 130 / 到达 130**（成功 115、错误 3、没答完 3、响应未知 9）。旧文档里的 `84/100` 漏了 B-1 四次运行的 9 次，已在 [`docs/V0.2-B1-MATRIX.md`](docs/V0.2-B1-MATRIX.md) §12.2 更正；逐次索引见 [`docs/V0.2-EXPERIMENT-LEDGER.md`](docs/V0.2-EXPERIMENT-LEDGER.md)。
+
+**未验证（不得声称）**
+
+- **宿主返工闭环未完成**：没有一次"成员改完文件 → 红测试转绿 → 复审拒绝 → 复审通过 → 下游解锁"的真实记录。
+- 成员在中等完整性令牌下**真正写盘**；read-before-write 契约在真实宿主里完整走通；完整返工链。
+- 真实付费多模型协作（真实外部模型调用 **0** 次）、跨 provider 实测、fallback 跨路由共享总额、多会话并发、跨进程预算、按角色配额、手机通道、智能推荐与价格实时化。
+- 闸门是本地实验工具，**不是宿主级强制保护**：把同一 provider 的 `baseURL` 换个回环端点，宿主会直接把请求发给该端点，闸门看不到；保护强度等于"生效配置里每个 provider 实例都指向闸门"这条覆盖率校验。
+
+**更正（保留在库，不删除旧表述）**
+
+- 旧结论"读后写契约导致队员写失败"更正为"**夹具漏了 `read`**，宿主拒绝未观察的写是正确行为"，证据与宿主契约行号见 [`docs/V0.2-FS-OBSERVATION.md`](docs/V0.2-FS-OBSERVATION.md)。
+- "唯一缺一次批准、一旦批准即可跑完"**撤回**：用户暂缓运行是授权边界，不是技术失败根因，边界表见 [`docs/V0.2-B1-MATRIX.md`](docs/V0.2-B1-MATRIX.md) §12.1。
+
+**最短复算**：`node tests/v02-orchestration.test.mjs`、`node tests/v02-gate.test.mjs`、`node tests/v02-ledger.test.mjs`、`node tests/v02-reactive-model.test.mjs`、`node tests/v02-repair-rehearsal.test.mjs`、`node tests/v02-repair-loop.test.mjs`、`node tests/v02-repair-protocol.test.mjs`、`node tests/v02-fs-observation.test.mjs`；账本 `node tools/recompute-ledger.mjs --json <run-dir>`。预演与历史回放**不等于**宿主验证。
 
 ## 目录说明
 
