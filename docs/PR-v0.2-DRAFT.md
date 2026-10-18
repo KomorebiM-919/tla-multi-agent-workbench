@@ -41,11 +41,13 @@ V0.2 的离线原型与安全基础设施，**不是**"多模型协作已验收"
 ## 明确未完成
 
 - 返工闭环**没有跑完**。前三次宿主实验止于夹具缺陷（工作区路径、端口占用、规则缺 `maxUses`）；
-  第四次（`repair4`）只做一次、未重跑：账本四阶段 26/26 对账 `COMPLETE`、关联 ID 26 条逐条配对，
-  但队员的 `write` 被 read-before-write 拒绝，夹具又把错误消息当成"完成"，所以 `t1` 被误标
-  `completed`、复审停在 `in_progress`。详见 `docs/V0.2-B1-MATRIX.md` §8。
-- 全轮假模型请求：闸门放行合计 84、上游收到合计 84（其中一次失败运行的 1 次差额原因未知，
-  另一次运行不完整），**真实外部模型调用 0 次**。
+  第四次（`repair4`）账本四阶段 26/26 对账 `COMPLETE`、关联 ID 26 条逐条配对，但队员的 `write`
+  被 read-before-write 拒绝、夹具又把错误消息当成"完成"。第五次（`repair5`，改用正式反应式
+  引擎按结构化工具结果推进）：16 次闸门放行、16 条到达假上游、关联 ID 16/16 配对，但成员会话
+  里的 `write` 被本机沙箱 ACL 挡住（`SetFileSecurityW EACCES (Win32 5)`），项目文件改前改后
+  sha256 相同、测试仍 1 条失败，闭环没有发生。详见 `docs/V0.2-B1-MATRIX.md` §8、§9。
+- 全轮假模型请求：闸门放行合计 100、上游收到合计 100（其中一次失败运行的 1 次差额原因未知，
+  一次运行不完整，第五次有 3 次请求未完成响应），**真实外部模型调用 0 次**。
 - 跨进程预算、按角色配额、fallback、多会话并发：未实现，未验证。
 - 闸门不是宿主级强制保护：覆盖率校验依赖 CLI `--dump-config` 的输出，换一个未受保护的
   端点即可绕开（`docs/V0.2-PRELAUNCH-GATE.md` §5 有实测）。
@@ -58,9 +60,10 @@ node tests/v02-gate.test.mjs            # 18 场景 / 187 断言（TLA_REAL_PROF
 node tests/v02-ledger.test.mjs          # 50 项
 node tests/v02-prelaunch-budget.test.mjs # 10 场景 / 46 项
 node tests/v02-orchestration.test.mjs   # 12 场景 / 267 项
+node tests/v02-reactive-model.test.mjs  # 41 项（结构化工具结果判定）
 node tests/workflow-logic.test.mjs      # 114 场景 / 547 项
 node tests/preflight-claim-integration.test.mjs # 6 场景 / 59 项
-node tests/v02-repair-rehearsal.test.mjs # 合成工具往返的返工序列预演（不是宿主验证）
+node tests/v02-repair-rehearsal.test.mjs # 36 项：返工序列预演 + 隔离项目 fail→pass（不是宿主验证）
 ```
 
 ## 为什么没有直接建 PR
