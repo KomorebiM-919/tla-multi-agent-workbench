@@ -100,7 +100,26 @@ function runProjectTest(project, testRel) {
  * Pure verdict derivation, so the rules can be tested without a host.
  * `closed` needs every condition; a host that merely started is `partial`.
  */
+export const IMPLEMENTATION_PATH = /^src\/.*\.(?:mjs|cjs|js|ts)$/u
 export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writes }) {
+  const writeList = Array.isArray(writes) ? writes : [];
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  const usageList = Array.isArray(usage) ? usage : [];
+  const history = Array.isArray(tests?.history) ? tests.history : [];
+  // 实现文件必须由成员在本轮真的改过，并且改完回读到的字节与写下去的一致。
+  // 只写 note.txt、只返回 exit 0、或摘要里自称"完成"，都不足以判 closed。
+  const implementationWrites = writeList.filter((write) => write.kind === 'write' && IMPLEMENTATION_PATH.test(String(write.path ?? '')));
+  const lastImplementationWrite = implementationWrites[implementationWrites.length - 1];
+  const readBack = lastImplementationWrite === undefined
+    ? null
+    : writeList.filter((write) => write.path === lastImplementationWrite.path && write.kind === 'read' && write.index > lastImplementationWrite.index).pop() ?? null;
+  const readBackOk = readBack !== null && readBack.sha256 === lastImplementationWrite.sha256;
+  const rejections = usageList.filter((entry) => /reject/iu.test(String(entry.rule ?? '')));
+  const passes = usageList.filter((entry) => /pass/iu.test(String(entry.rule ?? '')));
+  const repairRuns = usageList.filter((entry) => /repair/iu.test(String(entry.rule ?? '')));
+  const redFirst = history.findIndex((run) => run.exitCode !== 0);
+  const greenAfterRed = redFirst >= 0 && history.slice(redFirst + 1).some((run) => run.exitCode === 0 && run.failed === 0 && run.command === history[redFirst].command);
+
   const conditions = [
     { code: 'SUPERVISOR_COMPLETED', ok: supervisor.status === 'completed', detail: 'supervisor status ' + String(supervisor.status) },
     { code: 'HOST_STARTED', ok: supervisor.hostStarted === true, detail: 'hostStarted ' + String(supervisor.hostStarted) },
@@ -110,22 +129,37 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
       detail: ledger === null ? 'no ledger' : 'completeness ' + String(ledger.completeness) + ', consistent ' + String(ledger.ledgerConsistent)
     },
     {
-      code: 'MEMBER_WROTE_A_FILE',
-      ok: Array.isArray(writes) && writes.length > 0,
+      code: 'IMPLEMENTATION_FILE_CHANGED',
+      ok: implementationWrites.length > 0,
       detail: writes === null ? 'no evidence' : String(writes.length) + ' write(s)'
+    },
+    {
+      code: 'READ_BACK_AFTER_WRITE',
+      ok: readBackOk === true,
+      detail: readBack === null ? 'no read after the last implementation write' : 'read-back sha matches ' + String(readBackOk)
+    },
+    {
+      code: 'TESTS_RED_THEN_GREEN',
+      ok: greenAfterRed === true,
+      detail: history.length === 0 ? 'no test history' : history.map((run) => 'exit ' + String(run.exitCode)).join(' -> ')
     },
     { code: 'TESTS_GREEN', ok: tests !== null && tests.exitCode === 0 && tests.failed === 0, detail: tests === null ? 'no test run' : 'exit ' + String(tests.exitCode) + ', ' + String(tests.failed) + ' failed' },
     {
-      code: 'TASKS_COMPLETED',
-      ok: Array.isArray(tasks) && tasks.length > 0 && tasks.every((task) => task.status === 'completed'),
-      detail: Array.isArray(tasks) && tasks.length > 0 ? tasks.map((task) => task.id + '=' + String(task.status)).join(', ') : 'no tasks'
+      code: 'REVIEW_REJECTED_THEN_PASSED',
+      ok: rejections.length > 0 && passes.length > 0,
+      detail: String(rejections.length) + ' rejection(s), ' + String(passes.length) + ' pass(es)'
     },
     {
-      code: 'REVIEW_RAN',
-      ok: Array.isArray(usage) && usage.some((entry) => /review/iu.test(entry.rule)),
-      detail: Array.isArray(usage) ? String(usage.filter((entry) => /review/iu.test(entry.rule)).length) + ' review decision(s)' : 'no usage'
+      code: 'REPAIR_COMPLETED',
+      ok: repairRuns.length > 0 && taskList.some((task) => /repair|fix/iu.test(String(task.subject ?? task.id ?? '')) && task.status === 'completed'),
+      detail: repairRuns.length === 0 ? 'no repair decision' : 'repair decisions ' + String(repairRuns.length)
+    },
+    {
+      code: 'TASKS_COMPLETED',
+      ok: taskList.length >= 4 && taskList.every((task) => task.status === 'completed'),
+      detail: taskList.length === 0 ? 'no tasks' : taskList.map((task) => task.id + '=' + String(task.status)).join(', ')
     }
-  ]
+  ];
   const unmet = conditions.filter((condition) => condition.ok === false).map((condition) => condition.code)
   const started = supervisor.hostStarted === true
   const provedSomething = started && (Array.isArray(writes) && writes.length > 0 || (tests !== null && tests.exitCode !== undefined))

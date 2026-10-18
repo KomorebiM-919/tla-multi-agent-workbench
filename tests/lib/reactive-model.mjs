@@ -31,7 +31,26 @@ const KNOWN_MATCH_KEYS = new Set([
   'resultNotMatches',
   'noToolResult',
   'toolPresent',
+  // 队长"被唤醒"的方式：这条请求没有工具结果，而是宿主塞进来的一段文本。
+  // mailbox = 成员报告的投递（AgentTeams inbox receipt），settlement = 宿主自己
+  // 的"后台子代理结束了"通知，none = 有文本但两者都不是。
+  'wakeKind',
+  'textMatches',
+  'textNotMatches',
+  // 按事实值精确匹配，避免用正则去猜"这次派的是 t1 还是 t3"。
+  'claimTaskId',
+  'promptTaskId',
 ]);
+
+// 规则的意图要显式标出来，否则统计会把"合法等待"和"动作"混成一个数字。
+// action    = 调工具推进流程
+// idle-wait = 结束当前回合并等待（文本回复、不调工具）
+// poll      = 查看状态，不改任何东西
+const RULE_KINDS = new Set(['action', 'idle-wait', 'poll']);
+
+// 等待的硬上限：宿主每次唤醒都算一次请求，这里不允许用"无限豁免"掩盖空转。
+const MAX_IDLE_USES = 40;
+const WAKE_KINDS = new Set(['mailbox', 'settlement', 'none']);
 
 const KNOWN_FACT_KEYS = new Set([
   'claimTaskId',
@@ -43,7 +62,20 @@ const KNOWN_FACT_KEYS = new Set([
   'filePath',
   'promptTaskId',
   'currentAttemptId',
+  'wakeKind',
+  'reportFrom',
+  'reportTaskId',
+  'reportAttemptId',
+  'reportStatus',
 ]);
+
+// 宿主的两种唤醒文本（来自 @nanmicoder/dsh-agent-teams 0.1.23 的 mailbox.js：
+// PREFIX = 'AgentTeams inbox receipt: '，body 以 'AgentTeams message from member <name>:' 开头；
+// 原生结算通知的原文是 'Background subagent <id> finished and will do no further work unless you send it more.'）。
+const WAKE_RECEIPT_RE = /^AgentTeams inbox receipt: /m;
+const WAKE_MESSAGE_RE = /AgentTeams message from (?:member )?([A-Za-z0-9_-]+):/;
+const WAKE_SETTLEMENT_RE = /Background subagent \S+ finished and will do no further work/;
+const REPORT_SOURCE_RE = /\[Source task (t\d+), attempt_id ([0-9a-fA-F-]{8,})(?:, status=(\w+))?\]/;
 
 // 角色名不写死：队长固定是 captain，成员则用它 claim 结果里的成员名
 // （worker / reviewer …）。这样加一个角色不需要改引擎。
@@ -182,7 +214,11 @@ function factsOf(parsed, identity) {
     filePath: null,
     promptTaskId: null,
     currentAttemptId: null,
+    // 最近一次工具结果的原文：规则用它把真实测试输出贴进报告，避免手抄数字。
+    lastToolText: null,
   };
+
+  if (parsed.lastResult !== null) facts.lastToolText = parsed.lastResult.text;
 
   const promptMatch = /\b(t\d+)\b/i.exec(parsed.lastText);
   if (promptMatch !== null) facts.promptTaskId = promptMatch[1].toLowerCase();
@@ -210,17 +246,44 @@ function factsOf(parsed, identity) {
       facts.fileOutcome = outcome[1] === 'Created file' ? 'created' : 'updated';
     }
   }
+
+  // 唤醒：这一轮没有工具结果，只有宿主塞进来的一段文本。区分"成员报告送到了"
+  // 和"宿主只是通知后台子代理结束了"，否则队长会被自己的等待逻辑反复叫醒。
+  if (parsed.turnResults.length === 0) {
+    const text = parsed.lastText;
+    if (WAKE_RECEIPT_RE.test(text) || WAKE_MESSAGE_RE.test(text)) {
+      facts.wakeKind = 'mailbox';
+      const from = WAKE_MESSAGE_RE.exec(text);
+      if (from !== null) facts.reportFrom = from[1];
+      const source = REPORT_SOURCE_RE.exec(text);
+      if (source !== null) {
+        facts.reportTaskId = source[1];
+        facts.reportAttemptId = source[2];
+        if (source[3] !== undefined) facts.reportStatus = source[3];
+      }
+    } else if (WAKE_SETTLEMENT_RE.test(text)) {
+      facts.wakeKind = 'settlement';
+    } else if (text.trim() !== '') {
+      facts.wakeKind = 'none';
+    }
+  }
   return facts;
 }
 
 export function sessionKeyOf(parsed, identity) {
   const role = detectRole(parsed);
   if (role === 'captain') return 'captain';
+  const promptMatch = /\b(t\d+)\b/i.exec(parsed.lastText);
+  const promptTaskId = promptMatch === null ? null : promptMatch[1].toLowerCase();
+  // 新派工提示会开一个新的 attempt：即使会话历史里还有上一次 claim，
+  // 这一轮必须从 'new' 开始，否则上一轮的终态会把新任务卡死。
+  const freshDispatch = parsed.turnResults.length === 0 && promptTaskId !== null &&
+    (identity === null || identity.taskId !== promptTaskId);
+  if (freshDispatch) return 'member:' + roleOf(parsed, identity) + ':pending:' + promptTaskId;
   if (identity !== null) return 'member:' + identity.memberRole + ':' + identity.attemptId;
   // 还没 claim 的第一次请求：按"角色 + 派工任务号"区分，否则同一个 worker
   // 第一次派工 t1 和后来的修复任务 t3 会共用一个状态，把单次规则用光。
-  const promptMatch = /\b(t\d+)\b/i.exec(parsed.lastText);
-  return 'member:' + roleOf(parsed, null) + ':pending:' + (promptMatch === null ? 'unknown' : promptMatch[1].toLowerCase());
+  return 'member:' + roleOf(parsed, null) + ':pending:' + (promptTaskId === null ? 'unknown' : promptTaskId);
 }
 
 // 规则里的 role 用它匹配：队长看工具清单；成员先看 claim 结果里的成员名，
@@ -244,6 +307,13 @@ function resultTextFor(parsed, toolName) {
 
 export function matches(rule, parsed, state, facts) {
   const match = rule.match ?? {};
+  if (match.wakeKind !== undefined && (facts.wakeKind ?? null) !== match.wakeKind) return false;
+  if (match.textMatches !== undefined && !new RegExp(match.textMatches).test(parsed.lastText)) return false;
+  if (match.textNotMatches !== undefined && new RegExp(match.textNotMatches).test(parsed.lastText)) return false;
+  for (const key of ['claimTaskId', 'promptTaskId']) {
+    if (match[key] === undefined) continue;
+    if ((facts[key] ?? null) !== match[key]) return false;
+  }
   const toolNames = Object.keys(match).filter((key) => key === 'tool' || key === 'isError' || key === 'resultMatches' || key === 'resultNotMatches' || key === 'toolPresent');
   if (match.noToolResult === true) {
     if (parsed.turnResults.length !== 0) return false;
@@ -255,6 +325,8 @@ export function matches(rule, parsed, state, facts) {
     if (match.resultMatches !== undefined || match.resultNotMatches !== undefined || match.isError !== undefined) {
       fail('POLICY_INVALID', rule.name + ': resultMatches/isError 必须和 tool 一起用');
     }
+    // 唤醒规则（wakeKind/textMatches）本身就是"这一轮没有工具结果"，不能要求有结果。
+    if (match.wakeKind !== undefined) return true;
     if (parsed.turnResults.length === 0) return false;
     return true;
   }
@@ -288,7 +360,7 @@ export function validatePolicy(policy) {
     }
     if (match.noToolResult !== undefined && typeof match.noToolResult !== 'boolean') fail('POLICY_INVALID', where + '.match.noToolResult 必须是布尔');
     if (match.isError !== undefined && typeof match.isError !== 'boolean') fail('POLICY_INVALID', where + '.match.isError 必须是布尔');
-    for (const key of ['tool', 'toolPresent', 'resultMatches', 'resultNotMatches']) {
+    for (const key of ['tool', 'toolPresent', 'resultMatches', 'resultNotMatches', 'claimTaskId', 'promptTaskId']) {
       if (match[key] !== undefined && typeof match[key] !== 'string') fail('POLICY_INVALID', where + '.match.' + key + ' 必须是字符串');
     }
     for (const key of ['resultMatches', 'resultNotMatches']) {
@@ -310,6 +382,35 @@ export function validatePolicy(policy) {
     }
     if (rule.next !== undefined && (typeof rule.next !== 'string' || rule.next.length === 0)) fail('POLICY_INVALID', where + '.next 必须是非空字符串');
     if (rule.progressExempt !== undefined && typeof rule.progressExempt !== 'boolean') fail('POLICY_INVALID', where + '.progressExempt 必须是布尔');
+    // 既有策略没有显式 kind：只调 agent_teams_status 的规则按快照轮询处理，
+    // 其余按推进动作处理（两者对"无进展"的判据不同）。
+    const inferredPoll = Array.isArray(reply.toolCalls) && reply.toolCalls.length === 1 && reply.toolCalls[0].name === 'agent_teams_status';
+    const kind = rule.kind ?? (inferredPoll ? 'poll' : 'action');
+    if (!RULE_KINDS.has(kind)) fail('POLICY_INVALID', where + '.kind 必须是 action / idle-wait / poll 之一');
+    if (rule.kind !== undefined && rule.kind !== kind) fail('POLICY_INVALID', where + '.kind 类型错误');
+    if (kind === 'idle-wait') {
+      // 结束回合只能是文本回复；带上工具调用就又成了动作。
+      if (!hasText) fail('POLICY_INVALID', where + ': idle-wait 规则必须用文本回复结束回合，不能带 toolCalls');
+      if (rule.next !== undefined) fail('POLICY_INVALID', where + ': idle-wait 规则不能改状态');
+      if (rule.maxUses > MAX_IDLE_USES) fail('POLICY_INVALID', where + ': idle-wait 的 maxUses 不能超过 ' + MAX_IDLE_USES + '（等待有界，但不是无限豁免）');
+    }
+    if (kind === 'action' && rule.progressExempt === true) {
+      fail('POLICY_INVALID', where + ': 只有 idle-wait / poll 才可以 progressExempt；推进动作必须能体现"没有进展"');
+    }
+    if (kind === 'poll' && hasCalls && reply.toolCalls.length > 1) {
+      fail('POLICY_INVALID', where + ': poll 规则一次只能查看一个状态');
+    }
+    if (match.wakeKind !== undefined) {
+      if (typeof match.wakeKind !== 'string' || !WAKE_KINDS.has(match.wakeKind)) {
+        fail('POLICY_INVALID', where + '.match.wakeKind 必须是 mailbox / settlement / none 之一');
+      }
+      if (kind !== 'idle-wait' && kind !== 'action') fail('POLICY_INVALID', where + ': wakeKind 只能用于 action 或 idle-wait');
+    }
+    for (const key of ['textMatches', 'textNotMatches']) {
+      if (match[key] === undefined) continue;
+      if (typeof match[key] !== 'string') fail('POLICY_INVALID', where + '.match.' + key + ' 必须是字符串');
+      try { new RegExp(match[key]); } catch (error) { fail('POLICY_INVALID', where + '.match.' + key + ' 不是合法正则：' + error.message); }
+    }
   }
   for (const key of Object.keys(policy.facts ?? {})) {
     if (!KNOWN_FACT_KEYS.has(key)) fail('POLICY_INVALID', 'policy.facts.' + key + ' 不是受支持的模板变量');
@@ -339,6 +440,7 @@ export function createReactiveModel(policy, options = {}) {
   const states = new Map();
   const counts = new Map();
   const progress = new Map();
+  const stats = { modelRequests: 0, byKind: {}, idleWaits: 0, polls: 0, stateChanges: 0 };
   const maxNoProgress = options.maxNoProgress === undefined ? 3 : options.maxNoProgress;
   if (!Number.isInteger(maxNoProgress) || maxNoProgress < 1) {
     fail('POLICY_INVALID', 'maxNoProgress 必须是正整数');
@@ -382,7 +484,13 @@ export function createReactiveModel(policy, options = {}) {
         // 显式标为 progressExempt 的规则是"等别人干活的轮询"：查看状态本身
         // 不改变任何东西，重复是预期的。它的次数由 maxUses 兜住；其余规则
         // 只要在同一个状态上原地重复就按阈值失败。
-        if (rule.progressExempt === true) {
+        //
+        // idle-wait 是"结束回合、等下一次唤醒"：它把一次请求花在合法的等待上，
+        // 没有工具结果可以比较，所以按种类豁免原地重复，但同样受 maxUses 约束，
+        // 并且单独计数——不能被算成推进，也不能被算成轮询。
+        const kind = rule.kind ?? 'action';
+        const exempt = kind === 'idle-wait' || kind === 'poll' || rule.progressExempt === true;
+        if (exempt) {
           progress.set(key, { signature, count: 1 });
         } else {
           const seen = progress.get(key);
@@ -407,14 +515,23 @@ export function createReactiveModel(policy, options = {}) {
 
         counts.set(key + '|' + rule.name, used + 1);
         if (rule.next !== undefined) states.set(key, rule.next);
-        return { rule: rule.name, reply, state: stateOf(key), previousState: state, role, sessionKey: key, facts };
+        stats.modelRequests += 1;
+        stats.byKind[kind] = (stats.byKind[kind] ?? 0) + 1;
+        if (kind === 'idle-wait') stats.idleWaits += 1;
+        if (kind === 'poll') stats.polls += 1;
+        if (rule.next !== undefined) stats.stateChanges += 1;
+        return { rule: rule.name, kind, reply, state: stateOf(key), previousState: state, role, sessionKey: key, facts };
       }
 
       fail('NO_PROGRESS', key + ': state=' + state + ' 下没有可用规则（最近结果 ' +
-        (parsed.lastResult === null ? '无' : parsed.lastResult.toolName + ' is_error=' + parsed.lastResult.isError) + '）');
+        (parsed.lastResult === null ? '无' : parsed.lastResult.toolName + ' is_error=' + parsed.lastResult.isError) +
+        '，唤醒 ' + String(facts.wakeKind ?? 'n/a') + '）');
       return null;
     },
     stateOf,
+    stats() {
+      return { ...stats, byKind: { ...stats.byKind } };
+    },
     counts() {
       return Object.fromEntries(counts);
     },
