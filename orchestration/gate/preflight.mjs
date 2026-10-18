@@ -78,13 +78,14 @@ export const KNOWN_NON_PROVIDER_ADAPTERS = new Set([
 export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
   'tla-prelaunch-budget': Object.freeze({
     version: '0.0.0-local',
-    buildDigest: '6fb8a042876ce78f7b3150f57172ff98a7ab823687ddb23ea0b7fd049b316477',
+    buildDigest: '54f1a8e32f717f52d563ba368713c744c3bde486afeb3f3d133052a0a027e43d',
     fileCount: 3,
     bundlePatch: null,
     reviewedFor: '本仓库的预算拦截器（profile overlay insert 挂载）',
     evidence: Object.freeze([
       'listener 只读 agent/request 的配置并在发起前同步预占额度，然后 return next()',
       '模块不 import 任何 HTTP/LLM 客户端，不读凭据，不写仓库文件',
+      '挂载时先写 mounted、紧接着写一次 heartbeat，再开始定时心跳（否则首个请求落在 mounted 与首个定时心跳之间的窗口会被判 PROOF_NO_HEARTBEAT）',
     ]),
   }),
   '@nanmicoder/dsh-agent-teams': Object.freeze({

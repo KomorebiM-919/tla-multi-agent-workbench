@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createAgentRequestListener, PrelaunchBudgetError } from '../orchestration/interceptors/prelaunch-budget.mjs';
 import { apply as applyPlugin, readRunEventCounts } from '../orchestration/interceptor-plugin/index.js';
+import { evaluateMountProof } from '../orchestration/gate/preflight.mjs';
 
 let scenarios = 0;
 let checks = 0;
@@ -172,6 +173,49 @@ async function scenarioPluginRunBinding() {
     await delay(200);
     const laterHeartbeats = readEvents(eventLog).filter((entry) => entry.event === 'heartbeat');
     check(laterHeartbeats.length === afterDispose, 'heartbeat stops after unmount', laterHeartbeats.length);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * 2026-10-18 真机反例（closure/run1）：挂载与首个定时心跳之间存在窗口，
+ * 宿主首个请求落进窗口，被闸门判 PROOF_NO_HEARTBEAT 而 403。
+ * 这里把窗口本身钉住：心跳定时器即使到点也不该是"第一个证据"。
+ */
+async function scenarioHeartbeatExistsAtMount() {
+  scenario('a mount proves liveness immediately, not one interval later');
+  const dir = mkdtempSync(join(tmpdir(), 'tla-budget-mount-'));
+  const host = createFakeHost();
+  const env = pluginContext(host);
+  const eventLog = join(dir, 'events.jsonl');
+  try {
+    const nowBefore = Date.now() - 1;
+    // 定时器 60 秒才到点：测试期间不会有任何周期心跳，只有挂载时写的那一次。
+    applyPlugin(env.ctx, {
+      modelRequests: 5,
+      stateFile: join(dir, 'state.json'),
+      eventLog,
+      runId: 'run-mount',
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const events = readEvents(eventLog);
+    check(events[0] && events[0].event === 'mounted', 'first event is mounted', events[0] && events[0].event);
+    check(events[1] && events[1].event === 'heartbeat', 'mounted is followed by a heartbeat at once', events[1] && events[1].event);
+    check(events[1] && events[1].runId === 'run-mount', 'that heartbeat belongs to this run', events[1] && events[1].runId);
+
+    const proof = evaluateMountProof({ eventLog, runId: 'run-mount', now: Date.now(), notBefore: nowBefore, requireHeartbeat: true });
+    check(proof.ok === true, 'the gate accepts the mount without waiting for the interval', proof);
+
+    const turn = await runTurn(host, { agentKey: 'first-request' });
+    check(turn.turnError === null && host.sent().length === 1, 'the very first request is allowed', host.sent());
+
+    env.disposeAll();
+    const after = readEvents(eventLog);
+    check(after[after.length - 1].event === 'unmounted', 'dispose still writes unmounted', after[after.length - 1].event);
+    const expired = evaluateMountProof({ eventLog, runId: 'run-mount', now: Date.now(), notBefore: nowBefore, requireHeartbeat: true });
+    check(expired.ok !== true && expired.reason === 'RUN_ENDED', 'the same proof stops being valid once unmounted', expired.reason);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -375,6 +419,7 @@ async function main() {
     check(rejecting.snapshot().rejected === 1, '拒绝计数可读', rejecting.snapshot());
   }
 
+  await scenarioHeartbeatExistsAtMount();
   await scenarioPluginRunBinding();
   await scenarioPluginResumeSemantics();
   await scenarioPluginWriteFailure();

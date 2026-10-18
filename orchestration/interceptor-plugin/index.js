@@ -220,10 +220,13 @@ export function apply(ctx, config) {
   });
 
   // 活跃心跳：证明"这个运行实例还活着"，而不是复用历史上的 reserved/rejected。
+  // 挂载完成与首个定时心跳之间有一个窗口；闸门的挂载证明要求"mounted + 心跳"，
+  // 若只等定时心跳，宿主在这个窗口里发出的第一个请求会被判 PROOF_NO_HEARTBEAT
+  // 并拒绝（2026-10-18 实测）。因此挂载即写一次心跳，再开始定时心跳。
+  const writeHeartbeat = () => appendEvent(eventLog, { event: 'heartbeat', runId, ...interceptor.snapshot() });
+  writeHeartbeat();
   // unref 让定时器不阻止宿主进程退出。
-  const heartbeatTimer = setInterval(() => {
-    appendEvent(eventLog, { event: 'heartbeat', runId, ...interceptor.snapshot() });
-  }, heartbeatIntervalMs);
+  const heartbeatTimer = setInterval(writeHeartbeat, heartbeatIntervalMs);
   if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
 
   const stopHeartbeat = () => clearInterval(heartbeatTimer);
