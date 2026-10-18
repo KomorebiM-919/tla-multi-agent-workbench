@@ -101,6 +101,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 - 保护链：额度耗尽零新增外发、重启不重置额度、监听器异常 fail-closed、插件缺失时闸门 403、心跳过期拒绝、配置/覆盖率不匹配拒绝启动、插件版本或字节不符拒绝启动。
 - 派工与 followup 调度；自动返工**只到**"插件生成修复/复审任务并自动派工"。
 - 四次 closure 运行（21 次放行）都在中等完整性令牌下完成（启动日志打印 `Medium Mandatory Level (S-1-16-8192)`）。
+- 受控实验的**启动前闸门**（2026-10-18）：外层升级已拿到 Medium 令牌、命令通过 `experiment-command` 校验，但启动器在宿主进程创建前以 `PLUGIN_NOT_VERIFIED` 拒绝（插件检出被本机 `core.autocrlf=true` 改写成 CRLF，指纹 `4de4b80e…` 而非审查值 `54f1a8e3…`），闸门放行 0 次、模型请求 0 次。已用 `.gitattributes` 修复（`5e1167d`）并在新检出上复算回 `54f1a8e3…`；本轮未重跑，详见 [`docs/V0.2-B1-MATRIX.md`](docs/V0.2-B1-MATRIX.md) §13。
 - 账本按原始日志复算：13 次运行、**放行 130 / 到达 130**（成功 115、错误 3、没答完 3、响应未知 9）。旧文档里的 `84/100` 漏了 B-1 四次运行的 9 次，已在 [`docs/V0.2-B1-MATRIX.md`](docs/V0.2-B1-MATRIX.md) §12.2 更正；逐次索引见 [`docs/V0.2-EXPERIMENT-LEDGER.md`](docs/V0.2-EXPERIMENT-LEDGER.md)。
 
 **未验证（不得声称）**
