@@ -1,4 +1,4 @@
-﻿// 账本复算的正式回归：用合成日志证明 tools/recompute-ledger.mjs 的口径，
+// 账本复算的正式回归：用合成日志证明 tools/recompute-ledger.mjs 的口径，
 // 而不是靠人工表格。合成日志只写临时目录，不读本机真实运行记录。
 //
 // 覆盖四类"看起来是 0、其实是未知"的场景：
@@ -22,18 +22,19 @@ function writeJsonl(path, rows) {
   writeFileSync(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n', 'utf8');
 }
 
-function stagedUpstream(count) {
+function stagedUpstream(count, { runId = 'tla-run-x', from = 1 } = {}) {
   const rows = [];
   for (let i = 0; i < count; i += 1) {
-    rows.push({ seq: i + 1, event: 'arrived', accepted: true });
-    rows.push({ seq: i + 1, event: 'responded', stopReason: 'end_turn' });
+    const id = runId + '#' + (from + i);
+    rows.push({ seq: i + 1, event: 'arrived', accepted: true, correlationId: id, runId });
+    rows.push({ seq: i + 1, event: 'responded', stopReason: 'end_turn', correlationId: id, runId });
   }
   return rows;
 }
 
 function makeRun(dir, {
   resumeMode = 'fresh', usedBefore = 0, reserved = 0, rejected = 0, allowed = 0, upstream = 0,
-  mounted = true, upstreamFile = 'upstream.jsonl', upstreamRows = null,
+  mounted = true, upstreamFile = 'upstream.jsonl', upstreamRows = null, correlation = true,
 } = {}) {
   mkdirSync(dir, { recursive: true });
   const events = [];
@@ -43,11 +44,11 @@ function makeRun(dir, {
   events.push({ event: 'unmounted', runId: 'tla-run-x', used: usedBefore + reserved });
   writeJsonl(join(dir, 'plugin-events.jsonl'), events);
   writeJsonl(join(dir, 'gate-events.jsonl'), [
-    ...Array.from({ length: allowed }, () => ({ event: 'allowed' })),
+    ...Array.from({ length: allowed }, (_, i) => (correlation ? { event: 'allowed', correlationId: 'tla-run-x#' + (i + 1) } : { event: 'allowed' })),
     ...Array.from({ length: Math.max(0, reserved - allowed) }, () => ({ event: 'denied', reason: 'BUDGET_EXHAUSTED' })),
   ]);
   if (upstreamFile !== null) {
-    writeJsonl(join(dir, upstreamFile), upstreamRows ?? stagedUpstream(upstream));
+    writeJsonl(join(dir, upstreamFile), upstreamRows ?? (correlation ? stagedUpstream(upstream) : stagedUpstream(upstream, { runId: 'legacy' })));
   }
   writeFileSync(join(dir, 'gate-summary.json'), JSON.stringify({ hostStarted: true, result: 'host-ok' }), 'utf8');
 }
@@ -158,6 +159,29 @@ try {
   check(mixed.complete === false, 'totals: incomplete run poisons the total', mixed);
   check(mixed.incompleteRuns.includes('no-log'), 'totals: incomplete run named', mixed.incompleteRuns);
   check(mixed.unknown.upstreamReceived.includes('no-log'), 'totals: unknown stage named', mixed.unknown);
+
+  // 关联 ID 对不上时账本必须不完整：重复 id、缺失 id、以及上游出现闸门没发过的 id。
+  const duplicate = join(scratch, 'duplicate');
+  makeRun(duplicate, {
+    reserved: 2,
+    allowed: 2,
+    upstream: 2,
+    upstreamRows: [
+      { seq: 1, event: 'arrived', correlationId: 'tla-run-x#1' },
+      { seq: 1, event: 'responded', correlationId: 'tla-run-x#1' },
+      { seq: 2, event: 'arrived', correlationId: 'tla-run-x#1' },
+      { seq: 2, event: 'responded', correlationId: 'tla-run-x#1' },
+    ],
+  });
+  const duplicateRow = measureRun(duplicate, 'duplicate');
+  check(duplicateRow.correlation.duplicatedAtUpstream === 1, 'correlation: duplicate id is counted', duplicateRow.correlation);
+  check(duplicateRow.completeness === 'INCOMPLETE', 'correlation: duplicate id makes the ledger incomplete', duplicateRow.stageMismatch);
+
+  const unstamped = join(scratch, 'unstamped');
+  makeRun(unstamped, { reserved: 2, allowed: 2, upstream: 2, correlation: false });
+  const unstampedRow = measureRun(unstamped, 'unstamped');
+  check(unstampedRow.correlation.allowedWithoutId === 2, 'correlation: unstamped allows are counted', unstampedRow.correlation);
+  check(unstampedRow.completeness === 'INCOMPLETE', 'correlation: unstamped run is incomplete', unstampedRow.stageMismatch);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

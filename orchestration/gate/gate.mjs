@@ -36,6 +36,8 @@ import { randomUUID } from 'node:crypto';
 import { evaluateMountProof, runEndedByLastEvent } from './preflight.mjs';
 
 export const GATE_SCHEMA = 'tla.budget-gate/v1';
+export const CORRELATION_HEADER = 'x-tla-correlation-id';
+export const RUN_ID_HEADER = 'x-tla-run-id';
 export const GATE_DENY_CODES = ['NO_LEASE', 'LEASE_EXPIRED', 'BUDGET_EXHAUSTED', 'REVOKED', 'GATE_CLOSING'];
 export const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1', '[::1]'];
 
@@ -247,10 +249,19 @@ export function createBudgetGate(options) {
     return false;
   };
 
-  const forward = (req, res, body) => {
+  // 关联 ID 由网关（而不是客户端）生成：客户端自带的同名头会被覆盖，
+  // 这样服务端日志里的每个关联 ID 都能对到一条 allowed 事件。
+  const correlationHeaders = (headers, correlationId) => {
+    const next = { ...headers, host: headers.host };
+    next[CORRELATION_HEADER] = correlationId;
+    if (mountProof !== null) next[RUN_ID_HEADER] = mountProof.runId;
+    return next;
+  };
+
+  const forward = (req, res, body, correlationId) => {
     const target = new URL(upstream.href);
     target.pathname = req.url.startsWith('/') ? req.url : '/' + req.url;
-    const headers = { ...req.headers, host: target.host };
+    const headers = correlationHeaders({ ...req.headers, host: target.host }, correlationId);
     const upstreamReq = httpRequest(
       {
         protocol: target.protocol,
@@ -310,8 +321,9 @@ export function createBudgetGate(options) {
         return;
       }
       used += 1;
-      writeEvent({ event: 'allowed', seq: ++seq, path: pathname, used, remaining: remaining(), bytes: body.length });
-      forward(req, res, body);
+      const correlationId = (mountProof === null ? 'unbound' : mountProof.runId) + '#' + used;
+      writeEvent({ event: 'allowed', seq: ++seq, path: pathname, used, remaining: remaining(), bytes: body.length, correlationId });
+      forward(req, res, body, correlationId);
     });
   });
 

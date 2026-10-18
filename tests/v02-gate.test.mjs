@@ -1218,6 +1218,32 @@ async function scenarioPluginIdentity() {
   rmSync(dir, { recursive: true, force: true });
 }
 
+// 项目工作区与运行证据目录必须分开，而且缺目录/缺目标文件时要在启动宿主之前失败。
+async function scenarioLauncherProjectPreflight() {
+  const upstream = await startUpstream();
+  const runDir = mkdtempSync(join(scratch, 'project-run-'));
+  const dump = join(scratch, 'project-dump.yml');
+  writeDumpYaml(dump, [{ id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: 'PLACEHOLDER' } }]);
+  const patch = join(scratch, 'project.patch.yml');
+  writeFileSync(patch, '- id: llm-deepseek\n  config: {}\n', 'utf8');
+  try {
+    const missingProject = join(scratch, 'nope-project-' + Date.now());
+    const withoutProject = await runLauncher(
+      baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile: dump, patch, extra: ['--project-cwd', missingProject] }),
+    );
+    check(withoutProject.code === 2, 'project preflight: missing project cwd is rejected before any host starts', withoutProject.code);
+    check(existsSync(join(runDir, 'gate-summary.json')) === false, 'project preflight: no summary means the host never started', true);
+
+    const projectDir = mkdtempSync(join(scratch, 'project-ok-'));
+    const missingFile = await runLauncher(
+      baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile: dump, patch, extra: ['--project-cwd', projectDir, '--require-file', 'test/sum.test.mjs'] }),
+    );
+    check(missingFile.code === 2, 'project preflight: missing required file is rejected before any host starts', missingFile.code);
+  } finally {
+    rmSync(runDir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const scenarios = [
     ['control plane is read-only', scenarioControlPlaneReadOnly],
@@ -1230,6 +1256,7 @@ async function main() {
     ['yaml strictness and coverage', scenarioYamlStrictness],
     ['run lifecycle at the gate', scenarioLifecycleAtGate],
     ['argument validation', scenarioArgsValidation],
+    ['launcher project preflight', scenarioLauncherProjectPreflight],
     ['launcher config binding', scenarioLauncherConfigBinding],
     ['launcher normal run', scenarioLauncherLeased],
     ['launcher without proof', scenarioLauncherWithoutProof],

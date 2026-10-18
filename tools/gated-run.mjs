@@ -35,7 +35,7 @@
 //        4 = 运行中保护失效（已撤销租约并终止宿主）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, closeSync, openSync, readFileSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, openSync, readFileSync, mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
@@ -97,7 +97,7 @@ function requireIntWithin(label, value, min, max) {
 }
 
 export function parseArgs(argv) {
-  const options = { patches: [] };
+  const options = { patches: [], requireFiles: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = (name) => {
@@ -130,6 +130,10 @@ export function parseArgs(argv) {
       case '--profile': options.profile = next('profile'); break;
       case '--patch': options.patches.push(next('patch')); break;
       case '--prompt': options.prompt = next('prompt'); break;
+      case '--project-cwd': options.projectCwd = next('project-cwd'); break;
+      case '--require-file': options.requireFiles.push(next('require-file')); break;
+      case '--upstream-health-url': options.upstreamHealthUrl = next('upstream-health-url'); break;
+      case '--upstream-run-id': options.upstreamRunId = next('upstream-run-id'); break;
       case '--summary': options.summary = next('summary'); break;
       default: throw new UsageError('unknown argument: ' + arg);
     }
@@ -172,7 +176,7 @@ export function buildInvocation(options, leafArgs) {
   return {
     command: options.dshExe,
     args,
-    cwd: options.scratchDir,
+    cwd: options.projectCwd === undefined ? options.scratchDir : options.projectCwd,
     env,
     leaf: leafArgs,
   };
@@ -457,6 +461,22 @@ async function main() {
   if (options.dshCli === undefined) fail('--dsh-cli is required (the launcher must fetch the effective config itself)');
   if (options.profile === undefined) fail('--profile is required');
   if (options.prompt === undefined) fail('--prompt is required');
+  if (options.projectCwd === undefined) {
+    options.projectCwd = options.runDir;
+  }
+  try {
+    if (!statSync(options.projectCwd).isDirectory()) fail('--project-cwd is not a directory: ' + options.projectCwd);
+  } catch (error) {
+    fail('--project-cwd does not exist: ' + options.projectCwd + ' (' + error.code + ')');
+  }
+  for (const required of options.requireFiles) {
+    const candidate = resolve(options.projectCwd, required);
+    try {
+      statSync(candidate);
+    } catch (error) {
+      fail('required project file is missing before start: ' + required + ' (' + error.code + ')');
+    }
+  }
   if (options.heartbeatFile === undefined) fail('--heartbeat-file is required (mount proof must be bound to this run)');
 
   const runDir = resolve(options.runDir || '.');
@@ -594,6 +614,28 @@ async function main() {
     }
 
     let spawnError = null;
+    // 假上游必须先用健康检查证明"它就是本轮的服务"：端口被别人占着、
+    // 或者读到的 PID/runId 与预期不符时，不启动宿主，也不复用旧服务。
+    if (options.upstreamHealthUrl !== undefined) {
+      let health = null;
+      try {
+        const response = await fetch(options.upstreamHealthUrl, { signal: AbortSignal.timeout(3_000) });
+        health = { status: response.status, body: await response.json() };
+      } catch (error) {
+        health = { error: String(error && error.message) };
+      }
+      record.upstreamHealth = health;
+      const expected = options.upstreamRunId;
+      const healthy = health !== null && health.status === 200 && health.body && health.body.ok === true;
+      const matchesRun = expected === undefined || (health.body && health.body.runId === expected);
+      if (!healthy || !matchesRun) {
+        record.result = 'refused-before-host-start';
+        record.hostStarted = false;
+        record.decision = { allow: false, blockers: [{ code: 'UPSTREAM_UNHEALTHY', detail: matchesRun ? 'upstream health check failed: ' + JSON.stringify(health) : 'upstream belongs to another run: ' + JSON.stringify(health.body) }] };
+        writeFileSync(summaryPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
+        return EXIT_PROTECTION_UNVERIFIED;
+      }
+    }
     // 先记下"宿主启动时刻"再 spawn：闸门用它拒绝早于本次启动的挂载证明。
     mountProof.notBefore = Date.now();
     child = spawn(hostInvocation.command, hostInvocation.args, { stdio: 'inherit', env: hostInvocation.env, cwd: hostInvocation.cwd });

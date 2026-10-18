@@ -1,4 +1,4 @@
-﻿// Recompute a per-run budget ledger from the raw logs of one gated run.
+// Recompute a per-run budget ledger from the raw logs of one gated run.
 //
 // Why this exists: the experiment reports quote "reserved / allowed / upstream"
 // counts, and it is easy to add two runs that share one budget state file and
@@ -131,6 +131,27 @@ export function measureRun(runDir, label = basename(runDir)) {
     },
   };
 
+  // 关联 ID：闸门给每条放行请求生成一个，服务端把收到的那个记下来。
+  // 用它做逐请求配对 —— 只用于观测，不声称是身份认证。
+  const allowedIds = gateEvents.filter((event) => event.event === 'allowed').map((event) => event.correlationId ?? null);
+  const upstreamIds = upstreamEvents.filter((event) => event.event === 'arrived' || event.accepted !== undefined).map((event) => event.correlationId ?? null);
+  const counts = new Map();
+  for (const id of upstreamIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+  row.correlation = {
+    gateIds: allowedIds.length,
+    upstreamIds: upstreamIds.length,
+    allowedWithoutId: allowedIds.filter((id) => id === null).length,
+    upstreamWithoutId: upstreamIds.filter((id) => id === null).length,
+    missingAtUpstream: allowedIds.filter((id) => id !== null && !counts.has(id)).length,
+    duplicatedAtUpstream: allowedIds.filter((id) => id !== null && (counts.get(id) ?? 0) > 1).length,
+    unknownAtUpstream: upstreamIds.filter((id) => id !== null && !allowedIds.includes(id)).length,
+  };
+  row.correlation.ok = row.correlation.allowedWithoutId === 0
+    && row.correlation.upstreamWithoutId === 0
+    && row.correlation.missingAtUpstream === 0
+    && row.correlation.duplicatedAtUpstream === 0
+    && row.correlation.unknownAtUpstream === 0;
+
   // Budget arithmetic: usedAfter must be usedBefore + this run's reservations.
   // A resumed run shares the state file, so usedBefore has to come from that
   // run's own first `mounted` event.
@@ -162,6 +183,12 @@ export function measureRun(runDir, label = basename(runDir)) {
     stageMismatch.push('the gate allowed requests the upstream never saw');
   }
   if (row.ledgerConsistent === false) stageMismatch.push('budget counter does not match the reservations');
+  // 关联 ID 对不上（缺、重复、或上游出现了闸门没发过的 id）同样让账本不完整。
+  if (row.correlation.allowedWithoutId > 0) stageMismatch.push('the gate did not stamp a correlation id on every allowed request');
+  if (row.correlation.upstreamWithoutId > 0) stageMismatch.push('the upstream recorded requests without a correlation id');
+  if (row.correlation.missingAtUpstream > 0) stageMismatch.push('the gate allowed requests the upstream recorded under a different correlation id');
+  if (row.correlation.duplicatedAtUpstream > 0) stageMismatch.push('the upstream saw the same correlation id more than once');
+  if (row.correlation.unknownAtUpstream > 0) stageMismatch.push('the upstream saw correlation ids the gate never issued');
   row.stageMismatch = stageMismatch;
   row.unknownFields = [
     row.upstreamReceived === UNKNOWN ? 'upstreamReceived' : null,
