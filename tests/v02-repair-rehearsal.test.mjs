@@ -175,14 +175,52 @@ check(script.length === 26, 'the rehearsal visits 26 transitions', String(script
   const afterCreate = retryModel.decide(request({ role: 'captain', prompt: captainPrompt, turns: captainTurns }));
   check(afterCreate.rule === 'captain-polls-after-create', 'the captain polls right after creating the team', afterCreate.rule);
   captainTurns.push(STATUS('Team b1-repair5 — t1 [in_progress]  worker\n'));
-  let lastRule = null;
-  for (let index = 0; index < 9; index += 1) {
-    const decision = retryModel.decide(request({ role: 'captain', prompt: captainPrompt, turns: captainTurns }));
-    lastRule = decision.rule;
-    if (lastRule !== 'captain-polls-while-members-work') break;
-    captainTurns.push(STATUS('Team b1-repair5 — t1 [in_progress]  worker\n'));
+  // 轮询只能有限次：同一份状态反复看不是进展，额度用完就以 NO_PROGRESS 收场，
+  // 而不是把上限从 6 调到 10 继续往前拱。
+  let polls = 0;
+  let exhausted = null;
+  for (let index = 0; index < 12; index += 1) {
+    try {
+      const decision = retryModel.decide(request({ role: 'captain', prompt: captainPrompt, turns: captainTurns }));
+      if (decision.rule !== 'captain-polls-while-members-work') break;
+      polls += 1;
+      captainTurns.push(STATUS('Team b1-repair5 — t1 [in_progress]  worker\n'));
+    } catch (error) {
+      exhausted = error;
+      break;
+    }
   }
-  check(lastRule === 'captain-polls-while-members-work', 'the captain keeps polling past the sixth status call', String(lastRule));
+  check(exhausted !== null && exhausted.code === 'NO_PROGRESS', 'an unchanged status cannot be polled forever', exhausted === null ? 'no error' : exhausted.code);
+  check(polls <= 6, 'polling stops at the declared allowance', 'polls=' + polls);
+
+  // 动作规则不能在同一个失败上原地打转：同一工具、同一错误文本重复到阈值即
+  // NO_PROGRESS_LOOP。轮询规则显式标了 progressExempt，动作规则没有。
+  {
+    const stuck = createReactiveModel({
+      schema: 'tla.reactive-model/v2',
+      id: 'stuck-fixture',
+      rules: [{
+        name: 'always-retry-the-same-failing-step',
+        role: 'worker',
+        state: 'new',
+        maxUses: 20,
+        match: { tool: 'pwsh', isError: true },
+        reply: { toolCalls: [{ name: 'pwsh', input: { command: 'node test/sum.test.mjs' } }] },
+        next: 'new',
+      }],
+    }, { maxNoProgress: 2 });
+    const stuckTurns = [turn('t', 'pwsh', 'sum tests: 2 passed, 1 failed', { isError: true, input: { command: 'node test/sum.test.mjs' } })];
+    let loopError = null;
+    for (let index = 0; index < 6; index += 1) {
+      try {
+        stuck.decide(request({ role: 'worker', prompt: 'Task t1 (work) — x', turns: stuckTurns }));
+      } catch (error) {
+        loopError = error;
+        break;
+      }
+    }
+    check(loopError !== null && loopError.code === 'NO_PROGRESS_LOOP', 'repeating the same failing action trips the no-progress threshold', loopError === null ? 'no error' : loopError.code);
+  }
 
   const writerModel = createReactiveModel(POLICY);
   const retryPrompt = 'Task t1 (work) — Implement sum() in src/sum.mjs.';

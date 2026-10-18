@@ -202,6 +202,48 @@ try {
   const unstampedRow = measureRun(unstamped, 'unstamped');
   check(unstampedRow.correlation.allowedWithoutId === 2, 'correlation: unstamped allows are counted', unstampedRow.correlation);
   check(unstampedRow.completeness === 'INCOMPLETE', 'correlation: unstamped run is incomplete', unstampedRow.stageMismatch);
+
+  // 错误响应不是"没有响应"：引擎拒绝推进时服务端仍回了 200 文本，账本要把
+  // 成功响应与错误响应分开，并且不能因此把这一轮判成"没答完"。
+  const withError = join(scratch, 'error-response');
+  makeRun(withError, {
+    reserved: 2,
+    allowed: 2,
+    upstream: 2,
+    upstreamRows: [
+      { seq: 1, event: 'arrived', accepted: true, correlationId: 'tla-run-x#1' },
+      { seq: 1, accepted: true, correlationId: 'tla-run-x#1' },
+      { seq: 1, event: 'responded', kind: 'ok', stopReason: 'tool_use', correlationId: 'tla-run-x#1' },
+      { seq: 2, event: 'arrived', accepted: true, correlationId: 'tla-run-x#2' },
+      { seq: 2, event: 'error-response', accepted: false, errorCode: 'NO_PROGRESS', correlationId: 'tla-run-x#2' },
+      { seq: 2, event: 'responded', kind: 'error', errorCode: 'NO_PROGRESS', correlationId: 'tla-run-x#2' },
+    ],
+  });
+  const errorRow = measureRun(withError, 'error-response');
+  check(errorRow.upstreamRespondedOk === 1, 'error response: success responses counted separately', errorRow.upstreamRespondedOk);
+  check(errorRow.upstreamRespondedError === 1, 'error response: error responses counted', errorRow.upstreamRespondedError);
+  check(errorRow.upstreamNoResponse === 0, 'error response: an error response is not a missing response', errorRow.upstreamNoResponse);
+  check(errorRow.completeness === 'COMPLETE', 'error response: a fully answered run stays complete', errorRow.stageMismatch);
+
+  // 到达了却既没有成功响应也没有错误响应：这一轮必须点名"没答完"，
+  // 并且 interrupted/clientReceived 不能凭空变成数字。
+  const halfAnswered = join(scratch, 'half-answered');
+  makeRun(halfAnswered, {
+    reserved: 2,
+    allowed: 2,
+    upstream: 2,
+    upstreamRows: [
+      { seq: 1, event: 'arrived', accepted: true, correlationId: 'tla-run-x#1' },
+      { seq: 1, event: 'responded', kind: 'ok', correlationId: 'tla-run-x#1' },
+      { seq: 2, event: 'arrived', accepted: true, correlationId: 'tla-run-x#2' },
+    ],
+  });
+  const halfRow = measureRun(halfAnswered, 'half-answered');
+  check(halfRow.upstreamNoResponse === 1, 'no response: unanswered request is counted', halfRow.upstreamNoResponse);
+  check(halfRow.completeness === 'INCOMPLETE', 'no response: the run is incomplete', halfRow.stageMismatch);
+  check(halfRow.stageMismatch.some((reason) => reason.includes('never answered')), 'no response: the reason names the gap', halfRow.stageMismatch);
+  check(halfRow.upstreamInterrupted === 'unknown', 'no response: interruption is not invented', halfRow.upstreamInterrupted);
+  check(halfRow.clientReceived === 'unknown', 'no response: client receipt is not invented', halfRow.clientReceived);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

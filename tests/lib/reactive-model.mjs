@@ -309,6 +309,7 @@ export function validatePolicy(policy) {
       }
     }
     if (rule.next !== undefined && (typeof rule.next !== 'string' || rule.next.length === 0)) fail('POLICY_INVALID', where + '.next 必须是非空字符串');
+    if (rule.progressExempt !== undefined && typeof rule.progressExempt !== 'boolean') fail('POLICY_INVALID', where + '.progressExempt 必须是布尔');
   }
   for (const key of Object.keys(policy.facts ?? {})) {
     if (!KNOWN_FACT_KEYS.has(key)) fail('POLICY_INVALID', 'policy.facts.' + key + ' 不是受支持的模板变量');
@@ -333,10 +334,24 @@ function applyTemplates(value, vars) {
   return value;
 }
 
-export function createReactiveModel(policy) {
+export function createReactiveModel(policy, options = {}) {
   validatePolicy(policy);
   const states = new Map();
   const counts = new Map();
+  const progress = new Map();
+  const maxNoProgress = options.maxNoProgress === undefined ? 3 : options.maxNoProgress;
+  if (!Number.isInteger(maxNoProgress) || maxNoProgress < 1) {
+    fail('POLICY_INVALID', 'maxNoProgress 必须是正整数');
+  }
+
+  // 一轮请求是否"有进展"：状态变了，或者最近一次工具结果的内容变了。
+  // 只靠调大 maxUses 会让夹具在同一个点上无限重试；这里把"原地打转"直接
+  // 判为失败，让实验以 NO_PROGRESS_LOOP 收场，而不是装成完成。
+  function progressSignature(parsed, state) {
+    const last = parsed.lastResult;
+    const tail = last === null ? 'no-result' : last.toolName + '|' + last.isError + '|' + last.text;
+    return state + '||' + tail;
+  }
 
   function stateOf(key) {
     return states.get(key) ?? 'new';
@@ -352,6 +367,7 @@ export function createReactiveModel(policy) {
       const state = stateOf(key);
       const facts = factsOf(parsed, identity);
 
+      const signature = progressSignature(parsed, state);
       if (parsed.turnResults.length === 0 && parsed.results.length > 0 && parsed.lastText === '') {
         fail('NO_PROGRESS', key + ': 没有新的工具结果，也没有新的文本，拒绝重复回复');
       }
@@ -362,6 +378,23 @@ export function createReactiveModel(policy) {
         if (!matches(rule, parsed, state, facts)) continue;
         const used = counts.get(key + '|' + rule.name) ?? 0;
         if (used >= rule.maxUses) continue;
+
+        // 显式标为 progressExempt 的规则是"等别人干活的轮询"：查看状态本身
+        // 不改变任何东西，重复是预期的。它的次数由 maxUses 兜住；其余规则
+        // 只要在同一个状态上原地重复就按阈值失败。
+        if (rule.progressExempt === true) {
+          progress.set(key, { signature, count: 1 });
+        } else {
+          const seen = progress.get(key);
+          if (seen !== undefined && seen.signature === signature) {
+            seen.count += 1;
+            if (seen.count > maxNoProgress) {
+              fail('NO_PROGRESS_LOOP', key + ': 连续 ' + seen.count + ' 次请求没有任何新的工具结果或状态变化（阈值 ' + maxNoProgress + '）');
+            }
+          } else {
+            progress.set(key, { signature, count: 1 });
+          }
+        }
 
         const vars = { ...Object.fromEntries(Object.entries(facts).filter(([, value]) => value !== null)), promptTaskId: facts.promptTaskId };
         let reply;

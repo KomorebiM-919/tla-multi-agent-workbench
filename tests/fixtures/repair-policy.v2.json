@@ -56,7 +56,7 @@
         "tool": "agent_teams_create",
         "isError": false
       },
-      "maxUses": 2,
+      "maxUses": 6,
       "reply": {
         "toolCalls": [
           {
@@ -64,7 +64,8 @@
             "input": {}
           }
         ]
-      }
+      },
+      "progressExempt": true
     },
     {
       "name": "captain-creates-review-task",
@@ -109,7 +110,7 @@
         "tool": "agent_teams_status",
         "isError": false
       },
-      "maxUses": 10,
+      "maxUses": 6,
       "reply": {
         "toolCalls": [
           {
@@ -117,7 +118,8 @@
             "input": {}
           }
         ]
-      }
+      },
+      "progressExempt": true
     },
     {
       "name": "captain-polls-after-review-task",
@@ -127,7 +129,7 @@
         "tool": "agent_teams_create_task",
         "isError": false
       },
-      "maxUses": 2,
+      "maxUses": 6,
       "reply": {
         "toolCalls": [
           {
@@ -135,7 +137,8 @@
             "input": {}
           }
         ]
-      }
+      },
+      "progressExempt": true
     },
     {
       "name": "captain-stops-when-loop-closed",
@@ -160,7 +163,7 @@
         "tool": "agent_teams_status",
         "isError": false
       },
-      "maxUses": 10,
+      "maxUses": 6,
       "reply": {
         "toolCalls": [
           {
@@ -168,7 +171,8 @@
             "input": {}
           }
         ]
-      }
+      },
+      "progressExempt": true
     },
     {
       "name": "captain-gives-up",

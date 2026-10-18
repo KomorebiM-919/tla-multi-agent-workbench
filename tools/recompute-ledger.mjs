@@ -106,6 +106,36 @@ export function measureRun(runDir, label = basename(runDir)) {
   else if (staged) completed = responded.length;
   else completed = UNKNOWN; // legacy single-line logs cannot prove completion
 
+  // 六个阶段必须分开数，不能用一个"完成响应"把它们压平：
+  //   arrived            HTTP 到达假服务
+  //   respondedOk        成功的响应体（200 + SSE 正常结尾）
+  //   respondedError     错误响应（策略/引擎失败时我们仍回 200 文本，但内容是错误）
+  //   interrupted        连接在响应前断开（需要服务端证据，本工具不臆测）
+  //   noResponse         到达了但既没成功也没错误地结束
+  //   clientReceived     宿主侧真的收到并处理完响应（需要宿主侧证据，通常 UNKNOWN）
+  let respondedOk = UNKNOWN;
+  let respondedError = UNKNOWN;
+  let interrupted = UNKNOWN;
+  let noResponse = UNKNOWN;
+  let clientReceived = UNKNOWN;
+  if (upstream.ok && staged) {
+    // 每次请求的终态只由它自己的 `responded` 行决定；`error-response` 是解释性
+    // 事件（和带 accepted 的模型行一样），把它再算一次会凭空多出一次错误。
+    const errors = upstreamEvents.filter((event) => event.event === 'responded' && event.kind === 'error');
+    const oks = upstreamEvents.filter((event) => event.event === 'responded' && event.kind !== 'error');
+    respondedOk = oks.length;
+    respondedError = errors.length;
+    // 连接中断需要独立的服务端证据（例如 aborted/socket-closed 事件）。现有的
+    // 假服务不写这类事件，所以保持 UNKNOWN，而不是把差额算成"中断"。
+    interrupted = upstreamEvents.some((event) => event.event === 'aborted' || event.event === 'connection-closed')
+      ? upstreamEvents.filter((event) => event.event === 'aborted' || event.event === 'connection-closed').length
+      : UNKNOWN;
+    noResponse = Math.max(0, arrived.length - respondedOk - respondedError);
+    // 宿主是否真的收到响应，只能由宿主侧日志证明；本仓库的运行不落这类
+    // 逐请求记录，所以保持 UNKNOWN。
+    clientReceived = UNKNOWN;
+  }
+
   const row = {
     schema: LEDGER_SCHEMA,
     run: label,
@@ -121,6 +151,11 @@ export function measureRun(runDir, label = basename(runDir)) {
     gateDenied: gateEvents.length === 0 ? UNKNOWN : gateEvents.filter((event) => event.event === 'denied').length,
     upstreamReceived: received,
     upstreamCompleted: completed,
+    upstreamRespondedOk: respondedOk,
+    upstreamRespondedError: respondedError,
+    upstreamInterrupted: interrupted,
+    upstreamNoResponse: noResponse,
+    clientReceived,
     upstreamStages: staged ? 'arrived/responded' : (upstream.ok ? 'legacy-accepted-only' : UNKNOWN),
     upstreamSource: upstreamFile,
     upstreamLines: upstreamEvents.length,
@@ -183,8 +218,9 @@ export function measureRun(runDir, label = basename(runDir)) {
   if (row.upstreamReceived !== UNKNOWN && row.upstreamCompleted !== UNKNOWN && row.upstreamCompleted > row.upstreamReceived) {
     stageMismatch.push('upstream completed more responses than it received');
   }
-  if (row.upstreamReceived !== UNKNOWN && row.upstreamCompleted !== UNKNOWN && row.upstreamCompleted < row.upstreamReceived) {
-    stageMismatch.push('upstream received requests it never finished answering');
+  // "错误响应"也是响应：只有既没有成功响应、也没有错误响应的请求才算没答完。
+  if (row.upstreamNoResponse !== UNKNOWN && row.upstreamNoResponse > 0) {
+    stageMismatch.push('upstream received requests it never answered (no success and no error response)');
   }
   if (row.gateAllowed !== UNKNOWN && row.upstreamReceived !== UNKNOWN && row.upstreamReceived < row.gateAllowed) {
     stageMismatch.push('the gate allowed requests the upstream never saw');
