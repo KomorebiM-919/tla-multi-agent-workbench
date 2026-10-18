@@ -1,7 +1,7 @@
 # V0.2 分支的 PR 文案（待人工在 GitHub 上粘贴）
 
 - 分支：`feat/v0.2-component-reuse` → `main`
-- 远端提交：`aaa1d82（本文件更新时的远端分支 tip）`
+- 远端提交：`6dd8b1b`（本文件更新时 `feat/v0.2-component-reuse` 的远端 tip）
 - base 说明：本分支从 `release/v0.1-public`（`5e8ef41`）切出，所以它**包含尚未合并的 V0.1 交付**。
   相对 `5e8ef41` 的范围才是 V0.2 新增；不要把 `main..head` 的全部差异算成 V0.2 的工作。
 - 建议标题：
