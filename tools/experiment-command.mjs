@@ -275,6 +275,10 @@ export function supervisorSpecFor(spec) {
     requireFiles: [...spec.requireFiles],
     fakeServerPath: spec.fakeServerPath,
     policyPath: spec.policyPath,
+    repoRoot: resolve(spec.repoRoot === undefined ? process.cwd() : spec.repoRoot),
+    // The supervisor proves the pinned revisions against this checkout; a run without pins is
+    // not "the experiment", it is an unpinned rehearsal, so ask for the proof.
+    requirePinned: spec.pinned !== undefined,
     fakeKeyEnv: 'TLA_STAGE2_FAKE_KEY',
     fakeKeyValue: 'stage2-fake-key'
   };

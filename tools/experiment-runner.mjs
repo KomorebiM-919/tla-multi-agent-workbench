@@ -13,7 +13,9 @@
  * did not spawn.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
@@ -33,6 +35,7 @@ export const RUNNER_STATUSES = Object.freeze([
   'cancelled',
   'preflight-failed',
   'cleanup-anomaly',
+  'internal-error',
   'spec-invalid'
 ]);
 
@@ -47,6 +50,12 @@ const MONITOR_INTERVAL_MS = 100;
 const STOP_GRACE_MS = 2_000;
 const STOP_KILL_MS = 2_000;
 const PORT_FREE_TIMEOUT_MS = 2_000;
+
+// Bounds for the knobs that used to be recorded but never passed on. A lease shorter than the
+// heartbeat interval, or a heartbeat age longer than the lease, cannot protect anything.
+export const LEASE_TTL_RANGE = Object.freeze({ min: 1_000, max: 60_000 });
+export const HEARTBEAT_MAX_AGE_RANGE = Object.freeze({ min: 500, max: 30_000 });
+export const TIMEOUT_RANGE = Object.freeze({ min: 1_000, max: 900_000 });
 
 export class RunnerError extends Error {
   constructor(code, message) {
@@ -107,10 +116,20 @@ export function validateSpec(spec) {
     assertIntegerRange('gatePort', spec.gatePort, 1024, 65_535);
     assertIntegerRange('upstreamPort', spec.upstreamPort, 1024, 65_535);
     assertIntegerRange('modelRequests', spec.modelRequests === undefined ? DEFAULT_MODEL_REQUESTS : spec.modelRequests, 1, MAX_MODEL_REQUESTS);
+    for (const [name, range, fallback] of [
+      ['leaseTtlMs', LEASE_TTL_RANGE, DEFAULT_LEASE_TTL_MS],
+      ['heartbeatMaxAgeMs', HEARTBEAT_MAX_AGE_RANGE, DEFAULT_HEARTBEAT_MAX_AGE_MS],
+      ['timeoutMs', TIMEOUT_RANGE, DEFAULT_TIMEOUT_MS]
+    ]) {
+      assertIntegerRange(name, spec[name] === undefined ? fallback : spec[name], range.min, range.max);
+    }
   } catch (error) {
     problems.push(error.message);
   }
   if (Number(spec.gatePort) === Number(spec.upstreamPort)) problems.push('gatePort and upstreamPort must differ');
+  if (spec.heartbeatMaxAgeMs !== undefined && spec.leaseTtlMs !== undefined && spec.heartbeatMaxAgeMs > spec.leaseTtlMs) {
+    problems.push('heartbeatMaxAgeMs must not exceed leaseTtlMs');
+  }
   if (spec.requireFiles !== undefined) {
     if (!Array.isArray(spec.requireFiles)) problems.push('requireFiles must be an array');
     else {
@@ -181,6 +200,131 @@ export async function main(argv) {
   console.log('summary: ' + join(resolve(spec.runDir), '..', 'runner-' + summary.runId + '.json'));
   if (summary.status !== 'completed') return 1;
   return 0;
+}
+
+/** The values this run will actually use, resolved once. */
+export function resolveEffective(spec) {
+  return {
+    modelRequests: spec.modelRequests === undefined ? DEFAULT_MODEL_REQUESTS : Number(spec.modelRequests),
+    leaseTtlMs: spec.leaseTtlMs === undefined ? DEFAULT_LEASE_TTL_MS : Number(spec.leaseTtlMs),
+    heartbeatMaxAgeMs: spec.heartbeatMaxAgeMs === undefined ? DEFAULT_HEARTBEAT_MAX_AGE_MS : Number(spec.heartbeatMaxAgeMs),
+    timeoutMs: spec.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : Number(spec.timeoutMs),
+    heartbeatIntervalMs: spec.heartbeatIntervalMs === undefined ? 500 : Number(spec.heartbeatIntervalMs)
+  };
+}
+
+/**
+ * Read a pair of `--flag value` entries out of an argv. Used to prove that the argv the host
+ * really received carries the same numbers the summary reports.
+ */
+export function verifyInvocationArgs(args, expected) {
+  const mismatches = [];
+  const value = (flag) => {
+    const index = args.indexOf(flag);
+    return index === -1 ? undefined : args[index + 1];
+  };
+  for (const [flag, wanted] of Object.entries(expected)) {
+    const seen = value(flag);
+    if (String(seen) !== String(wanted)) mismatches.push(flag + ' is ' + String(seen) + ', expected ' + String(wanted));
+  }
+  return { ok: mismatches.length === 0, mismatches };
+}
+
+/**
+ * Run git and capture both streams through a file.
+ *
+ * Pipes are unavailable to this process (the sandbox refuses to create the named pipe that
+ * child_process uses for `stdio: 'pipe'`), so the stream goes to a temporary file instead.
+ */
+function runGit(repoRoot, args, gitBin) {
+  const dir = mkdtempSync(join(tmpdir(), 'tla-git-'));
+  const out = join(dir, 'out.txt');
+  const fd = openSync(out, 'w');
+  const result = spawnSync(gitBin === undefined ? 'git' : gitBin, ['-C', repoRoot, ...args], { stdio: ['ignore', fd, fd] });
+  closeSync(fd);
+  let text = '';
+  try {
+    text = readFileSync(out, 'utf8');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const error = result.error === undefined ? null : String(result.error.message);
+  return { status: result.status, stdout: text.trim(), stderr: text.trim(), error };
+}
+
+function sha256File(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+/**
+ * Prove the pinned revisions instead of trusting the label.
+ *
+ * A spec can say "I ran revision X with fixtures Y"; that sentence is worth nothing unless the
+ * bytes on disk are checked against those revisions before anything is spawned. The external
+ * fake upstream and the policy are hashed into the same evidence block because they are part of
+ * what executes, even though they are not versioned with the repository.
+ */
+export function verifyPinnedSources(spec, options = {}) {
+  const repoRoot = options.repoRoot === undefined ? process.cwd() : options.repoRoot;
+  const gitBin = options.gitBin;
+  const evidence = {
+    schema: 'tla.pinned-sources/v1',
+    repoRoot,
+    sourceSha: null,
+    fixturesSha: null,
+    head: null,
+    dirty: [],
+    fakeServer: null,
+    policy: null,
+    checks: []
+  };
+  const problems = [];
+  const pinned = spec.pinned === undefined || spec.pinned === null ? null : spec.pinned;
+  if (pinned === null) {
+    if (spec.requirePinned === true) problems.push('pinned source is required but the spec has none');
+    evidence.checks.push({ name: 'pinned:present', ok: spec.requirePinned !== true, detail: pinned === null ? 'no pinned revisions supplied' : '' });
+    return { ok: problems.length === 0, problems, evidence };
+  }
+  evidence.sourceSha = pinned.sourceSha ?? null;
+  evidence.fixturesSha = pinned.fixturesSha ?? null;
+
+  const head = runGit(repoRoot, ['rev-parse', 'HEAD'], gitBin);
+  evidence.head = head.status === 0 ? head.stdout : null;
+  const headMatches = evidence.sourceSha !== null && evidence.head === evidence.sourceSha;
+  evidence.checks.push({ name: 'pinned:source', ok: headMatches, detail: 'HEAD ' + String(evidence.head) + ' vs pinned ' + String(evidence.sourceSha) });
+  if (!headMatches) problems.push('HEAD ' + String(evidence.head) + ' does not match pinned source ' + String(evidence.sourceSha));
+
+  const status = runGit(repoRoot, ['status', '--porcelain', '--untracked-files=no'], gitBin);
+  evidence.dirty = status.status === 0 && status.stdout !== '' ? status.stdout.split(/\r?\n/u) : [];
+  const clean = evidence.dirty.length === 0;
+  evidence.checks.push({ name: 'pinned:clean', ok: clean, detail: clean ? 'no tracked modifications' : evidence.dirty.join('; ') });
+  if (!clean) problems.push('the executing checkout has local modifications: ' + evidence.dirty.join('; '));
+
+  if (evidence.fixturesSha !== null) {
+    const known = runGit(repoRoot, ['rev-parse', '--verify', '--quiet', evidence.fixturesSha + '^{commit}'], gitBin);
+    if (known.status !== 0) {
+      evidence.checks.push({ name: 'pinned:fixtures', ok: false, detail: 'unknown revision ' + evidence.fixturesSha });
+      problems.push('unknown fixture revision ' + evidence.fixturesSha);
+    } else {
+      const diff = runGit(repoRoot, ['diff', '--quiet', evidence.fixturesSha, '--', 'tests/fixtures/repair-protocol', 'tests/fixtures/repair-loop-policy.v2.json'], gitBin);
+      const fixtureStatus = runGit(repoRoot, ['status', '--porcelain', '--untracked-files=all', '--', 'tests/fixtures/repair-protocol', 'tests/fixtures/repair-loop-policy.v2.json'], gitBin);
+      const noDrift = fixtureStatus.status === 0 && fixtureStatus.stdout === '';
+      const same = diff.status === 0 && noDrift;
+      evidence.checks.push({ name: 'pinned:fixtures', ok: same, detail: same ? 'fixture bytes equal ' + evidence.fixturesSha : 'fixture bytes differ from ' + evidence.fixturesSha + (noDrift ? '' : ' (' + fixtureStatus.stdout.replace(/\n/gu, '; ') + ')') });
+      if (!same) problems.push('fixture bytes differ from pinned revision ' + evidence.fixturesSha);
+    }
+  }
+
+  for (const [name, path] of [['fakeServer', spec.fakeServerPath], ['policy', spec.policyPath]]) {
+    if (typeof path !== 'string' || path === '' || !existsSync(path)) {
+      evidence.checks.push({ name: 'pinned:' + name, ok: false, detail: 'missing ' + String(path) });
+      problems.push(name + ' does not exist: ' + String(path));
+      continue;
+    }
+    evidence[name] = { path: resolve(path), bytes: statSync(path).size, sha256: sha256File(path) };
+    evidence.checks.push({ name: 'pinned:' + name, ok: true, detail: evidence[name].sha256 });
+  }
+  return { ok: problems.length === 0, problems, evidence };
 }
 
 /** True when nothing accepts connections on the port. */
@@ -287,7 +431,31 @@ function spawnOwned(role, command, args, options) {
     windowsHide: true
   });
   closeSync(fd);
-  return { role, child, pid: child.pid === undefined ? null : child.pid, command, args, logPath, startedAt: nowIso() };
+  // A failed spawn emits 'error' instead of 'exit'. Without a listener the event is unhandled and
+  // takes the whole runner down, leaving the other child orphaned.
+  const errors = [];
+  child.on('error', (error) => {
+    errors.push(error instanceof Error ? error.message : String(error));
+  });
+  return { role, child, pid: child.pid === undefined ? null : child.pid, command, args, logPath, startedAt: nowIso(), errors };
+}
+
+/**
+ * Give a just-spawned child a moment to report a start failure.
+ *
+ * Windows returns from spawn() even when the executable does not exist; the 'error' event arrives
+ * on the next turn of the loop. Every caller needs the same small window and the same detail.
+ */
+export async function waitSpawnOutcome(entry, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (entry.errors.length > 0) return { ok: false, detail: entry.errors.join('; ') };
+    if (entry.pid !== null) return { ok: true, detail: '' };
+    await sleep(10);
+  }
+  return entry.errors.length > 0
+    ? { ok: false, detail: entry.errors.join('; ') }
+    : { ok: entry.pid !== null, detail: entry.pid === null ? 'no pid was assigned' : '' };
 }
 
 /** Wait until the upstream answers as this run, classifying every failure. */
@@ -338,12 +506,12 @@ export async function runExperiment(spec, options = {}) {
   mkdirSync(runDir, { recursive: true });
   mkdirSync(logDir, { recursive: true });
   const overlayPath = join(workDir, 'overlay-' + endpoints.runId + '.patch.yml');
-  const modelRequests = spec.modelRequests === undefined ? DEFAULT_MODEL_REQUESTS : Number(spec.modelRequests);
+  const effective = resolveEffective(spec);
   const overlayText = renderOverlay({
     gateUrl: endpoints.gateUrl,
     runDir,
-    modelRequests,
-    heartbeatIntervalMs: spec.heartbeatIntervalMs === undefined ? 500 : spec.heartbeatIntervalMs
+    modelRequests: effective.modelRequests,
+    heartbeatIntervalMs: effective.heartbeatIntervalMs
   });
   writeFileSync(overlayPath, overlayText, 'utf8');
 
@@ -359,15 +527,18 @@ export async function runExperiment(spec, options = {}) {
       runDir,
       gatePort: endpoints.gatePort,
       upstreamPort: endpoints.upstreamPort,
-      modelRequests,
-      leaseTtlMs: spec.leaseTtlMs === undefined ? DEFAULT_LEASE_TTL_MS : spec.leaseTtlMs,
-      heartbeatMaxAgeMs: spec.heartbeatMaxAgeMs === undefined ? DEFAULT_HEARTBEAT_MAX_AGE_MS : spec.heartbeatMaxAgeMs,
-      timeoutMs: spec.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : spec.timeoutMs
+      modelRequests: effective.modelRequests,
+      leaseTtlMs: effective.leaseTtlMs,
+      heartbeatMaxAgeMs: effective.heartbeatMaxAgeMs,
+      timeoutMs: effective.timeoutMs
     },
     derived: endpoints,
     overlayPath,
     logDir,
     pinned: spec.pinned === undefined ? null : spec.pinned,
+    pinnedEvidence: null,
+    hostArgs: null,
+    treeProof: null,
     phases: [],
     owned: [],
     health: [],
@@ -387,8 +558,25 @@ export async function runExperiment(spec, options = {}) {
       const result = await stopOwnedProcess(entry.child, { graceMs: options.graceMs, killMs: options.killMs });
       summary.teardown.push({ role, pid: result.pid, how: result.how });
       if (result.how === 'still-alive') summary.status = 'cleanup-anomaly';
+      // "already-exited" means the child ended on its own before we could kill its tree. We
+      // cannot enumerate the descendants of a dead pid without platform support, so say so.
+      if (result.how === 'already-exited') summary.treeProof = 'exited-before-teardown';
+      if (result.how === 'tree-killed') summary.treeProof = 'tree-killed';
     }
-    summary.teardown.push({ role: 'ports', gateFree: await waitPortFree(endpoints.gatePort), upstreamFree: await waitPortFree(endpoints.upstreamPort) });
+    const gateFree = await waitPortFree(endpoints.gatePort);
+    const upstreamFree = await waitPortFree(endpoints.upstreamPort);
+    summary.teardown.push({ role: 'ports', gateFree, upstreamFree });
+    // Only our own spawns can leak. A run that never started anything cannot be blamed for a
+    // port that somebody else holds (for example the port-conflict scenario).
+    if (summary.owned.length > 0 && (!gateFree || !upstreamFree)) {
+      summary.status = 'cleanup-anomaly';
+      const stuck = [!gateFree ? 'gate ' + String(endpoints.gatePort) : null, !upstreamFree ? 'upstream ' + String(endpoints.upstreamPort) : null].filter(Boolean).join(' and ');
+      summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + 'a port owned by this experiment is still accepting connections after cleanup: ' + stuck;
+    }
+    if (spec.requireTreeProof === true && summary.treeProof === 'exited-before-teardown' && summary.status === 'completed') {
+      summary.status = 'cleanup-anomaly';
+      summary.reason = 'the host exited before teardown, so its descendants cannot be proven gone';
+    }
     summary.finishedAt = nowIso();
     writeFileSync(join(workDir, 'runner-' + endpoints.runId + '.json'), JSON.stringify(summary, null, 2) + '\n', 'utf8');
     return summary;
@@ -401,6 +589,15 @@ export async function runExperiment(spec, options = {}) {
     return teardown();
   };
 
+  // Provenance is checked before anything is spawned: a label is not evidence.
+  const pinnedCheck = verifyPinnedSources(spec, { repoRoot: options.repoRoot === undefined ? spec.repoRoot : options.repoRoot, gitBin: options.gitBin });
+  summary.pinnedEvidence = pinnedCheck.evidence;
+  if (!pinnedCheck.ok) return fail('spec-invalid', 'pinned sources not verified: ' + pinnedCheck.problems.join('; '));
+  phase('pinned-verified', { checks: pinnedCheck.evidence.checks.length });
+
+  // Everything below owns child processes, so it runs inside a guard: a throw of any kind must
+  // still go through teardown rather than leave a host or an upstream behind.
+  const execute = async () => {
   if (signal !== undefined && signal.aborted) return fail('cancelled', 'cancelled before start');
 
   for (const [name, port] of [['gatePort', endpoints.gatePort], ['upstreamPort', endpoints.upstreamPort]]) {
@@ -425,6 +622,10 @@ export async function runExperiment(spec, options = {}) {
   owned.upstream = upstream;
   summary.owned.push({ role: 'upstream', pid: upstream.pid, command: upstreamCommand, args: upstreamArgv, log: upstream.logPath });
   phase('upstream-spawned', { pid: upstream.pid });
+  // A spawn that cannot start reports asynchronously; without this the process would die on an
+  // unhandled 'error' event and leave the other child behind.
+  const upstreamSpawn = await waitSpawnOutcome(upstream);
+  if (!upstreamSpawn.ok) return fail('upstream-failed', 'upstream did not start: ' + upstreamSpawn.detail);
 
   let upstreamExited = false;
   upstream.child.once('exit', (code, sig) => {
@@ -447,16 +648,43 @@ export async function runExperiment(spec, options = {}) {
   if (recheck.status !== 'ok') return fail('upstream-lost-before-host', describeHealth(recheck));
   phase('upstream-recheck-ok');
 
+  // Observation hook: lets a caller inject a failure after the upstream is ready, so the
+  // "an exception still tears the run down" path can be exercised with real children.
+  if (typeof options.afterReady === 'function') {
+    await options.afterReady({ spec, endpoints, runDir });
+    phase('after-ready');
+  }
+
   const hostCommand = spec.hostCommand === undefined ? process.execPath : spec.hostCommand;
-  const hostArgv = spec.hostCommand === undefined ? buildHostArgs(spec, endpoints, runDir, overlayPath) : spec.hostArgs.slice();
+  const hostArgv = spec.hostCommand === undefined ? buildHostArgs(spec, endpoints, runDir, overlayPath, effective) : spec.hostArgs.slice();
+  summary.hostArgs = hostArgv;
+  // The summary must describe the argv the host really received, not the intent behind it.
+  if (spec.hostCommand === undefined) {
+    const agreement = verifyInvocationArgs(hostArgv, {
+      '--model-requests': String(effective.modelRequests),
+      '--lease-ttl-ms': String(effective.leaseTtlMs),
+      '--heartbeat-max-age-ms': String(effective.heartbeatMaxAgeMs),
+      '--timeout-ms': String(effective.timeoutMs),
+      '--gate-port': String(endpoints.gatePort),
+      '--upstream': endpoints.upstreamUrl,
+      '--upstream-run-id': endpoints.runId,
+      '--project-cwd': resolve(spec.projectCwd),
+      '--run-dir': runDir,
+      '--patch': overlayPath
+    });
+    summary.hostArgsAgreement = agreement;
+    if (!agreement.ok) return fail('spec-invalid', 'the host argv does not carry the resolved spec: ' + agreement.mismatches.join('; '));
+  }
   const host = spawnOwned('host', hostCommand, hostArgv, { logDir, cwd: spec.projectCwd, env: buildHostEnv(spec) });
   owned.host = host;
   summary.owned.push({ role: 'host', pid: host.pid, command: hostCommand, args: hostArgv, log: host.logPath });
   summary.hostStarted = true;
   summary.hostPid = host.pid;
   phase('host-spawned', { pid: host.pid });
+  const hostSpawn = await waitSpawnOutcome(host);
+  if (!hostSpawn.ok) return fail('host-spawn-failed', 'host did not start: ' + hostSpawn.detail);
 
-  const timeoutMs = spec.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : spec.timeoutMs;
+  const timeoutMs = effective.timeoutMs;
   const deadline = Date.now() + timeoutMs;
   let hostExit = null;
   host.child.once('exit', (code, sig) => { hostExit = { code, signal: sig }; });
@@ -479,6 +707,13 @@ export async function runExperiment(spec, options = {}) {
     if (Date.now() > deadline) return fail('timeout', 'host did not finish within ' + String(timeoutMs) + ' ms');
     await sleep(MONITOR_INTERVAL_MS);
   }
+  };
+
+  try {
+    return await execute();
+  } catch (error) {
+    return fail('internal-error', 'the runner threw: ' + String(error instanceof Error ? error.message : error));
+  }
 }
 
 function buildHostEnv(spec) {
@@ -488,7 +723,7 @@ function buildHostEnv(spec) {
   return env;
 }
 
-function buildHostArgs(spec, endpoints, runDir, overlayPath) {
+export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective) {
   const args = [
     resolve(spec.launcherPath === undefined ? 'tools/gated-run.mjs' : spec.launcherPath),
     '--profile', spec.profile,
@@ -499,11 +734,13 @@ function buildHostArgs(spec, endpoints, runDir, overlayPath) {
     '--upstream', endpoints.upstreamUrl,
     '--upstream-health-url', endpoints.healthUrl,
     '--upstream-run-id', endpoints.runId,
-    '--model-requests', String(spec.modelRequests === undefined ? DEFAULT_MODEL_REQUESTS : spec.modelRequests),
+    '--model-requests', String(effective.modelRequests),
+    '--lease-ttl-ms', String(effective.leaseTtlMs),
+    '--heartbeat-max-age-ms', String(effective.heartbeatMaxAgeMs),
     '--heartbeat-file', join(runDir, 'plugin-events.jsonl'),
     '--gate-log', join(runDir, 'gate-events.jsonl'),
     '--summary', join(runDir, 'gate-summary.json'),
-    '--timeout-ms', String(spec.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : spec.timeoutMs)
+    '--timeout-ms', String(effective.timeoutMs)
   ];
   for (const rel of spec.requireFiles === undefined ? [] : spec.requireFiles) args.push('--require-file', rel);
   if (spec.dshExe !== undefined) args.push('--dsh-exe', spec.dshExe);

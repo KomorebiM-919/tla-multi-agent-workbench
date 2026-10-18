@@ -287,6 +287,19 @@ try {
   check(supSpec.modelRequests === 40, 'the supervisor spec carries the budget', String(supSpec.modelRequests));
   check(supSpec.fakeKeyEnv === 'TLA_STAGE2_FAKE_KEY' && supSpec.fakeKeyValue === 'stage2-fake-key', 'the supervisor spec pins a dedicated fake credential');
   check(supSpec.projectCwd === resolve(spec.projectCwd), 'the supervisor spec pins the project working directory');
+  check(typeof supSpec.repoRoot === 'string' && supSpec.repoRoot.length > 0, 'the supervisor spec names the checkout it will be proven against', String(supSpec.repoRoot));
+  const pinnedSpec = supervisorSpecFor({
+    ...spec,
+    profile: 'stage1',
+    requireFiles: ['src/sum.mjs'],
+    fakeServerPath: standinFake,
+    policyPath: policy,
+    runDir: join(root, 'run-pinned'),
+    pinned: { sourceSha: 'a'.repeat(40), fixturesSha: 'b'.repeat(40) }
+  });
+  check(pinnedSpec.requirePinned === true, 'a pinned spec requires the provenance check');
+  check(pinnedSpec.pinned.sourceSha === 'a'.repeat(40) && pinnedSpec.pinned.fixturesSha === 'b'.repeat(40), 'both pinned revisions reach the supervisor');
+  check(supervisorSpecFor({ ...spec, requireFiles: [], runDir: join(root, 'run-unpinned') }).requirePinned === false, 'an unpinned spec does not claim a pin');
   validateSpec(supSpec);
   check(true, 'the emitted supervisor spec passes the runner validator');
 

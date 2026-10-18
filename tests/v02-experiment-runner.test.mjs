@@ -6,12 +6,12 @@
  *
  * No DSH host is started and no external model is contacted.
  */
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runExperiment, runSpecFile, stopOwnedProcess, validateSpec } from '../tools/experiment-runner.mjs';
+import { buildHostArgs, resolveEffective, runExperiment, runSpecFile, stopOwnedProcess, validateSpec, verifyInvocationArgs } from '../tools/experiment-runner.mjs';
 
 let failures = 0;
 let checks = 0;
@@ -61,6 +61,23 @@ if (grandchildFile !== null) {
   writeFileSync(grandchildFile, String(grandchild.pid), 'utf8');
 }
 setTimeout(() => process.exit(exitCode), sleepMs);
+`, 'utf8');
+
+writeFileSync(join(scripts, 'host-orphan.mjs'), `
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const read = (name, fallback) => {
+  const index = args.indexOf(name);
+  return index === -1 ? fallback : args[index + 1];
+};
+const port = read('--hold-port', '0');
+const pidFile = read('--orphan-pid-file', null);
+const code = "const net = require('node:net'); const s = net.createServer(); s.listen(Number(process.argv[1]), '127.0.0.1'); setInterval(() => {}, 1000)";
+const orphan = spawn(process.execPath, ['-e', code, port], { stdio: 'ignore', windowsHide: true, detached: true });
+orphan.unref();
+if (pidFile !== null) writeFileSync(pidFile, String(orphan.pid), 'utf8');
+setTimeout(() => process.exit(0), 300);
 `, 'utf8');
 
 const freePort = () => new Promise((resolvePromise) => {
@@ -119,7 +136,7 @@ async function spec(overrides) {
   check('happy path released the upstream port', await portFree(s.upstreamPort));
   const dead = summary.owned.every((entry) => !pidAlive(entry.pid));
   check('happy path left no owned process alive', dead, JSON.stringify(summary.owned.map((entry) => entry.pid)));
-  check('happy path recorded phases in order', summary.phases.map((entry) => entry.phase).join(',').startsWith('ports-free,upstream-spawned,upstream-ready,upstream-recheck-ok,host-spawned'), summary.phases.map((entry) => entry.phase).join(','));
+  check('happy path recorded phases in order', summary.phases.map((entry) => entry.phase).join(',').startsWith('pinned-verified,ports-free,upstream-spawned,upstream-ready,upstream-recheck-ok,host-spawned'), summary.phases.map((entry) => entry.phase).join(','));
   const written = JSON.parse(readFileSync(join(work, 'runner-' + s.upstreamRunId + '.json'), 'utf8'));
   check('happy path wrote a runner summary next to the run dir', written.runId === s.upstreamRunId, written.runId);
 }
@@ -183,7 +200,7 @@ async function spec(overrides) {
 
 // 7. timeout is bounded
 {
-  const s = await spec({ timeoutMs: 800, hostArgs: [join(scripts, 'host.mjs'), '--sleep-ms', '30000'] });
+  const s = await spec({ timeoutMs: 1_000, hostArgs: [join(scripts, 'host.mjs'), '--sleep-ms', '30000'] });
   const started = Date.now();
   const summary = await runExperiment(s);
   const elapsed = Date.now() - started;
@@ -210,7 +227,7 @@ async function spec(overrides) {
 {
   const grandchildFile = join(work, 'grandchild.pid');
   const s = await spec({
-    timeoutMs: 900,
+    timeoutMs: 1_000,
     hostArgs: [join(scripts, 'host.mjs'), '--sleep-ms', '30000', '--grandchild-pid-file', grandchildFile]
   });
   const summary = await runExperiment(s);
@@ -271,6 +288,153 @@ async function spec(overrides) {
     problems.push(error.message);
   }
   check('a spec without a fake upstream is rejected', problems.length === 1 && /fakeServerPath/u.test(problems[0]), problems.join(';'));
+}
+
+const standinFake = join(work, 'fake-upstream.mjs');
+writeFileSync(standinFake, '// stand-in upstream for provenance tests\n', 'utf8');
+const standinPolicy = join(work, 'standin-policy.json');
+writeFileSync(standinPolicy, '{"rules":[]}\n', 'utf8');
+
+// 14. a host that cannot start at all
+{
+  const s = await spec({ hostCommand: join(work, 'no-such-host.exe') });
+  const summary = await runExperiment(s);
+  check('a host that cannot be spawned is host-spawn-failed', summary.status === 'host-spawn-failed', summary.status);
+  check('the failure explains itself', /no such file|cannot find|ENOENT/u.test(String(summary.reason)) || String(summary.reason).includes('did not start'), summary.reason);
+  check('the upstream is torn down when the host cannot start', summary.owned.every((entry) => entry.pid === null || !pidAlive(entry.pid)), JSON.stringify(summary.owned.map((entry) => entry.pid)));
+  check('ports are free after a failed host spawn', (await portFree(s.gatePort)) && (await portFree(s.upstreamPort)));
+}
+
+// 15. a grandchild outliving its parent is not reported as a clean run
+{
+  const orphanFile = join(work, 'orphan.pid');
+  const s = await spec({ requireTreeProof: true });
+  s.hostArgs = [join(scripts, 'host-orphan.mjs'), '--hold-port', String(s.gatePort), '--orphan-pid-file', orphanFile];
+  const summary = await runExperiment(s);
+  const orphanPid = existsSync(orphanFile) ? Number(readFileSync(orphanFile, 'utf8')) : 0;
+  check('the stand-in host left a grandchild holding the gate port', Number.isInteger(orphanPid) && orphanPid > 0, String(orphanPid));
+  check('an unclean teardown is not completed', summary.status === 'cleanup-anomaly', summary.status);
+  check('the anomaly names the surviving port', String(summary.reason).includes(String(s.gatePort)), summary.reason);
+  check('the run records that its host exited before teardown', summary.treeProof === 'exited-before-teardown', String(summary.treeProof));
+  if (orphanPid > 0) spawnSync('taskkill', ['/PID', String(orphanPid), '/T', '/F'], { encoding: 'utf8' });
+  await sleep(300);
+}
+
+// 16. an exception mid-run still tears the run down
+{
+  const s = await spec({});
+  const summary = await runExperiment(s, {
+    afterReady: () => { throw new Error('injected failure after the upstream was ready'); }
+  });
+  check('an exception is reported as internal-error', summary.status === 'internal-error', summary.status);
+  check('the exception text is kept', String(summary.reason).includes('injected failure'), summary.reason);
+  check('an exception still stops the upstream', summary.owned.every((entry) => entry.pid === null || !pidAlive(entry.pid)));
+  check('an exception still frees the ports', (await portFree(s.gatePort)) && (await portFree(s.upstreamPort)));
+  check('an exception still writes the summary', existsSync(join(work, 'runner-' + s.upstreamRunId + '.json')));
+}
+
+// 17. the timing parameters are validated, not only the budget
+{
+  const base = { profile: 'x', projectCwd: projectDir, runDir: join(work, 'range-run'), gatePort: 18_301, upstreamPort: 18_302, fakeServerPath: standinFake, policyPath: standinPolicy };
+  const rejects = (overrides) => {
+    try { validateSpec({ ...base, ...overrides }); return null; } catch (error) { return error.code; }
+  };
+  check('a lease ttl below one second is rejected', rejects({ leaseTtlMs: 500 }) === 'spec-invalid');
+  check('a lease ttl above one minute is rejected', rejects({ leaseTtlMs: 60_001 }) === 'spec-invalid');
+  check('a heartbeat max age below half a second is rejected', rejects({ heartbeatMaxAgeMs: 100 }) === 'spec-invalid');
+  check('a heartbeat max age larger than the lease is rejected', rejects({ leaseTtlMs: 2_000, heartbeatMaxAgeMs: 5_000 }) === 'spec-invalid');
+  check('a timeout below one second is rejected', rejects({ timeoutMs: 10 }) === 'spec-invalid');
+  check('a timeout above fifteen minutes is rejected', rejects({ timeoutMs: 900_001 }) === 'spec-invalid');
+  check('a non numeric timeout is rejected', rejects({ timeoutMs: 'soon' }) === 'spec-invalid');
+  check('the defaults are accepted', rejects({}) === null);
+}
+
+// 18-21. pinned revisions are checked against the bytes on disk
+const gitIn = (repo, args) => {
+  // Pipes are refused in this sandbox, so git output goes through a temporary file.
+  const dir = mkdtempSync(join(tmpdir(), 'tla-test-git-'));
+  const out = join(dir, 'out.txt');
+  const fd = openSync(out, 'w');
+  const result = spawnSync('git', ['-C', repo, ...args], { stdio: ['ignore', fd, fd] });
+  closeSync(fd);
+  const text = readFileSync(out, 'utf8');
+  rmSync(dir, { recursive: true, force: true });
+  return { status: result.status, stdout: text };
+};
+const pinnedRepo = join(work, 'pinned');
+mkdirSync(join(pinnedRepo, 'tests', 'fixtures', 'repair-protocol'), { recursive: true });
+writeFileSync(join(pinnedRepo, 'tests', 'fixtures', 'repair-protocol', 'request-001.json'), '{"fixture":1}\n', 'utf8');
+writeFileSync(join(pinnedRepo, 'tests', 'fixtures', 'repair-loop-policy.v2.json'), '{"rules":[]}\n', 'utf8');
+gitIn(pinnedRepo, ['init', '-q']);
+gitIn(pinnedRepo, ['add', '-A']);
+gitIn(pinnedRepo, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'fixture']);
+const pinnedSha = gitIn(pinnedRepo, ['rev-parse', 'HEAD']).stdout.trim();
+
+{
+  const s = await spec({ pinned: { sourceSha: pinnedSha, fixturesSha: pinnedSha }, fakeServerPath: standinFake, policyPath: standinPolicy });
+  const summary = await runExperiment(s, { repoRoot: pinnedRepo });
+  check('a verified pinned run completes', summary.status === 'completed', summary.status);
+  check('provenance was checked before spawning', summary.phases.map((entry) => entry.phase).includes('pinned-verified'));
+  check('provenance records the executing sha', summary.pinnedEvidence.head === pinnedSha, String(summary.pinnedEvidence.head));
+  check('every provenance check passed', summary.pinnedEvidence.checks.every((entry) => entry.ok === true), JSON.stringify(summary.pinnedEvidence.checks.filter((entry) => !entry.ok)));
+  check('the fake server bytes are hashed into the evidence', /^[0-9a-f]{64}$/u.test(summary.pinnedEvidence.fakeServer.sha256), String(summary.pinnedEvidence.fakeServer.sha256));
+  check('the policy bytes are hashed into the evidence', /^[0-9a-f]{64}$/u.test(summary.pinnedEvidence.policy.sha256), String(summary.pinnedEvidence.policy.sha256));
+}
+
+{
+  const s = await spec({ pinned: { sourceSha: '0'.repeat(40), fixturesSha: pinnedSha }, fakeServerPath: standinFake, policyPath: standinPolicy });
+  const summary = await runExperiment(s, { repoRoot: pinnedRepo });
+  check('a wrong pinned source is refused', summary.status === 'spec-invalid', summary.status);
+  check('the refusal names the source mismatch', /does not match pinned source/u.test(String(summary.reason)), summary.reason);
+  check('nothing was spawned when provenance failed', summary.owned.length === 0, String(summary.owned.length));
+}
+
+{
+  writeFileSync(join(pinnedRepo, 'tests', 'fixtures', 'repair-protocol', 'request-001.json'), '{"fixture":2}\n', 'utf8');
+  gitIn(pinnedRepo, ['add', '-A']);
+  gitIn(pinnedRepo, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'drift']);
+  const s = await spec({ pinned: { sourceSha: pinnedSha, fixturesSha: pinnedSha }, fakeServerPath: standinFake, policyPath: standinPolicy });
+  const summary = await runExperiment(s, { repoRoot: pinnedRepo });
+  check('fixture drift is refused', summary.status === 'spec-invalid', summary.status);
+  check('the refusal names the fixture drift', /differ from pinned revision/u.test(String(summary.reason)), summary.reason);
+  check('drift is refused before anything is spawned', summary.owned.length === 0, String(summary.owned.length));
+}
+
+{
+  const dirtyRepo = join(work, 'dirty');
+  mkdirSync(join(dirtyRepo, 'tests', 'fixtures', 'repair-protocol'), { recursive: true });
+  writeFileSync(join(dirtyRepo, 'tests', 'fixtures', 'repair-protocol', 'request-001.json'), '{"fixture":1}\n', 'utf8');
+  writeFileSync(join(dirtyRepo, 'tests', 'fixtures', 'repair-loop-policy.v2.json'), '{"rules":[]}\n', 'utf8');
+  gitIn(dirtyRepo, ['init', '-q']);
+  gitIn(dirtyRepo, ['add', '-A']);
+  gitIn(dirtyRepo, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'fixture']);
+  const sha = gitIn(dirtyRepo, ['rev-parse', 'HEAD']).stdout.trim();
+  writeFileSync(join(dirtyRepo, 'tests', 'fixtures', 'repair-loop-policy.v2.json'), '{"rules":[1]}\n', 'utf8');
+  const s = await spec({ pinned: { sourceSha: sha, fixturesSha: sha }, fakeServerPath: standinFake, policyPath: standinPolicy });
+  const summary = await runExperiment(s, { repoRoot: dirtyRepo });
+  check('an executing checkout with local modifications is refused', summary.status === 'spec-invalid', summary.status);
+  check('the refusal names the local modification', /local modifications/u.test(String(summary.reason)), summary.reason);
+}
+
+// 22. the argv carries the numbers the summary will report
+{
+  const effective = resolveEffective({ modelRequests: 7, leaseTtlMs: 3_000, heartbeatMaxAgeMs: 2_000, timeoutMs: 60_000 });
+  const endpoints = { gatePort: 18_401, upstreamPort: 18_402, upstreamUrl: 'http://127.0.0.1:18402', healthUrl: 'http://127.0.0.1:18402/health', runId: 'argv-run' };
+  const args = buildHostArgs({ profile: 'standin', projectCwd: projectDir, requireFiles: ['a.txt'] }, endpoints, join(work, 'argv-run'), join(work, 'argv-overlay.yml'), effective);
+  const valueOf = (flag) => args[args.indexOf(flag) + 1];
+  check('the argv carries the budget', valueOf('--model-requests') === '7', String(valueOf('--model-requests')));
+  check('the argv carries the lease ttl', valueOf('--lease-ttl-ms') === '3000', String(valueOf('--lease-ttl-ms')));
+  check('the argv carries the heartbeat max age', valueOf('--heartbeat-max-age-ms') === '2000', String(valueOf('--heartbeat-max-age-ms')));
+  check('the argv carries the timeout', valueOf('--timeout-ms') === '60000', String(valueOf('--timeout-ms')));
+  const agreement = verifyInvocationArgs(args, {
+    '--model-requests': '7', '--lease-ttl-ms': '3000', '--heartbeat-max-age-ms': '2000', '--timeout-ms': '60000'
+  });
+  check('the argv agrees with the resolved spec', agreement.ok === true, JSON.stringify(agreement.mismatches));
+  const drifted = verifyInvocationArgs(args, { '--lease-ttl-ms': '4000', '--timeout-ms': '60000' });
+  check('a drifted argv is caught', drifted.ok === false);
+  check('the disagreement names the flag', drifted.mismatches.join(',').includes('--lease-ttl-ms'), drifted.mismatches.join(','));
+  const defaults = resolveEffective({});
+  check('the resolved defaults are the documented ones', defaults.modelRequests === 40 && defaults.timeoutMs === 300_000, JSON.stringify(defaults));
 }
 
 console.log('v02-experiment-runner: ' + checks + ' checks, ' + failures + ' failures');
