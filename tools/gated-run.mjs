@@ -274,15 +274,32 @@ export function verifyPluginIdentities(entries, options) {
   const home = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME !== ''
     ? process.env.DSH_HOME
     : join(homedir(), '.dsh');
-  const modulesDir = join(home, 'profiles', String(options.profile), 'node_modules');
+  const profileRoot = realpathSync(join(home, 'profiles', String(options.profile)));
+  const modulesDir = join(profileRoot, 'node_modules');
   return names.map((name) => {
     let pkgDir = null;
+    let insideProfileRoot = null;
     try {
       pkgDir = realpathSync(join(modulesDir, name));
+      // 宿主按 profile 的 node_modules 解析包名；pnpm 会把它链到 profile 内的
+      // .pnpm 目录。解析后的真实路径必须仍在该 profile 根下，否则"同名包"
+      // 可能只是另一个位置的副本，不能当成实际加载对象。
+      const normalized = pkgDir.replace(/\\/g, '/');
+      insideProfileRoot = normalized === profileRoot.replace(/\\/g, '/') || normalized.startsWith(profileRoot.replace(/\\/g, '/') + '/');
     } catch (_missing) {
       pkgDir = null;
     }
-    return verifyInstalledPlugin({ name, pkgDir });
+    if (pkgDir !== null && insideProfileRoot !== true) {
+      const identity = verifyInstalledPlugin({ name, pkgDir: null });
+      return {
+        ...identity,
+        resolvedRoot: pkgDir,
+        profileRoot,
+        insideProfileRoot: false,
+        detail: '解析到的包目录不在该 profile 根下，无法证明它就是宿主实际加载的对象：' + pkgDir,
+      };
+    }
+    return { ...verifyInstalledPlugin({ name, pkgDir }), resolvedRoot: pkgDir, profileRoot, insideProfileRoot };
   });
 }
 

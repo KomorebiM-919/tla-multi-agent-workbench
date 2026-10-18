@@ -20,7 +20,7 @@
 //   K 子进程无响应时不能无限挂起（SIGKILL 升级）；
 //   M 10 并发争 1 个额度只放行一次；N 正常路径在预算内完成请求。
 
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
@@ -50,6 +50,16 @@ function check(condition, label, detail) {
 
 const scratch = mkdtempSync(join(tmpdir(), 'tla-gate-'));
 const scratchDir = scratch;
+// 启动器场景要在"某个 profile 里真的装着被引用的插件"这一前提下运行，
+// 否则插件身份核对会（正确地）拒绝启动。这里造一个临时 DSH_HOME，
+// 把本仓库的拦截器原样复制进去：指纹来自副本，不依赖本机隔离 profile。
+const launcherHome = join(scratch, 'dsh-home');
+mkdirSync(join(launcherHome, 'profiles', 'stage1', 'node_modules'), { recursive: true });
+const launcherPluginDir = join(launcherHome, 'profiles', 'stage1', 'node_modules', 'tla-prelaunch-budget');
+mkdirSync(join(launcherPluginDir, 'lib'), { recursive: true });
+for (const rel of ['package.json', 'index.js', 'lib/budget.mjs']) {
+  writeFileSync(join(launcherPluginDir, rel), readFileSync(resolve('orchestration/interceptor-plugin', rel)));
+}
 function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8');
 }
@@ -185,7 +195,7 @@ function runLauncher(args, { timeoutMs = 40000, env = {} } = {}) {
   return new Promise((done) => {
     const child = spawn(process.execPath, [resolve('tools/gated-run.mjs'), ...args], {
       stdio: 'ignore',
-      env: { ...process.env, ...env },
+      env: { ...process.env, DSH_HOME: launcherHome, ...env },
     });
     const startedAt = Date.now();
     const timer = setTimeout(() => {
@@ -1106,6 +1116,63 @@ async function scenarioPluginIdentity() {
   check(tampered.status === 'build-mismatch', 'identity: same version with changed bytes is refused', tampered);
   check(tampered.buildDigest !== tampered.expectedBuildDigest, 'identity: build mismatch shows two digests', tampered);
 
+  // 独立复核反例：只改 bundle 覆盖层 YAML，旧口径（只算 js/mjs/cjs/json）
+  // 指纹不变、核对仍然通过。新口径必须覆盖 manifest 与 YAML。
+  writeFileSync(join(pkgDir, 'lib', 'b.js'), 'export const b = 2;\n');
+  writeFileSync(join(pkgDir, 'cordis.patch.yml'), '- insert: []\n');
+  writeFileSync(
+    join(pkgDir, 'package.json'),
+    JSON.stringify({ name: 'demo-plugin', version: '0.1.23', dsh: { bundle: { patch: './cordis.patch.yml' } } }) + '\n',
+  );
+  const withBundle = fingerprintPluginDir(pkgDir);
+  check(withBundle.ok === true, 'identity: bundle patch is readable', withBundle);
+  check(withBundle.fileCount === 4, 'identity: bundle patch counts as a reviewed file', withBundle);
+  check(withBundle.bundlePatch !== null && withBundle.bundlePatch.path === 'cordis.patch.yml', 'identity: bundle patch path is recorded', withBundle);
+  const expectedWithBundle = { version: '0.1.23', buildDigest: withBundle.buildDigest };
+  const bundleVerified = verifyPluginAgainst({ name: 'demo-plugin', pkgDir, expected: expectedWithBundle });
+  check(bundleVerified.status === 'verified', 'identity: bundle patch fixture verifies', bundleVerified);
+  writeFileSync(join(pkgDir, 'cordis.patch.yml'), '- insert: [{ id: sneaky }]\n');
+  const yamlTampered = verifyPluginAgainst({ name: 'demo-plugin', pkgDir, expected: expectedWithBundle });
+  check(yamlTampered.status === 'build-mismatch', 'identity: changing only the bundle patch YAML is refused', yamlTampered);
+  check(yamlTampered.buildDigest !== yamlTampered.expectedBuildDigest, 'identity: YAML tamper changes the digest', yamlTampered);
+
+  // 入口缺失 / 越出包根：不能静默忽略
+  writeFileSync(join(pkgDir, 'cordis.patch.yml'), '- insert: []\n');
+  writeFileSync(
+    join(pkgDir, 'package.json'),
+    JSON.stringify({ name: 'demo-plugin', version: '0.1.23', dsh: { bundle: { patch: './missing.yml' } } }) + '\n',
+  );
+  const missingEntry = fingerprintPluginDir(pkgDir);
+  check(missingEntry.ok === false && missingEntry.reason === 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', 'identity: missing bundle entry is unsupported', missingEntry);
+  writeFileSync(
+    join(pkgDir, 'package.json'),
+    JSON.stringify({ name: 'demo-plugin', version: '0.1.23', dsh: { bundle: { patch: '../escape.yml' } } }) + '\n',
+  );
+  const escapingEntry = fingerprintPluginDir(pkgDir);
+  check(escapingEntry.ok === false && escapingEntry.reason === 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', 'identity: escaping bundle entry is unsupported', escapingEntry);
+
+  // 包内符号链接：不跟随、不跳过
+  writeFileSync(
+    join(pkgDir, 'package.json'),
+    JSON.stringify({ name: 'demo-plugin', version: '0.1.23', dsh: { bundle: { patch: './cordis.patch.yml' } } }) + '\n',
+  );
+  const linkTarget = join(dir, 'outside.js');
+  writeFileSync(linkTarget, 'export const outside = 1;\n');
+  const linkPath = join(pkgDir, 'lib', 'linked.js');
+  let linkCreated = false;
+  try {
+    symlinkSync(linkTarget, linkPath);
+    linkCreated = true;
+  } catch (_noSymlink) {
+    linkCreated = false;
+  }
+  if (linkCreated) {
+    const linked = fingerprintPluginDir(pkgDir);
+    check(linked.ok === false && linked.reason === 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', 'identity: symlinked file is unsupported', linked);
+    check(String(linked.detail).includes('符号链接'), 'identity: symlink refusal names the entry', linked);
+    rmSync(linkPath, { force: true });
+  }
+
   // 身份读不出 / 包不存在
   const missing = verifyInstalledPlugin({ name: '@nanmicoder/dsh-agent-teams', pkgDir: join(dir, 'nope') });
   check(missing.status === 'identity-unreadable', 'identity: missing package is unreadable', missing);
@@ -1137,12 +1204,16 @@ async function scenarioPluginIdentity() {
   });
   check(accepted.allow === true, 'identity: verified plugin does not block', accepted);
 
-  // 真实安装包（若本机隔离 profile 还在）：直接核对绑定，而不是只信登记表
-  const realProfile = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'profiles', 'stage1', 'node_modules', '@nanmicoder', 'dsh-agent-teams');
-  if (existsSync(realProfile)) {
-    const real = verifyInstalledPlugin({ name: '@nanmicoder/dsh-agent-teams', pkgDir: realProfile });
-    check(real.status === 'verified', 'identity: installed agent-teams matches the reviewed build', real);
-    check(real.buildDigest === REVIEWED_PLUGIN_EVIDENCE['@nanmicoder/dsh-agent-teams'].buildDigest, 'identity: installed digest equals registered digest', real.buildDigest);
+  // 真实安装包：只在显式给出隔离 profile 时核对（不隐式依赖本机环境，
+  // 否则同一提交在不同机器上断言数不同——这正是独立复核看到的 176/178 差异）。
+  const realProfileBase = process.env.TLA_REAL_PROFILE || null;
+  if (realProfileBase !== null) {
+    const realProfile = join(realProfileBase, 'profiles', 'stage1', 'node_modules', '@nanmicoder', 'dsh-agent-teams');
+    if (existsSync(realProfile)) {
+      const real = verifyInstalledPlugin({ name: '@nanmicoder/dsh-agent-teams', pkgDir: realProfile });
+      check(real.status === 'verified', 'identity: installed agent-teams matches the reviewed build', real);
+      check(real.buildDigest === REVIEWED_PLUGIN_EVIDENCE['@nanmicoder/dsh-agent-teams'].buildDigest, 'identity: installed digest equals registered digest', real.buildDigest);
+    }
   }
   rmSync(dir, { recursive: true, force: true });
 }

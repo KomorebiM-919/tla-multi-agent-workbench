@@ -65,15 +65,22 @@ export const KNOWN_NON_PROVIDER_ADAPTERS = new Set([
 // 而不是"名字里没有 llm"或"看起来像"。登记的是**固定版本 + 构建指纹**：
 // 名字和配置里声明的版本都不算证据，必须从宿主实际解析到的包目录读版本与
 // 文件指纹；版本不符、身份读不出、内容变了都要拒绝启动。指纹口径：
-// 包根下所有 .js/.mjs/.cjs/.json（跳过 node_modules/.git）按相对路径排序，
-// 取 sha256(Σ"<文件 sha256>  <相对路径>\n")。
+// 包根下**所有普通文件**（跳过 node_modules/.git）按相对路径排序，
+// 取 sha256(Σ"<文件 sha256>  <相对路径>\n")。之所以从"只算 .js/.mjs/.cjs/.json"
+// 改为"所有文件"，是因为宿主真正加载的是 `package.json` 的 `dsh.bundle.patch`
+// 指向的 YAML 覆盖层：只算 JS/JSON 时，改掉 cordis.patch.yml 指纹不变。
+// 若包内出现符号链接、或声明的入口文件不存在/越出包根，一律判为不可核对
+// （PLUGIN_IDENTITY_UNSUPPORTED_ENTRY / PLUGIN_IDENTITY_LINK_UNSUPPORTED），
+// 不静默跳过。
 // 这是**本地完整性核对**，防的是"装错了版本/包被换过"，不是防恶意本机管理员
-// ——能被本机管理员同时改写包和本表的人可以绕过它。
+// ——能被本机管理员同时改写包和本表的人可以绕过它。它也不覆盖运行时依赖解析
+// （peer/外部依赖）与原生二进制内容之外的行为。
 export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
   'tla-prelaunch-budget': Object.freeze({
     version: '0.0.0-local',
     buildDigest: '6fb8a042876ce78f7b3150f57172ff98a7ab823687ddb23ea0b7fd049b316477',
     fileCount: 3,
+    bundlePatch: null,
     reviewedFor: '本仓库的预算拦截器（profile overlay insert 挂载）',
     evidence: Object.freeze([
       'listener 只读 agent/request 的配置并在发起前同步预占额度，然后 return next()',
@@ -82,8 +89,12 @@ export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
   }),
   '@nanmicoder/dsh-agent-teams': Object.freeze({
     version: '0.1.23',
-    buildDigest: '4adb2b0c3c6281139f516c967f1caaae3cbd4670f08d2f33475d163c1385d752',
-    fileCount: 43,
+    buildDigest: 'e97e31807710852fd6ef45f433d91aaec174c183cd38d30bd305fb4d795eb29c',
+    fileCount: 123,
+    bundlePatch: Object.freeze({
+      path: 'cordis.patch.yml',
+      sha256: '699b8ba773693205db637a5fea7c0c9e38ce1668a148e347beb0ea4339c2079b',
+    }),
     reviewedFor: '团队执行后端候选（隔离 profile `stage1` 内 0.1.23）',
     evidence: Object.freeze([
       '安装包 lib/ 22 个 js 全文扫描：0 处 baseURL、0 处 llm.stream、0 处 llm.prepareCall、0 处 apiKey、无 Authorization 头构造',
@@ -101,11 +112,15 @@ export const PLUGIN_IDENTITY_STATUSES = [
   'verified',
   'unregistered',
   'identity-unreadable',
+  'identity-unsupported',
   'version-mismatch',
   'build-mismatch',
 ];
 
 // 只读取文件内容算指纹；不执行包内代码。
+// 覆盖范围：包根下所有普通文件（跳过 node_modules/.git），因此 bundle 覆盖层
+// （如 cordis.patch.yml）、manifest、入口与资产都在内。包内出现符号链接、
+// 声明的 bundle patch 越出包根或不存在时，返回 ok:false（不可核对）。
 export function fingerprintPluginDir(pkgDir) {
   const pkgFile = pkgDir + '/package.json';
   let manifest;
@@ -129,9 +144,12 @@ export function fingerprintPluginDir(pkgDir) {
     for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       if (entry.name === 'node_modules' || entry.name === '.git') continue;
       const childRel = rel === '' ? entry.name : rel + '/' + entry.name;
+      if (entry.isSymbolicLink()) {
+        throw new Error('包内符号链接不受支持：' + childRel + '（不跟随、不跳过）');
+      }
       if (entry.isDirectory()) {
         walk(dir + '/' + entry.name, childRel);
-      } else if (entry.isFile() && /\.(?:js|mjs|cjs|json)$/.test(entry.name)) {
+      } else if (entry.isFile()) {
         const digest = createHash('sha256').update(readFileSync(dir + '/' + entry.name)).digest('hex');
         files.push({ path: childRel, sha256: digest });
       }
@@ -141,18 +159,35 @@ export function fingerprintPluginDir(pkgDir) {
   try {
     walk(pkgDir, '');
   } catch (error) {
-    return { ok: false, reason: 'PLUGIN_IDENTITY_UNREADABLE', detail: error.message };
+    return { ok: false, reason: 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', detail: error.message };
   }
   if (files.length === 0) {
     return { ok: false, reason: 'PLUGIN_IDENTITY_UNREADABLE', detail: '包内没有可核对的文件：' + pkgDir };
   }
+
+  const bundlePatchRel = manifest.dsh?.bundle?.patch ?? null;
+  if (bundlePatchRel !== null) {
+    if (typeof bundlePatchRel !== 'string' || bundlePatchRel.trim() === '') {
+      return { ok: false, reason: 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', detail: 'package.json 的 dsh.bundle.patch 不是非空字符串' };
+    }
+    const normalized = bundlePatchRel.replace(/^\.\//, '');
+    if (normalized.startsWith('/') || normalized.split('/').includes('..')) {
+      return { ok: false, reason: 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', detail: 'dsh.bundle.patch 越出包根：' + bundlePatchRel };
+    }
+    if (!files.some((file) => file.path === normalized)) {
+      return { ok: false, reason: 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY', detail: 'dsh.bundle.patch 指向的文件不存在：' + bundlePatchRel };
+    }
+  }
+
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const text = files.map((file) => file.sha256 + '  ' + file.path + '\n').join('');
+  const bundleFile = bundlePatchRel === null ? null : files.find((file) => file.path === bundlePatchRel.replace(/^\.\//, ''));
   return {
     ok: true,
     version: manifest.version,
     fileCount: files.length,
     buildDigest: createHash('sha256').update(text, 'utf8').digest('hex'),
+    bundlePatch: bundleFile === null || bundleFile === undefined ? null : { path: bundleFile.path, sha256: bundleFile.sha256 },
   };
 }
 
@@ -176,7 +211,7 @@ export function verifyInstalledPlugin({ name, pkgDir = null }) {
   return verifyPluginAgainst({ name, pkgDir, expected });
 }
 
-// 与"登记表"解耦的核对函数（测试可以用合成证据验证四个分支）。
+// 与"登记表"解耦的核对函数（测试可以用合成证据验证各个分支）。
 export function verifyPluginAgainst({ name, pkgDir = null, expected }) {
   if (typeof pkgDir !== 'string' || pkgDir === '') {
     return {
@@ -197,7 +232,7 @@ export function verifyPluginAgainst({ name, pkgDir = null, expected }) {
     return {
       schema: PLUGIN_IDENTITY_SCHEMA,
       name,
-      status: 'identity-unreadable',
+      status: fingerprint.reason === 'PLUGIN_IDENTITY_UNSUPPORTED_ENTRY' ? 'identity-unsupported' : 'identity-unreadable',
       installedVersion: null,
       declaredVersion: expected.version,
       expectedVersion: expected.version,
@@ -216,6 +251,7 @@ export function verifyPluginAgainst({ name, pkgDir = null, expected }) {
     fileCount: fingerprint.fileCount,
     buildDigest: fingerprint.buildDigest,
     expectedBuildDigest: expected.buildDigest,
+    bundlePatch: fingerprint.bundlePatch,
   };
   if (fingerprint.version !== expected.version) {
     return { ...base, status: 'version-mismatch', detail: '审查版本 ' + expected.version + '，实际安装 ' + fingerprint.version };
