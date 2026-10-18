@@ -127,6 +127,7 @@ export function parseArgs(argv) {
       case '--gate-log': options.gateLog = next('gate-log'); break;
       case '--dsh-exe': options.dshExe = next('dsh-exe'); break;
       case '--dsh-cli': options.dshCli = next('dsh-cli'); break;
+      case '--dsh-home': options.dshHome = next('dsh-home'); break;
       case '--profile': options.profile = next('profile'); break;
       case '--patch': options.patches.push(next('patch')); break;
       case '--prompt': options.prompt = next('prompt'); break;
@@ -172,6 +173,10 @@ export function buildInvocation(options, leafArgs) {
   for (const patch of options.patches) args.push('--patch', patch);
   args.push(...leafArgs);
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+  // The isolated home has to travel with the invocation, not with whatever shell happens to run
+  // this command: an ambient DSH_HOME made the config probe resolve the wrong profile (or fail
+  // with "profile does not exist") even though --dsh-home pointed at the right one.
+  if (options.dshHome !== undefined) env.DSH_HOME = options.dshHome;
   if (options.runId !== undefined) env.TLA_RUN_ID = options.runId;
   return {
     command: options.dshExe,

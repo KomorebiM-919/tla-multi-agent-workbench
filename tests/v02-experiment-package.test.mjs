@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs as parseLauncherArgs, UsageError } from '../tools/gated-run.mjs';
+import { parseArgs as parseLauncherArgs, buildInvocation, UsageError } from '../tools/gated-run.mjs';
 import { buildCommand, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder } from '../tools/experiment-command.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -237,6 +237,28 @@ try {
   check(noArchive.problems.some((problem) => /archive/u.test(problem)), 'a cli path inside a missing archive is refused');
   const plainMissing = buildCommand({ ...spec, dshCli: join(root, 'nope.js'), requireFiles: ['src/sum.mjs'] });
   check(plainMissing.problems.some((problem) => /--dsh-cli does not exist/u.test(problem)), 'a plain missing cli path is refused');
+  // The isolated home must be part of the command and of the child environment, not something
+  // the surrounding shell is expected to export. Without this the config probe resolved the
+  // default profile and failed with 'profile "stage1" does not exist' — a pre-flight error that
+  // said nothing about the experiment.
+  const homeSpec = { ...spec, dshHome: join(root, 'isolated-home') };
+  const built = buildCommand(homeSpec);
+  const homeFlag = built.argv.indexOf('--dsh-home');
+  check(homeFlag >= 0 && built.argv[homeFlag + 1] === homeSpec.dshHome, 'the command carries --dsh-home');
+  const invocation = buildInvocation(
+    {
+      dshExe: spec.dshExe,
+      dshCli: spec.dshCli,
+      dshHome: homeSpec.dshHome,
+      profile: spec.profile,
+      patches: [],
+      runId: 'tla-run-test',
+      projectCwd: spec.projectCwd
+    },
+    ['--dump-config']
+  );
+  check(invocation.env.DSH_HOME === homeSpec.dshHome, 'the child process receives DSH_HOME');
+  check(invocation.args.includes('--dsh-home') === false, 'the launcher flag is not forwarded to the DSH CLI itself');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

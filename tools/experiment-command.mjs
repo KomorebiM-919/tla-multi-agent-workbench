@@ -177,6 +177,9 @@ export function buildCommand(spec) {
   for (const file of spec.requireFiles || []) argv.push('--require-file', file);
   if (spec.dshExe !== undefined) argv.push('--dsh-exe', spec.dshExe);
   if (spec.dshCli !== undefined) argv.push('--dsh-cli', spec.dshCli);
+  // Carry the isolated home in the command itself; the probe and the host must not depend on
+  // whatever DSH_HOME the surrounding shell happens to export.
+  if (spec.dshHome !== undefined) argv.push('--dsh-home', spec.dshHome);
   if (spec.prompt !== undefined) argv.push('--prompt', spec.prompt);
 
   // The launcher is the authority on its own flags: parse the argv we just built.
