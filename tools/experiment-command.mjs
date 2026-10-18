@@ -255,6 +255,7 @@ function main(argv) {
     redTest: spec.redTest,
     dshHome: spec.dshHome,
     profile: spec.profile,
+    overlay: spec.overlay,
     gatePort: spec.gatePort,
     upstreamPort: spec.upstreamPort
   }).then((statics) => {

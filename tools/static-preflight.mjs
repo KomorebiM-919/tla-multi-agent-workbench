@@ -75,6 +75,46 @@ export function checkPortFree(port) {
   });
 }
 
+// A guarded provider still has to resolve a credential *before* it builds a request: the
+// 2026-10-18 run started, mounted the plugin, and died with MISSING_CREDENTIAL because the
+// overlay rewrote `baseURL` but not `apiKeyEnv`. Zero requests reached the gate, so the
+// experiment proved nothing. Check the overlay and the environment here instead.
+export function checkOverlayCredentials(overlayPath, env = process.env) {
+  if (typeof overlayPath !== 'string' || overlayPath === '' || !existsSync(overlayPath)) {
+    return { ok: false, detail: 'overlay is missing: ' + String(overlayPath), envName: null };
+  }
+  const lines = readFileSync(overlayPath, 'utf8').split(/\r?\n/u);
+  const sections = new Map();
+  let current = null;
+  for (const line of lines) {
+    const header = /^-\s+id:\s*(\S+)\s*$/u.exec(line);
+    if (header !== null) {
+      current = header[1];
+      sections.set(current, []);
+      continue;
+    }
+    if (current !== null) sections.get(current).push(line);
+  }
+  const block = sections.get('llm-deepseek');
+  if (block === undefined) {
+    return { ok: false, detail: 'the overlay does not configure the llm-deepseek provider', envName: null };
+  }
+  const apiKeyLine = block.map((line) => /^\s+apiKeyEnv:\s*(\S+)\s*$/u.exec(line)).find((match) => match !== null);
+  if (apiKeyLine === undefined) {
+    return {
+      ok: false,
+      detail: 'the llm-deepseek block sets no apiKeyEnv; a guarded baseURL is not enough — the host resolves the API key first',
+      envName: null
+    };
+  }
+  const envName = apiKeyLine[1];
+  const value = env[envName];
+  if (typeof value !== 'string' || value === '') {
+    return { ok: false, detail: 'apiKeyEnv names ' + envName + ' but that variable is empty in the launching environment', envName };
+  }
+  return { ok: true, detail: 'llm-deepseek takes its key from ' + envName + ' (set, ' + value.length + ' chars)', envName };
+}
+
 function pluginCheck(name, dir, detail) {
   const identity = verifyInstalledPlugin({ name, pkgDir: dir });
   const ok = identity.status === 'verified';
@@ -99,6 +139,9 @@ export async function runStaticChecks(spec) {
   });
   const dshHome = spec.dshHome === undefined ? '' : spec.dshHome;
   const profile = spec.profile ?? 'stage1';
+  if (spec.overlay !== undefined) {
+    checks.push({ name: 'overlay:credentials', ...checkOverlayCredentials(spec.overlay, spec.env ?? process.env) });
+  }
   for (const name of spec.plugins ?? REQUIRED_PLUGINS) {
     const { dir, detail } = resolveProfilePluginDir(dshHome, profile, name);
     checks.push(pluginCheck(name, dir, detail));
