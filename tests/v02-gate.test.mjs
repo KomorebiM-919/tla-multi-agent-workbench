@@ -34,6 +34,7 @@ import {
   extractProviderCoverage,
   normalizeBaseUrl,
   parseDumpConfigStrict,
+  REVIEWED_PLUGIN_EVIDENCE,
 } from '../orchestration/gate/preflight.mjs';
 import { parseArgs, UsageError, EXIT_OK, EXIT_PROTECTION_UNVERIFIED, terminateHost } from '../tools/gated-run.mjs';
 
@@ -1039,6 +1040,37 @@ async function scenarioLauncherForeignProof() {  const upstream = await startUps
   await upstream.close();
 }
 
+
+async function scenarioReviewedPluginEvidence() {
+  const dir = mkdtempSync(join(tmpdir(), 'gate-reviewed-'));
+  const gateBase = 'http://127.0.0.1:59991';
+  const dump = writeDumpYaml(join(dir, 'dump.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: gateBase } },
+    { id: 'agent-teams', name: '@nanmicoder/dsh-agent-teams' },
+    { id: 'rogue', name: '@acme/router' },
+  ]);
+  const parsed = parseDumpConfigStrict(readFileSync(dump, 'utf8'));
+  check(parsed.ok === true, 'reviewed: dump parses', parsed.reason);
+  const coverage = extractProviderCoverage(parsed.entries, gateBase);
+  check(coverage.guarded.includes('llm-deepseek'), 'reviewed: provider guarded', coverage.guarded);
+  check(coverage.plumbing.includes('agent-teams'), 'reviewed: registered plugin is plumbing', coverage.plumbing);
+  check(coverage.unknown.includes('rogue'), 'reviewed: unregistered plugin stays unknown', coverage.unknown);
+  const evidence = REVIEWED_PLUGIN_EVIDENCE['@nanmicoder/dsh-agent-teams'];
+  check(evidence && evidence.version === '0.1.23', 'reviewed: entry names the fixed version', evidence);
+  check(Array.isArray(evidence.evidence) && evidence.evidence.length >= 4, 'reviewed: entry carries evidence lines', evidence && evidence.evidence.length);
+  const blocked = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage });
+  check(blocked.allow === false, 'reviewed: unregistered plugin still blocks start', blocked);
+  check(blocked.blockers.some((b) => b.code === 'PROVIDER_UNKNOWN'), 'reviewed: blocker names PROVIDER_UNKNOWN', blocked.blockers);
+  const clean = writeDumpYaml(join(dir, 'clean.yml'), [
+    { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: gateBase } },
+    { id: 'agent-teams', name: '@nanmicoder/dsh-agent-teams' },
+  ]);
+  const parsedClean = parseDumpConfigStrict(readFileSync(clean, 'utf8'));
+  const coverageClean = extractProviderCoverage(parsedClean.entries, gateBase);
+  const allowed = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage: coverageClean });
+  check(allowed.allow === true, 'reviewed: registered plugin alone does not block', allowed);
+  rmSync(dir, { recursive: true, force: true });
+}
 async function main() {
   const scenarios = [
     ['control plane is read-only', scenarioControlPlaneReadOnly],
@@ -1056,6 +1088,7 @@ async function main() {
     ['launcher without proof', scenarioLauncherWithoutProof],
     ['launcher rejects foreign proof', scenarioLauncherForeignProof],
     ['termination escalation', scenarioTerminationEscalation],
+    ['reviewed plugin evidence', scenarioReviewedPluginEvidence],
   ];
   for (const [label, scenario] of scenarios) {
     try {

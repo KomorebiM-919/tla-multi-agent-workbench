@@ -59,11 +59,31 @@ export const KNOWN_NON_PROVIDER_ADAPTERS = new Set([
   '@deepseek-ai/dsh-llm-retry',
   '@deepseek-ai/dsh-llm',
 ]);
-// 已审查过、确认不会发起模型请求的第三方组件。只有本仓库自己的预算拦截器
-// 在这里；它只读 agent/request 配置并同步预占额度，不调用任何 LLM。
-// 其它任何第三方插件都必须按 unknown 处理（拒绝启动），不能靠"看起来像"
-// 或"名字里没有 llm"就放过。
-export const REVIEWED_PLUGIN_NAMES = new Set(['tla-prelaunch-budget']);
+// 已审查过、确认不会自行发起模型请求的第三方组件。每一项都必须带证据，
+// 而不是"名字里没有 llm"或"看起来像"。登记的是**固定版本**：升级、换包或
+// 换版本都要重新核对，不能沿用旧结论。
+export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
+  'tla-prelaunch-budget': Object.freeze({
+    version: '0.0.0-local',
+    reviewedFor: '本仓库的预算拦截器（profile overlay insert 挂载）',
+    evidence: Object.freeze([
+      'listener 只读 agent/request 的配置并在发起前同步预占额度，然后 return next()',
+      '模块不 import 任何 HTTP/LLM 客户端，不读凭据，不写仓库文件',
+    ]),
+  }),
+  '@nanmicoder/dsh-agent-teams': Object.freeze({
+    version: '0.1.23',
+    reviewedFor: '团队执行后端候选（隔离 profile `stage1` 内 0.1.23）',
+    evidence: Object.freeze([
+      '安装包 lib/ 22 个 js 全文扫描：0 处 baseURL、0 处 llm.stream、0 处 llm.prepareCall、0 处 apiKey、无 Authorization 头构造',
+      '只调用 ctx.llm.listModels / ctx.llm.resolveCallConfig（members.js:89、:404）做目录与调用配置解析，不发模型请求',
+      '唯一的 fetch 在 client.js（浏览器 bundle）里，指向宿主自身的相对路由 /plugins/dsh-agent-teams/{plan,halt}，由 authenticatedWebRoutes 注册并要求宿主连接鉴权',
+      '真正的模型请求由它通过 ctx.subagents 派生的子代理在宿主 AgentLoop 内发起，因此仍走 agent/request 与同一道闸门',
+    ]),
+  }),
+});
+// 升级到未登记版本时不能自动放行：名字在表里也要按登记的版本判断。
+export const REVIEWED_PLUGIN_NAMES = new Set(Object.keys(REVIEWED_PLUGIN_EVIDENCE));
 
 // 随包组件里"名字不带 `dsh-llm-` 前缀、但自己持有模型端点配置"的特例。
 // 白名单只能证明组件在默认 profile 里存在，不能证明它不调用模型；下面两个
