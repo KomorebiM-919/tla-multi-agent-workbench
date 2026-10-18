@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, buildInvocation, UsageError } from '../tools/gated-run.mjs';
-import { buildCommand, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder } from '../tools/experiment-command.mjs';
+import { buildCommand, inspectionInputFor, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder } from '../tools/experiment-command.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -259,6 +259,18 @@ try {
   );
   check(invocation.env.DSH_HOME === homeSpec.dshHome, 'the child process receives DSH_HOME');
   check(invocation.args.includes('--dsh-home') === false, 'the launcher flag is not forwarded to the DSH CLI itself');
+
+  // The config probe has to inspect the same overlay the launcher will apply. Reading the wrong
+  // field name silently inspected the bare profile instead.
+  const inspectionInput = inspectionInputFor(spec, runDir);
+  check(
+    inspectionInput.patches.length === 1 && inspectionInput.patches[0] === spec.overlay,
+    'the config probe receives the overlay the command carries'
+  );
+  check(
+    built.argv.includes(spec.overlay),
+    'the same overlay string appears in the launcher command'
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

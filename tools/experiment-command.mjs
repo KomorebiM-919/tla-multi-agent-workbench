@@ -238,6 +238,25 @@ export function toPowerShell(command) {
   return pieces.join('\n');
 }
 
+/**
+ * What the effective-config inspector needs for this spec. It must carry the same overlay the
+ * launcher will receive: reading a field named `patch` (which the builder never sets — the flag
+ * is `--overlay`) loaded the profile without any overlay, so all eight config checks failed for
+ * a reason that had nothing to do with the experiment.
+ */
+export function inspectionInputFor(spec, runDir) {
+  return {
+    dshExe: spec.dshExe,
+    dshCli: spec.dshCli,
+    dshHome: spec.dshHome,
+    profile: spec.profile,
+    patches: spec.overlay === undefined ? [] : [spec.overlay],
+    gateUrl: 'http://127.0.0.1:' + String(spec.gatePort),
+    runId: 'inspect-effective-config',
+    runDir: join(dirname(runDir), 'inspect-effective-config')
+  };
+}
+
 // Async because the pre-flight checks spawn the CLI. Earlier the early-return paths returned a
 // number while the happy path returned a promise, so `main(...).then` threw a TypeError on a
 // usage error; every path now resolves to an exit code.
@@ -275,16 +294,7 @@ async function main(argv) {
     // configuration and judge that; the dump goes to a scratch directory so the evidence
     // directory stays untouched and still "new" for the launcher.
     const runDir = spec.runDir === undefined ? '' : resolve(spec.runDir);
-    const inspection = inspectEffectiveConfig({
-      dshExe: spec.dshExe,
-      dshCli: spec.dshCli,
-      dshHome: spec.dshHome,
-      profile: spec.profile,
-      patches: spec.patch === undefined ? [] : [spec.patch],
-      gateUrl: 'http://127.0.0.1:' + String(spec.gatePort),
-      runId: 'inspect-effective-config',
-      runDir: join(dirname(runDir), 'inspect-effective-config')
-    });
+    const inspection = inspectEffectiveConfig(inspectionInputFor(spec, runDir));
     for (const check of inspection.checks) process.stderr.write('experiment-command: config ' + (check.ok ? 'ok   ' : 'FAIL ') + check.name + ' — ' + check.detail + '\n');
     if (inspection.ok !== true) {
       process.stderr.write('experiment-command: EFFECTIVE CONFIG FAILED — do not request an escalation for this command\n');
