@@ -24,6 +24,7 @@ import {
   checkBaseUrl,
   checkProtectionHeartbeat,
   decideStart,
+  extractProviderCoverage,
 } from '../orchestration/gate/preflight.mjs';
 import { extractBaseUrlFromDump } from '../tools/gated-run.mjs';
 
@@ -409,6 +410,109 @@ async function scenarioLauncherLeased() {
   await upstream.close();
 }
 
+async function scenarioProviderCoverage() {
+  const gate = 'http://127.0.0.1:18778';
+  const single = [
+    '- id: llm-deepseek',
+    "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+    '  config:',
+    '    baseURL: ' + gate,
+  ].join('\n');
+  const one = extractProviderCoverage(single, gate);
+  check(one.guarded.length === 1 && one.unguarded.length === 0, 'coverage: a single gated provider is guarded', one);
+  const allowed = decideStart({ gateReady: true, baseUrl: { ok: true, reason: null }, heartbeat: { ok: true, reason: null }, coverage: one });
+  check(allowed.allow === true, 'coverage: gated provider passes the start decision', allowed);
+
+  const twoProviders = single + '\n' + [
+    '- id: llm-deepseek-account',
+    "  name: '@deepseek-ai/dsh-llm-deepseek-account'",
+  ].join('\n');
+  const two = extractProviderCoverage(twoProviders, gate);
+  check(two.unguarded.length === 1 && two.unguarded[0] === 'llm-deepseek-account', 'coverage: a second provider without a gate baseURL is unguarded', two);
+  const blocked = decideStart({ gateReady: true, baseUrl: { ok: true, reason: null }, heartbeat: { ok: true, reason: null }, coverage: two });
+  check(blocked.allow === false && blocked.blockers.some((b) => b.code === 'PROVIDER_NOT_GATED'), 'coverage: unguarded provider blocks the start', blocked);
+
+  const piAi = twoProviders + '\n' + [
+    '- id: llm-pi-ai',
+    "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+    '  config:',
+    '    providers:',
+    '      - id: openrouter',
+  ].join('\n');
+  const pi = extractProviderCoverage(piAi, gate);
+  check(pi.unguarded.includes('llm-pi-ai'), 'coverage: a configured pi-ai aggregator is unguarded', pi);
+
+  const piEmpty = twoProviders + '\n' + [
+    '- id: llm-pi-ai',
+    "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+  ].join('\n');
+  const piNone = extractProviderCoverage(piEmpty, gate);
+  check(piNone.unguarded.length === 1 && piNone.notConfigured.includes('llm-pi-ai'), 'coverage: an unconfigured pi-ai aggregator registers no route', piNone);
+
+  const disabled = twoProviders + '\n' + [
+    '- id: llm-retry',
+    "  name: '@deepseek-ai/dsh-llm-retry'",
+  ].join('\n');
+  const withRetry = extractProviderCoverage(disabled, gate);
+  check(withRetry.providers.every((p) => p.id !== 'llm-retry'), 'coverage: shared llm plumbing is not counted as a provider', withRetry.providers);
+}
+
+async function scenarioConcurrentLastSlot() {
+  const upstream = await startUpstream();
+  const gate = createBudgetGate({ upstream: upstream.url, modelRequests: 1 });
+  const { baseUrl } = await gate.listen(0);
+  const lease = gate.grantLease();
+  check(typeof lease.id === 'string', 'concurrency: lease issued', lease.id);
+
+  const results = await Promise.all(Array.from({ length: 10 }, (_unused, index) => postMessage(baseUrl, index)));
+  const allowed = results.filter((result) => result.status === 200);
+  const denied = results.filter((result) => result.status === 403 && result.body?.error?.reason === 'BUDGET_EXHAUSTED');
+  check(allowed.length === 1, 'concurrency: exactly one of ten parallel requests wins the last slot', { allowed: allowed.length, denied: denied.length });
+  check(denied.length === 9, 'concurrency: the other nine are denied as BUDGET_EXHAUSTED', denied.length);
+  check(upstream.count() === 1, 'concurrency: upstream received exactly one request', upstream.count());
+  check(gate.status().used === 1 && gate.status().remaining === 0, 'concurrency: gate counters equal the served request', gate.status());
+
+  await gate.close();
+  await upstream.close();
+}
+
+async function scenarioMountProofAndLeaseIsolation() {
+  const upstream = await startUpstream();
+  const dir = scratchDir('mount');
+  const staleLog = join(dir, 'stale.jsonl');
+  appendEvent(staleLog, { event: 'mounted', at: new Date(Date.now() - 600_000).toISOString(), limit: 5 });
+  const staleGate = createBudgetGate({ upstream: upstream.url, modelRequests: 5, mountProof: { eventLog: staleLog, maxAgeMs: 5_000 } });
+  const stale = await staleGate.listen(0);
+  const staleResult = await postMessage(stale.baseUrl, 1);
+  check(staleResult.status === 403 && staleResult.body?.error?.reason === 'NO_LEASE', 'mount: an old mounted event cannot authorize a new run', staleResult.body);
+  check(upstream.count() === 0, 'mount: no upstream connection was opened for the stale proof', upstream.count());
+  await staleGate.close();
+
+  const freshLog = join(dir, 'fresh.jsonl');
+  appendEvent(freshLog, { event: 'mounted', at: new Date().toISOString(), limit: 2 });
+  const freshGate = createBudgetGate({ upstream: upstream.url, modelRequests: 2, mountProof: { eventLog: freshLog, maxAgeMs: 5_000 } });
+  const fresh = await freshGate.listen(0);
+  const first = await postMessage(fresh.baseUrl, 1);
+  const second = await postMessage(fresh.baseUrl, 2);
+  check(first.status === 200 && second.status === 200, 'mount: a fresh mounted event authorizes the run', { first: first.status, second: second.status });
+  check(upstream.count() === 2, 'mount: two allowed requests reached upstream', upstream.count());
+  freshGate.revoke('HEARTBEAT_LOST');
+  const third = await postMessage(fresh.baseUrl, 3);
+  check(third.status === 403 && third.body?.error?.reason === 'REVOKED', 'mount: after revocation the same mount proof cannot re-authorize', third.body);
+  check(upstream.count() === 2, 'mount: the revoked request never reached upstream', upstream.count());
+  await freshGate.close();
+
+  const otherGate = createBudgetGate({ upstream: upstream.url, modelRequests: 2 });
+  const other = await otherGate.listen(0);
+  const borrowed = otherGate.heartbeat('lease-from-another-run');
+  check(borrowed.ok === false && borrowed.reason === 'LEASE_UNKNOWN', 'mount: a lease id from another run is rejected', borrowed);
+  const crossResult = await postMessage(other.baseUrl, 4);
+  check(crossResult.status === 403 && crossResult.body?.error?.reason === 'NO_LEASE', 'mount: another run cannot borrow a lease', crossResult.body);
+  check(upstream.count() === 2, 'mount: the cross-run attempt opened no upstream connection', upstream.count());
+  await otherGate.close();
+  await upstream.close();
+}
+
 async function main() {
   await scenarioDenyByDefault();
   await scenarioLeasedBudget();
@@ -417,8 +521,11 @@ async function main() {
   await scenarioDecisionFunctions();
   await scenarioLauncherRefusals();
   await scenarioLauncherLeased();
+  await scenarioProviderCoverage();
+  await scenarioConcurrentLastSlot();
+  await scenarioMountProofAndLeaseIsolation();
 
-  const scenarios = 7;
+  const scenarios = 10;
   for (const failure of failures) {
     process.stdout.write('FAIL ' + failure.label + (failure.detail === null ? '' : ' :: ' + JSON.stringify(failure.detail)) + '\n');
   }

@@ -38,6 +38,7 @@ import {
   checkBaseUrl,
   checkProtectionHeartbeat,
   decideStart,
+  extractProviderCoverage,
   formatDecision,
   readGateStatus,
 } from '../orchestration/gate/preflight.mjs';
@@ -75,6 +76,7 @@ export function parseArgs(argv) {
       case '--profile': options.profile = next(); break;
       case '--patch': options.patch = next(); break;
       case '--dump-config-from': options.dumpConfigFrom = next(); break;
+      case '--allow-ungated-providers': options.allowUngatedProviders = true; break;
       case '--on-loss': options.onLoss = next(); break;
       case '--summary': options.summary = next(); break;
       default: options.hostArgs.push(arg); break;
@@ -227,14 +229,23 @@ async function main() {
   const effectiveBaseUrl = extracted.ok === true ? extracted.baseURL : null;
   const baseUrlCheck = checkBaseUrl({ effectiveBaseUrl, gateBaseUrl: baseUrl });
   if (extracted.ok !== true) baseUrlCheck.detail = extracted.reason;
+  const coverage = dump.text === undefined ? null : extractProviderCoverage(dump.text, baseUrl);
+  record.coverage = coverage;
+  // 只用于**演示绕过路径**：显式关掉覆盖判定，让宿主真的把请求发给未受保护的
+  // provider 实例。默认必须为 false，且会在 summary 里留下 coverageOverride，
+  // 以免把演示当成受保护的运行。
+  const unguardedProviders = options.allowUngatedProviders === true || coverage === null ? [] : coverage.unguarded;
+  record.coverageOverride = options.allowUngatedProviders === true;
 
   // 步骤 2：闸门在不在路径上。不在就不启动宿主（结构性 0 请求）。
-  if (gateStatus.ok !== true || baseUrlCheck.ok !== true) {
+  // 覆盖判定同样在这里：任何未指向闸门的 provider 实例都意味着存在绕过路径。
+  if (gateStatus.ok !== true || baseUrlCheck.ok !== true || unguardedProviders.length > 0) {
     record.decision = {
       allow: false,
       blockers: [
         ...(gateStatus.ok !== true ? [{ code: 'GATE_NOT_READY', detail: gateStatus.reason || 'status unreachable' }] : []),
-        { code: 'BASE_URL_MISMATCH', detail: baseUrlCheck.reason === 'BASE_URL_MISMATCH' ? 'effective baseURL is ' + String(effectiveBaseUrl) : String(baseUrlCheck.detail || baseUrlCheck.reason) },
+        ...(baseUrlCheck.ok !== true ? [{ code: 'BASE_URL_MISMATCH', detail: baseUrlCheck.reason === 'BASE_URL_MISMATCH' ? 'effective baseURL is ' + String(effectiveBaseUrl) : String(baseUrlCheck.detail || baseUrlCheck.reason) }] : []),
+        ...(unguardedProviders.length > 0 ? [{ code: 'PROVIDER_NOT_GATED', detail: '未指向闸门的 provider 实例：' + coverage.unguarded.join(',') }] : []),
       ],
       effectiveBaseUrl,
       gateBaseUrl: baseUrl,
@@ -280,7 +291,7 @@ async function main() {
   }
 
   if (lease === null && heartbeat.ok) {
-    const decision = decideStart({ gateReady: true, baseUrl: baseUrlCheck, heartbeat });
+    const decision = decideStart({ gateReady: true, baseUrl: baseUrlCheck, heartbeat, coverage: options.allowUngatedProviders === true ? null : coverage });
     if (!decision.allow) {
       record.decision = decision;
       record.result = 'refused-after-heartbeat';

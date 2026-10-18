@@ -18,7 +18,78 @@ import { readFileSync } from 'node:fs';
 import { GateError } from './gate.mjs';
 
 export const PREFLIGHT_SCHEMA = 'tla.gate-preflight/v1';
-export const PREFLIGHT_BLOCKERS = ['GATE_NOT_READY', 'BASE_URL_MISMATCH', 'HEARTBEAT_MISSING', 'HEARTBEAT_STALE'];
+export const PREFLIGHT_BLOCKERS = ['GATE_NOT_READY', 'BASE_URL_MISMATCH', 'HEARTBEAT_MISSING', 'HEARTBEAT_STALE', 'PROVIDER_NOT_GATED'];
+
+/**
+ * 生效配置里**所有**模型 provider 实例是否都指向闸门。
+ *
+ * 只校验一个 baseURL 是不够的：宿主可以同时装载多个 provider 实例
+ * （例如 `llm-deepseek` = deepseek-official、`llm-deepseek-account` =
+ * deepseek-account、`llm-pi-ai` = 第三方聚合）。overlay 只改其中一个时，
+ * 走另一个实例的请求根本不经过闸门。这里按实例逐个判定，任何未指向闸门
+ * 的实例都算"未受保护"，必须阻止启动。
+ */
+export function extractProviderCoverage(dumpText, gateBaseUrl) {
+  const gate = normalizeBaseUrl(gateBaseUrl);
+  const blocks = [];
+  let current = null;
+  for (const rawLine of String(dumpText).split('\n')) {
+    const line = rawLine.replace(/\s+$/, '');
+    const idMatch = /^-\s+id:\s*(\S+)\s*$/.exec(line);
+    if (idMatch) {
+      current = { id: idMatch[1], name: null, disabled: false, baseURL: null, hasProviders: false };
+      blocks.push(current);
+      continue;
+    }
+    if (current === null) continue;
+    const nameMatch = /^\s+name:\s*['"]?([^'"\s]+)['"]?\s*$/.exec(line);
+    if (nameMatch && current.name === null) {
+      current.name = nameMatch[1];
+      continue;
+    }
+    if (/^\s+disabled:\s*true\s*$/.test(line)) {
+      current.disabled = true;
+      continue;
+    }
+    const urlMatch = /^\s+baseURL:\s*(\S+)\s*$/.exec(line);
+    if (urlMatch) {
+      current.baseURL = urlMatch[1].replace(/^['"]|['"]$/g, '');
+      continue;
+    }
+    if (/^\s+providers:\s*$/.test(line) || /^\s+providers:\s*\[/.test(line)) {
+      current.hasProviders = true;
+    }
+  }
+
+  const providers = [];
+  for (const block of blocks) {
+    if (typeof block.name !== 'string') continue;
+    if (!block.name.startsWith('@deepseek-ai/dsh-llm-')) continue;
+    if (block.id === 'llm' || block.id === 'llm-retry') continue;
+    if (block.disabled) {
+      providers.push({ id: block.id, name: block.name, status: 'disabled', baseURL: block.baseURL });
+      continue;
+    }
+    if (block.name.includes('pi-ai')) {
+      providers.push({ id: block.id, name: block.name, status: block.hasProviders ? 'unguarded' : 'not-configured', baseURL: block.baseURL });
+      continue;
+    }
+    const check = gate === null ? { ok: false } : checkBaseUrl({ effectiveBaseUrl: block.baseURL, gateBaseUrl });
+    providers.push({ id: block.id, name: block.name, status: check.ok ? 'guarded' : 'unguarded', baseURL: block.baseURL });
+  }
+
+  const pick = (status) => providers.filter((provider) => provider.status === status).map((provider) => provider.id);
+  return {
+    schema: PREFLIGHT_SCHEMA,
+    gateBaseUrl: gate,
+    providers,
+    guarded: pick('guarded'),
+    unguarded: pick('unguarded'),
+    notConfigured: pick('not-configured'),
+    disabled: pick('disabled'),
+  };
+}
+
 
 export function normalizeBaseUrl(value) {
   if (typeof value !== 'string' || value.trim() === '') return null;
@@ -108,6 +179,9 @@ export function decideStart(input) {
   if (input.heartbeat === null || input.heartbeat.ok !== true) {
     const reason = (input.heartbeat && input.heartbeat.reason) || 'HEARTBEAT_MISSING';
     blockers.push({ code: reason === 'HEARTBEAT_STALE' ? 'HEARTBEAT_STALE' : 'HEARTBEAT_MISSING', detail: reason });
+  }
+  if (input.coverage !== undefined && input.coverage !== null && input.coverage.unguarded.length > 0) {
+    blockers.push({ code: 'PROVIDER_NOT_GATED', detail: '未指向闸门的 provider 实例：' + input.coverage.unguarded.join(',') });
   }
   return { allow: blockers.length === 0, blockers };
 }
