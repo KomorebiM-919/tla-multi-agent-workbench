@@ -94,7 +94,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 - V0.2 离线规划/预算分配/价格查询 CLI（`orchestration/cli.mjs`，价格带 `channel`、含宿主目录核对）。
 - 本地启动闸门 `orchestration/gate/` + 启动器 `tools/gated-run.mjs` + 预算插件 `orchestration/interceptor-plugin/`：租约、挂载证明、心跳、额度、`runId` 绑定、覆盖率校验、插件版本与构建指纹校验。
 - 账本 `tools/recompute-ledger.mjs`（六阶段），反应式假模型 `tests/lib/reactive-model.mjs`。
-- 本次收口新增：正式返工策略 `tests/fixtures/repair-loop-policy.v2.json`、30 步预演 `tests/v02-repair-loop.test.mjs`（55 项断言）、脱敏协议夹具 + 回放 `tests/v02-repair-protocol.test.mjs`（123 项断言）、读后写契约模型 `tests/lib/observation-model.mjs` 与 `tests/v02-fs-observation.test.mjs`（20 项断言）、再脱敏工具 `tools/redact-protocol.mjs`、实验包命令生成与离线校验 `tools/experiment-command.mjs` + `tests/v02-experiment-package.test.mjs`（48 项断言：用启动器自己的 `parseArgs` 校验文档里的命令、核对假模型端口与 runId 一致、缺文件与非空 run-dir 提前拒绝、请求上限无法通过改参数绕过）。
+- 本次收口新增：正式返工策略 `tests/fixtures/repair-loop-policy.v2.json`、30 步预演 `tests/v02-repair-loop.test.mjs`（55 项断言）、脱敏协议夹具 + 回放 `tests/v02-repair-protocol.test.mjs`（123 项断言）、读后写契约模型 `tests/lib/observation-model.mjs` 与 `tests/v02-fs-observation.test.mjs`（20 项断言）、再脱敏工具 `tools/redact-protocol.mjs`、实验包命令生成与离线校验 `tools/experiment-command.mjs` + `tests/v02-experiment-package.test.mjs`（53 项断言：用启动器自己的 `parseArgs` 校验文档里的命令、核对假模型端口与 runId 一致、缺文件与非空 run-dir 提前拒绝、请求上限无法通过改参数绕过、asar 包内 `--dsh-cli` 只校验归档本身）。
 
 **已实测（真实宿主 + 回环假模型；真实外部模型调用 0 次）**
 

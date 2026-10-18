@@ -225,6 +225,18 @@ try {
 
   const overBudget = buildCommand({ ...spec, modelRequests: 41, requireFiles: ['src/sum.mjs'] });
   check(overBudget.problems.some((problem) => /model-requests/u.test(problem)), 'the request ceiling cannot be raised by editing the spec');
+
+  // Electron serves `--dsh-cli` from inside the asar archive, where a filesystem probe
+  // cannot see it. The archive is checked instead, so a valid packaged path is accepted.
+  const archive = join(root, 'app.asar');
+  writeFileSync(archive, '');
+  const packed = buildCommand({ ...spec, runDir: join(root, 'run-packed'), dshCli: join(archive, 'dsh', 'cli.js'), requireFiles: ['src/sum.mjs'] });
+  check(packed.problems.length === 0, 'a cli path inside an existing asar archive is accepted', JSON.stringify(packed.problems));
+  check(packed.notes.some((note) => /asar/u.test(note)), 'the asar case is called out rather than silently trusted');
+  const noArchive = buildCommand({ ...spec, dshCli: join(root, 'absent.asar', 'cli.js'), requireFiles: ['src/sum.mjs'] });
+  check(noArchive.problems.some((problem) => /archive/u.test(problem)), 'a cli path inside a missing archive is refused');
+  const plainMissing = buildCommand({ ...spec, dshCli: join(root, 'nope.js'), requireFiles: ['src/sum.mjs'] });
+  check(plainMissing.problems.some((problem) => /--dsh-cli does not exist/u.test(problem)), 'a plain missing cli path is refused');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

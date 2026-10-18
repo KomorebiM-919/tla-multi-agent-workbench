@@ -100,6 +100,17 @@ function readLocalArgs(argv) {
   return spec;
 }
 
+// Electron resolves `--dsh-cli` through the asar archive, so a path inside `*.asar`
+// cannot be probed with a filesystem call from outside: only the archive itself is
+// visible. Check the archive and leave the inner entry to the host.
+function runtimePathState(path) {
+  const text = String(path);
+  const marker = /(^|[\\/])[^\\/]+\.asar([\\/])/iu.exec(text);
+  if (marker === null) return existsSync(text) ? 'present' : 'missing';
+  const archive = text.slice(0, marker.index + marker[0].length - 1);
+  return existsSync(archive) ? 'inside-archive' : 'archive-missing';
+}
+
 function isNewDirectory(path) {
   if (!existsSync(path)) return { ok: true, detail: 'does not exist yet' };
   if (!statSync(path).isDirectory()) return { ok: false, detail: 'exists and is not a directory' };
@@ -187,7 +198,12 @@ export function buildCommand(spec) {
     }
     if (spec.overlay !== undefined && !existsSync(spec.overlay)) problems.push('overlay patch is missing: ' + spec.overlay);
     if (spec.dshExe !== undefined && !existsSync(spec.dshExe)) problems.push('--dsh-exe does not exist: ' + spec.dshExe);
-    if (spec.dshCli !== undefined && !existsSync(spec.dshCli)) problems.push('--dsh-cli does not exist: ' + spec.dshCli);
+    if (spec.dshCli !== undefined) {
+      const state = runtimePathState(spec.dshCli);
+      if (state === 'missing') problems.push('--dsh-cli does not exist: ' + spec.dshCli);
+      if (state === 'archive-missing') problems.push('--dsh-cli names an archive that does not exist: ' + spec.dshCli);
+      if (state === 'inside-archive') notes.push('--dsh-cli lives inside an asar archive; only the archive itself was checked');
+    }
     const runDirState = isNewDirectory(options.runDir ?? runDir);
     if (!runDirState.ok) problems.push('run directory: ' + runDirState.detail);
     else notes.push('run directory: ' + runDirState.detail);
