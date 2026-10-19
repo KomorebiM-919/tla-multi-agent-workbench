@@ -74,8 +74,11 @@ Every uncovered write adds this locatable issue and makes `status: INCOMPLETE`:
 ```
 
 `writeIndex` is the validated call's result-order index; `path` is the same
-normalized project-relative path used in file evidence. Each write gets its own
-issue, including intermediate writes to one path. Canonical replay is deduplicated
+normalized project-relative path used in file evidence. Each uncovered write
+from an unreviewed attempt gets its own issue, including intermediate writes to one path. A reviewed attempt is covered
+by its final bytes per changed path; this does not assert that the reviewer
+observed each intermediate version, and those intermediate writes do not receive
+separate missing-review issues. Canonical replay is deduplicated
 before this audit. No raw file or subject bytes are exposed by these fields.
 
 An older completed repair with its own valid historical pass remains reviewed;

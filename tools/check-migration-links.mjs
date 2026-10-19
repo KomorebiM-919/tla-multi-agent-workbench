@@ -10,7 +10,7 @@
 // artifacts (old logs, old specs, package.before-uninstall.json and pnpm's
 // .ignored* store) are evidence, not active configuration, and are not scanned.
 
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readlinkSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -157,14 +157,23 @@ export function auditMigrationLinks(options = {}) {
     lockTarget ?? ''
   );
 
+  // readlink reads the reparse target itself; realpath alone could also
+  // succeed on an ordinary directory. Some Windows environments expose a
+  // directory-like lstat for a junction, so retain both observations.
   let linkType = 'missing';
+  let statSaysLink = false;
+  let linkTarget = null;
   try {
-    linkType = lstatSync(linkPath).isSymbolicLink() ? 'junction-or-symlink' : 'not-a-link';
-  } catch (_missingLink) {
-    linkType = 'missing';
-  }
+    statSaysLink = lstatSync(linkPath).isSymbolicLink();
+    linkType = 'not-a-link';
+    try { linkTarget = readlinkSync(linkPath); } catch (_notReadableLink) {}
+    if (typeof linkTarget === 'string' && linkTarget.length > 0) {
+      linkType = 'junction-or-symlink';
+    }
+  } catch (_missingLink) {}
   check(checks, 'link:present', linkType !== 'missing', linkPath);
-  check(checks, 'link:junction', linkType === 'junction-or-symlink', linkType);
+  check(checks, 'link:junction', linkType === 'junction-or-symlink',
+    `${linkType}; lstat-link=${statSaysLink}; readlink=${linkTarget ?? 'unavailable'}`);
 
   let resolvedTarget = null;
   try {

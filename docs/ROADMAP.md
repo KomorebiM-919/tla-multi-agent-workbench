@@ -207,3 +207,6 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   scenarios cover locator fields, historical approvals, multiple paths/writes,
   replay, Windows paths and partial-stream handling. Real host capture and
   repair-loop acceptance remain unverified.
+
+- Round6: cross-volume migration regression and reproducible mutation evidence;
+  this does not establish a live observer or real-host closure.

@@ -193,5 +193,21 @@ check('write issue paths use the same Windows normalization as file evidence', (
   const report = diagnostics(doc)
   assert.equal(report.issues.find(item => item.code === CODE).path, 'src/orphan.mjs')
 })
+check('reviewed repair covers final bytes per path, not every historical intermediate write', () => {
+  const doc = fixture(), next = FIXED + '// final revision\n'
+  const write = structuredClone(doc.operations.find(op => op.observation.type === 'file-write' && op.observation.taskId === 't3'))
+  write.call.id += '-final'; write.result.toolUseId = write.call.id
+  write.call.input.content = next; write.observation.beforeBase64 = b64(FIXED); write.observation.bytesBase64 = b64(next)
+  const at = doc.operations.findIndex(op => op.observation.type === 'file-read' && op.observation.taskId === 't3' && op.observation.bytesBase64 === b64(FIXED))
+  const read = structuredClone(doc.operations[at])
+  read.call.id += '-final'; read.result.toolUseId = read.call.id
+  read.observation.bytesBase64 = b64(next)
+  doc.operations.splice(at + 1, 0, write, read)
+  for (const op of doc.operations.filter(op => op.observation.type === 'file-read' && op.observation.taskId === 't4' && op.observation.bytesBase64 === b64(FIXED))) op.observation.bytesBase64 = b64(next)
+  const report = collectEvidence(resequence(doc), options)
+  assert.equal(report.verdict, 'synthetic-closed')
+  assert.deepEqual(report.issues, [])
+  assert.equal(report.hostVerified, false)
+})
 assert.deepEqual(failures, [])
 console.log(`write review diagnostics: ${passed} scenarios passed`)

@@ -3,15 +3,17 @@
 // point at the old path. These tests pin the read-only migration audit so the
 // next move fails before an experiment approval instead of at launch time.
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, lstatSync, readlinkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { auditMigrationLinks, parsePnpmLockEntry } from '../tools/check-migration-links.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE = join(ROOT, 'orchestration', 'interceptor-plugin');
-const SCRATCH = join(ROOT, 'tests', '.scratch', 'migration-links');
+const SCRATCH = process.env.TLA_LINK_TEST_ROOT || join(ROOT, 'tests', '.scratch', 'migration-links');
 const PLUGIN = 'tla-prelaunch-budget';
 const SPEC = 'link:./vendor/interceptor-plugin';
 const LOCK_VERSION = 'link:vendor/interceptor-plugin';
@@ -70,9 +72,10 @@ test('an in-profile link with a matching manifest and lock passes', () => {
 });
 
 test('an external link target fails the inside-profile checks', () => {
-  const dir = scratch();
+  const container = scratch();
+  const dir = join(container, 'profile');
+  const outside = join(container, 'outside-plugin');
   try {
-    const outside = join(dir, '..', `outside-${Date.now()}`);
     cpSync(SOURCE, outside, { recursive: true });
     writeProfile(dir, {
       spec: 'link:../outside-interceptor-plugin',
@@ -86,7 +89,7 @@ test('an external link target fails the inside-profile checks', () => {
     assert.equal(failedIds(result).includes('link:inside-profile'), true);
     assert.equal(failedIds(result).includes('lock:inside-profile'), true);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(container, { recursive: true, force: true });
   }
 });
 
@@ -168,4 +171,59 @@ test('the lock parser reads only the importer entry', () => {
     specifier: 'link:./vendor/interceptor-plugin',
     version: 'link:vendor/interceptor-plugin'
   });
+});
+
+test('ordinary directory cannot substitute for a dependency junction', () => {
+  const dir = scratch();
+  try {
+    writeProfile(dir);
+    const link = join(dir, 'node_modules', PLUGIN);
+    rmSync(link, { recursive: true, force: true });
+    cpSync(join(dir, 'vendor', 'interceptor-plugin'), link, { recursive: true });
+    const result = auditMigrationLinks({ profile: dir, sourceDir: SOURCE });
+    assert.equal(result.ok, false);
+    assert.ok(failedIds(result).includes('link:junction'));
+    assert.ok(failedIds(result).includes('link:matches-manifest'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('OS temp volume and checkout volume expose real link targets', () => {
+  for (const base of [SCRATCH, tmpdir()]) {
+    mkdirSync(base, { recursive: true });
+    const dir = mkdtempSync(join(base, 'link-volume-'));
+    try {
+      writeProfile(dir);
+      const link = join(dir, 'node_modules', PLUGIN);
+      assert.ok(readlinkSync(link).length > 0);
+      const result = auditMigrationLinks({ profile: dir, sourceDir: SOURCE });
+      assert.equal(result.ok, true, JSON.stringify(result.problems));
+      console.log(JSON.stringify({ probe: 'junction', volumeRoot: base,
+        node: process.version, lstatLink: lstatSync(link).isSymbolicLink() }));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test('readlink proves a junction even when lstat reports directory-like metadata', () => {
+  const dir = scratch();
+  try {
+    writeProfile(dir);
+    const moduleUrl = new URL('../tools/check-migration-links.mjs', import.meta.url).href;
+    // Isolated process models only the discrepant lstat observation; readlink,
+    // realpath, installed bytes and all containment checks remain real.
+    const code = `import fs from 'node:fs';
+      import {syncBuiltinESMExports} from 'node:module';
+      const original=fs.lstatSync;
+      fs.lstatSync=(...args)=>{ const stat=original(...args);
+        if(String(args[0]).endsWith('tla-prelaunch-budget')) stat.isSymbolicLink=()=>false;
+        return stat; };
+      syncBuiltinESMExports();
+      const {auditMigrationLinks}=await import(${JSON.stringify(moduleUrl)});
+      console.log(JSON.stringify(auditMigrationLinks({profile:process.argv[1]})));`;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', code, dir], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 0, child.stderr);
+    const report = JSON.parse(child.stdout);
+    assert.equal(report.ok, true, JSON.stringify(report.problems));
+    assert.match(report.checks.find(c => c.id === 'link:junction').detail, /lstat-link=false; readlink=/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

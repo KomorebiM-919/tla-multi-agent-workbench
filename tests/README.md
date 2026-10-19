@@ -387,3 +387,17 @@ legitimate historical passes, work diagnostics, replay/immutability, Windows pat
 normalization and no-write/note-only/invalid-prefix boundaries. No host or model
 is started. This is an independent formal core regression; the DSH handoff
 regression package remains separately maintained and is not copied into this test.
+
+### Round6 maintenance checks
+
+`node tests/v02-migration-links.test.mjs` exercises real checkout/OS-temp links,
+ordinary-directory rejection and an isolated directory-like lstat simulation.
+Set `TLA_LINK_TEST_ROOT` to an existing writable volume directory to relocate
+fixture creation; tests never skip failed link capabilities.
+
+`node tools/self-check/write-review-mutations.mjs [empty-output-directory]`
+first requires a green baseline, copies only local dependencies, applies three
+exact one-occurrence substitutions and requires syntax success plus an assertion
+failure (module-load errors do not qualify). Each mutant gets patch.json, test.log
+and hashes in report.json. The source checkout is never mutated. Keep generated
+logs outside tracked files. `v02-write-review-diagnostics` now has 18 scenarios.

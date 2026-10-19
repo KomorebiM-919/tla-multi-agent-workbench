@@ -256,3 +256,7 @@ attempt, session and normalized path. Historical repairs with their own passes
 remain supported. See [the diagnostic contract](docs/COLLECTED-EVIDENCE-v2.md#implementation-write-diagnostics)
 and `tests/v02-write-review-diagnostics.test.mjs`. This does not add live capture
 or change the unverified real-host repair-loop milestone.
+
+Round6 offline maintenance adds readlink-backed migration checks and reproducible
+write-review mutation recipes. Synthetic review covers final bytes per changed
+path, not each intermediate version. Real-host closure remains unverified.
