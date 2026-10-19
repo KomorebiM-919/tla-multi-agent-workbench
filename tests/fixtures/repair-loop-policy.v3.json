@@ -311,6 +311,12 @@
             "input": {
               "file_path": "src/sum.mjs"
             }
+          },
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/note.txt"
+            }
           }
         ]
       },

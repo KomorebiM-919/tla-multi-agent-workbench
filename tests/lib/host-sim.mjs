@@ -23,6 +23,8 @@ const CAPTAIN_TOOLS = ['agent_teams_create', 'agent_teams_create_task', 'agent_t
 const MEMBER_TOOLS = ['agent_teams_claim_task', 'agent_teams_update_task', 'agent_teams_status', 'agent_teams_send_message', 'read', 'write', 'pwsh'];
 
 export const STUB_IMPLEMENTATION = "export function sum() {\n  throw new Error('sum() is not implemented yet');\n}\n";
+// 预置的只读便签：成员在动手前会读它（真实项目里也存在这个文件）。
+export const NOTE_TEXT = 'PREFLIGHT-OK\n';
 export const TEST_SUITE = [
   "import { sum } from '../src/sum.mjs';",
   '',
@@ -75,8 +77,10 @@ export function createWorld({ root }) {
 export function seedProject(world) {
   writeFileSync(join(world.root, 'src', 'sum.mjs'), STUB_IMPLEMENTATION, 'utf8');
   writeFileSync(join(world.root, 'test', 'sum.test.mjs'), TEST_SUITE, 'utf8');
+  writeFileSync(join(world.root, 'src', 'note.txt'), NOTE_TEXT, 'utf8');
   world.files.set('src/sum.mjs', STUB_IMPLEMENTATION);
   world.files.set('test/sum.test.mjs', TEST_SUITE);
+  world.files.set('src/note.txt', NOTE_TEXT);
 }
 
 export function runRehearsal({ policy, maxRequests = 80, options = {} }) {
