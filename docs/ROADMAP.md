@@ -195,3 +195,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   live capture and real host repair-loop closure remain unimplemented/unverified.
   Contract: `docs/EVIDENCE-PROTOCOL-v1.md`; handoff: `CORE-ROUND3.md` in the
   two-person round 1 handoff directory.
+- Collector report v2 blocks cross-chain approval borrowing and unreviewed
+  implementation-changing work, requires same-review-attempt file observations,
+  and adds subject digests plus per-chain audit records. The renamed nested
+  `syntheticAcceptance` field is an explicit breaking output change. Real host
+  observation and acceptance are still not implemented/verified.

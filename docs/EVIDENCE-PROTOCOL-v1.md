@@ -72,10 +72,16 @@ Every task-bound observation includes `taskId` and the current `attemptId`.
 Task creation starts at pending with no attempt; the successful claim supplies
 the attempt. Review targets and repair source tasks must already exist. A repair
 may only be created after the successful rejected review of its source work.
-Task subjects are preserved; normalized task kind/lineage, not subject regexes,
+Task subjects are retained in memory for validation and emitted as exact UTF-8
+hashes/counts, not raw output; normalized task kind/lineage, not subject regexes,
 establish repair identity. A repair completion requires actual implementation
 change, read-back and green evidence in its own active attempt, following the
 source work's red run. All task completions are derived from paired results.
+Both review verdicts now require the assigned review attempt's own reads after
+target completion. Every rejected work and every completed repair must have its
+own closed lineage. See [output v2](COLLECTED-EVIDENCE-v2.md) for the exact
+selection, freshness and repair-loop-profile rules; these strengthen verdict
+semantics without adding input fields.
 
 ## Bytes and paths
 
@@ -106,14 +112,16 @@ only hashes, counts, IDs, normalized paths and condition codes are emitted.
 Keep raw inputs local, outside published evidence; public review fixtures must
 use invented data. The collector never writes files or executes any command.
 
-Output schema: `tla.collected-evidence/v1`. `binding` retains the validated ID mapping
+Current output schema: `tla.collected-evidence/v2`. `binding` retains the validated ID mapping
 (or null if it could not be validated). `scope:'synthetic-protocol'` and
 `hostVerified:false` are unconditional. `status` is `COMPLETE` or `INCOMPLETE`.
 `verdict` is `synthetic-closed`, `partial` or `not-started`. The nested
-`acceptance` uses the existing v1 predicate; it can be closed only when collection
+`syntheticAcceptance` uses the existing v1 predicate; it can be closed only when collection
 has no issues. Failed collection feeds empty evidence into that predicate.
 All changed implementation paths additionally need read-back at collection
 boundary (the legacy predicate alone still checks only its latest write).
+The old generic `acceptance` alias is not emitted. This is a breaking output
+change; consumers must explicitly support v2 and check its top-level scope.
 
 The old acceptance CLI, ten conditions, fixtures, spec and V0.1 interfaces remain
 unchanged. No automatic integration into `summariseRun` is provided. The new CLI

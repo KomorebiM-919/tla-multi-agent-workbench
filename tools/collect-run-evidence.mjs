@@ -8,7 +8,7 @@ import { isDeepStrictEqual, TextDecoder } from 'node:util'
 import { deriveAcceptance, IMPLEMENTATION_PATH, parseTestLine } from './acceptance-summary.mjs'
 
 export const PROTOCOL_SCHEMA = 'tla.observation-protocol/v1'
-export const COLLECTION_SCHEMA = 'tla.collected-evidence/v1'
+export const COLLECTION_SCHEMA = 'tla.collected-evidence/v2'
 export const LIMITS = Object.freeze({ inputBytes: 1024 * 1024, operations: 128, snapshotBytes: 64 * 1024, idLength: 128, pathLength: 1024 })
 const MAX_JSON_DEPTH = 32
 
@@ -126,10 +126,14 @@ function activeTask(state, observation, operation) {
 function sameTaskInput(input, observation) {
   requireThat(input.task_id === observation.taskId && input.attempt_id === observation.attemptId, 'TASK_ATTEMPT_MISMATCH')
 }
-function readBackFor(files, writes) {
+function latestWrites(writes) {
   const latest = new Map()
   for (const write of writes) latest.set(write.path, write)
-  return latest.size > 0 && [...latest.values()].every(write => {
+  return [...latest.values()]
+}
+function readBackFor(files, writes) {
+  const latest = latestWrites(writes)
+  return latest.length > 0 && latest.every(write => {
     const read = files.filter(e => e.kind === 'read' && e.path === write.path && e.index > write.index).at(-1)
     return read !== undefined && read.sha256 === write.sha256
   })
@@ -144,12 +148,50 @@ function redFor(state, task) {
   return state.tests.filter(t => t.taskId === task.id && t.attemptId === task.attemptId && t.failed > 0).at(-1)
 }
 
+function reviewerReadsFor(state, target, review) {
+  const writes = latestWrites(changedBy(state, target))
+  if (writes.length === 0) return null
+  const reads = writes.map(write => state.files.filter(event => event.kind === 'read' && event.path === write.path &&
+    event.taskId === review.id && event.attemptId === review.attemptId && event.sessionId === review.assignee &&
+    event.index > target.index && event.index > write.index).at(-1))
+  return reads.every((read, i) => read !== undefined && read.sha256 === writes[i].sha256) ? reads : null
+}
+
+// Global rule counts are insufficient: every rejected work must close its own
+// latest rejection through its own latest repair and corresponding review.
+function closureChains(state) {
+  return [...state.rejected.values()].map(rejection => {
+    const repair = [...state.tasks.values()].filter(task => task.taskKind === 'repair' &&
+      task.sourceTaskId === rejection.workTaskId && task.rejectionIndex === rejection.index)
+      .sort((a, b) => a.createdIndex - b.createdIndex).at(-1)
+    const pass = repair === undefined ? undefined : state.passes.get(repair.id)
+    const bound = repair?.status === 'completed' && pass !== undefined &&
+      pass.workTaskId === rejection.workTaskId && pass.workAttemptId === rejection.workAttemptId &&
+      pass.rejectionIndex === rejection.index && pass.repairAttemptId === repair.attemptId &&
+      state.tasks.get(pass.reviewTaskId)?.status === 'completed'
+    // A later write to an approved path invalidates the earlier snapshot, even
+    // if another chain ends with identical bytes. No silent cross-chain credit.
+    const fresh = bound && pass.reads.every(read => {
+      const write = state.files.filter(event => event.kind === 'write' && event.path === read.path).at(-1)
+      return write !== undefined && write.index < read.index
+    })
+    return { workTaskId: rejection.workTaskId, workAttemptId: rejection.workAttemptId,
+      rejectionIndex: rejection.index, rejectedReviewTaskId: rejection.reviewTaskId,
+      repairTaskId: repair?.id ?? null, repairAttemptId: repair?.attemptId ?? null,
+      reviewTaskId: pass?.reviewTaskId ?? null, reviewAttemptId: pass?.reviewAttemptId ?? null,
+      reviewerSessionId: pass?.reviewerSessionId ?? null, passIndex: pass?.index ?? null,
+      reads: pass?.reads ?? [], closed: Boolean(fresh),
+      problem: !bound ? 'REJECTED_WORK_CHAIN_INCOMPLETE' : !fresh ? 'REVIEW_STALE_AFTER_WRITE' : null }
+  })
+}
+
 function collectTask(state, op, role) {
   const o = op.observation, input = op.call.input, index = op.order.result
   if (o.type === 'task-create') {
     fields(o, 'type taskId subject taskKind assignee sourceTaskId reviewedTaskId')
     fields(input, 'subject kind assignee sourceTaskId reviewedTaskId')
     id(o.taskId); text(o.subject)
+    requireThat(Buffer.from(o.subject, 'utf8').toString('utf8') === o.subject, 'SUBJECT_UTF8_INVALID')
     requireThat(role === 'captain' && op.call.name === 'agent_teams_create_task' && !state.tasks.has(o.taskId), 'TASK_CREATE_INVALID')
     requireThat(['work', 'repair', 'review'].includes(o.taskKind) && input.kind === o.taskKind && input.subject === o.subject &&
       input.assignee === o.assignee && input.sourceTaskId === o.sourceTaskId && input.reviewedTaskId === o.reviewedTaskId, 'TASK_METADATA_MISMATCH')
@@ -159,7 +201,8 @@ function collectTask(state, op, role) {
       state.rejected.has(o.sourceTaskId), 'REPAIR_SOURCE_UNPROVEN')
     if (o.taskKind === 'review') requireThat(o.sourceTaskId === null && state.tasks.get(o.reviewedTaskId)?.status === 'completed' &&
       state.tasks.get(o.reviewedTaskId)?.taskKind !== 'review', 'REVIEW_TARGET_UNPROVEN')
-    state.tasks.set(o.taskId, { ...o, id: o.taskId, attemptId: null, status: 'pending', index })
+    state.tasks.set(o.taskId, { ...o, id: o.taskId, attemptId: null, status: 'pending', index, createdIndex: index,
+      rejectionIndex: o.taskKind === 'repair' ? state.rejected.get(o.sourceTaskId).index : null })
     return
   }
   if (o.type === 'task-claim') {
@@ -242,13 +285,22 @@ function collectReview(state, op) {
   sameTaskInput(input, o)
   requireThat(op.call.name === 'agent_teams_update_task' && task.taskKind === 'review' && task.reviewedTaskId === o.reviewedTaskId &&
     target?.status === 'completed' && input.status === 'completed' && input.verdict === o.verdict, 'REVIEW_BINDING_INVALID')
+  const reads = reviewerReadsFor(state, target, task)
+  requireThat(reads !== null, 'REVIEWER_READ_UNPROVEN')
   if (o.verdict === 'needs_revision') {
     requireThat(target.taskKind === 'work' && redFor(state, target) !== undefined, 'REJECTION_UNPROVEN')
-    state.rejected.set(target.id, op.order.result)
+    state.rejected.set(target.id, { workTaskId: target.id, workAttemptId: target.attemptId,
+      reviewTaskId: task.id, index: op.order.result })
     state.usage.push({ rule: 'review-reject', index: op.order.result })
   } else {
     requireThat(o.verdict === 'passed' && target.taskKind === 'repair' && state.rejected.has(target.sourceTaskId) &&
+      state.rejected.get(target.sourceTaskId).index === target.rejectionIndex &&
       greenFor(state, target) !== undefined && readBackFor(state.files, changedBy(state, target)), 'PASS_LINEAGE_UNPROVEN')
+    state.passes.set(target.id, { workTaskId: target.sourceTaskId,
+      workAttemptId: state.tasks.get(target.sourceTaskId).attemptId, rejectionIndex: target.rejectionIndex,
+      repairAttemptId: target.attemptId, reviewTaskId: task.id, reviewAttemptId: task.attemptId,
+      reviewerSessionId: op.sessionId, index: op.order.result,
+      reads: reads.map(({ path, sha256, index, taskId, attemptId, sessionId }) => ({ path, sha256, index, taskId, attemptId, sessionId })) })
     state.usage.push({ rule: 'review-pass', index: op.order.result })
   }
   task.status = 'completed'; task.index = op.order.result
@@ -259,7 +311,7 @@ export function collectEvidence(input, options = {}) {
   let supervisor = { status: 'unknown', hostStarted: false }, ledger = null
   let binding = null
   const issues = []
-  const state = { tasks: new Map(), attempts: new Set(), sessions: new Map(), rejected: new Map(),
+  const state = { tasks: new Map(), attempts: new Set(), sessions: new Map(), rejected: new Map(), passes: new Map(), chains: [],
     files: [], fileState: new Map(), sessionReads: new Map(), tests: [], usage: [] }
   let operationId = null
   try {
@@ -304,6 +356,20 @@ export function collectEvidence(input, options = {}) {
     operationId = null
     const changed = state.files.filter(e => e.kind === 'write' && IMPLEMENTATION_PATH.test(e.path))
     requireThat(readBackFor(state.files, changed), 'IMPLEMENTATION_READ_BACK_INCOMPLETE')
+    state.chains = closureChains(state)
+    for (const task of state.tasks.values()) {
+      requireThat(task.taskKind !== 'work' || changedBy(state, task).length === 0 ||
+        state.rejected.has(task.id), 'WORK_REVIEW_CHAIN_INCOMPLETE')
+    }
+    const openChain = state.chains.find(chain => !chain.closed)
+    requireThat(openChain === undefined, openChain?.problem)
+    for (const task of state.tasks.values()) {
+      if (task.taskKind === 'repair' && task.status === 'completed') {
+        const pass = state.passes.get(task.id)
+        requireThat(pass !== undefined && pass.repairAttemptId === task.attemptId &&
+          pass.rejectionIndex === task.rejectionIndex, 'REPAIR_REVIEW_INCOMPLETE')
+      }
+    }
   } catch (error) {
     if (!(error instanceof EvidenceError)) throw error
     issues.push({ code: error.code, callId: operationId })
@@ -318,9 +384,11 @@ export function collectEvidence(input, options = {}) {
     schema: COLLECTION_SCHEMA, scope: 'synthetic-protocol', hostVerified: false, binding,
     status: valid ? 'COMPLETE' : 'INCOMPLETE',
     verdict: valid && acceptance.verdict === 'closed' ? 'synthetic-closed' : acceptance.verdict === 'not-started' ? 'not-started' : 'partial',
-    issues, acceptance,
+    issues, syntheticAcceptance: acceptance,
     evidence: { files: state.files, tasks: tasks.map(t => ({ id: t.id, kind: t.taskKind, status: t.status,
-      attemptId: t.attemptId, sourceTaskId: t.sourceTaskId, reviewedTaskId: t.reviewedTaskId })),
+      attemptId: t.attemptId, sourceTaskId: t.sourceTaskId, reviewedTaskId: t.reviewedTaskId,
+      subjectSha256: hash(Buffer.from(t.subject, 'utf8')), subjectBytes: Buffer.byteLength(t.subject, 'utf8') })),
+    chains: state.chains,
     tests: { history: state.tests.map(({ command, ...test }) => ({ ...test, commandSha256: hash(Buffer.from(command)) })) } }
   }
 }

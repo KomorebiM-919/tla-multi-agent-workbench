@@ -2,73 +2,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { collectEvidence, main, PROTOCOL_SCHEMA } from '../tools/collect-run-evidence.mjs'
+import { collectEvidence, main } from '../tools/collect-run-evidence.mjs'
 
-const ROOT = 'C:/fixture/project'
-const BINDING = { runnerRunId: 'exp-fixture', gateRunId: 'tla-fixture', budgetRunId: 'tla-fixture' }
-const options = { binding: BINDING, projectRoot: ROOT }
-const b64 = text => Buffer.from(text, 'utf8').toString('base64')
-const ORIGINAL = 'export const sum = null;\r\n'
-const BROKEN = 'export const sum = () => 4;\n'
-const FIXED = 'export const sum = xs => xs.reduce((a, b) => a + b, 0);\n'
-
-function fixture() {
-  const doc = {
-    schema: PROTOCOL_SCHEMA, origin: 'synthetic', binding: { ...BINDING }, projectRoot: ROOT,
-    observer: { id: 'fixture-observer', ordering: 'serial-total', complete: true },
-    sessions: [{ id: 'captain', role: 'captain' }, { id: 'worker', role: 'worker' }, { id: 'reviewer', role: 'reviewer' }],
-    runner: { runId: BINDING.runnerRunId, status: 'completed', hostStarted: true },
-    ledger: { gateRunId: BINDING.gateRunId, budgetRunId: BINDING.budgetRunId, completeness: 'COMPLETE', ledgerConsistent: true },
-    operations: []
-  }
-  function add(sessionId, name, input, observation, isError = false) {
-    const n = doc.operations.length
-    doc.operations.push({ runId: BINDING.gateRunId, sessionId,
-      call: { id: `c${n}`, name, input }, result: { toolUseId: `c${n}`, isError, complete: true },
-      order: { authority: 'fixture-observer', call: n * 2, result: n * 2 + 1 }, observation })
-  }
-  function create(taskId, taskKind, assignee, sourceTaskId = null, reviewedTaskId = null) {
-    const subject = taskKind + ' sum'
-    add('captain', 'agent_teams_create_task', { subject, kind: taskKind, assignee, sourceTaskId, reviewedTaskId },
-      { type: 'task-create', taskId, subject, taskKind, assignee, sourceTaskId, reviewedTaskId })
-  }
-  function start(taskId, sessionId) {
-    add(sessionId, 'agent_teams_claim_task', { task_id: taskId }, { type: 'task-claim', taskId, attemptId: 'a-' + taskId })
-    update(taskId, sessionId, 'in_progress')
-  }
-  function update(taskId, sessionId, status) {
-    add(sessionId, 'agent_teams_update_task', { task_id: taskId, attempt_id: 'a-' + taskId, status },
-      { type: 'task-update', taskId, attemptId: 'a-' + taskId, status })
-  }
-  function file(taskId, type, text, before) {
-    const observation = { type: 'file-' + type, taskId, attemptId: 'a-' + taskId, path: 'src\\sum.mjs',
-      fileKind: 'regular', links: 'none', coverage: 'full', bytesBase64: b64(text) }
-    const input = { file_path: 'src/sum.mjs' }
-    if (type === 'write') { observation.beforeBase64 = b64(before); input.content = text }
-    add('worker', type, input, observation)
-  }
-  function test(taskId, red) {
-    const command = 'node test/sum.test.mjs'
-    add('worker', 'pwsh', { command, description: 'Run the synthetic test suite' }, {
-      type: 'test', taskId, attemptId: 'a-' + taskId, command, cwd: '.', exitCode: red ? 1 : 0,
-      stdoutBase64: b64(`sum tests: ${red ? 2 : 3} passed, ${red ? 1 : 0} failed\n`),
-      suitePath: 'test/sum.test.mjs', suiteBase64: b64('// invented stable suite bytes\r\n')
-    }, red)
-  }
-  function review(taskId, reviewedTaskId, verdict) {
-    add('reviewer', 'agent_teams_update_task', { task_id: taskId, attempt_id: 'a-' + taskId, status: 'completed', verdict },
-      { type: 'review', taskId, attemptId: 'a-' + taskId, reviewedTaskId, verdict })
-  }
-  create('t1', 'work', 'worker'); start('t1', 'worker')
-  file('t1', 'read', ORIGINAL); file('t1', 'write', BROKEN, ORIGINAL); file('t1', 'read', BROKEN)
-  test('t1', true); update('t1', 'worker', 'completed')
-  create('t2', 'review', 'reviewer', null, 't1'); start('t2', 'reviewer'); review('t2', 't1', 'needs_revision')
-  create('t3', 'repair', 'worker', 't1'); start('t3', 'worker')
-  file('t3', 'read', BROKEN); file('t3', 'write', FIXED, BROKEN); file('t3', 'read', FIXED)
-  test('t3', false); update('t3', 'worker', 'completed')
-  create('t4', 'review', 'reviewer', null, 't3'); start('t4', 'reviewer'); review('t4', 't3', 'passed')
-  return doc
-}
+import { ROOT, BINDING, options, b64, ORIGINAL, BROKEN, FIXED, fixture } from './lib/evidence-protocol-fixture.mjs'
 
 const first = (d, type) => d.operations.find(o => o.observation.type === type)
 const last = (d, type) => d.operations.filter(o => o.observation.type === type).at(-1)
@@ -79,7 +15,7 @@ check('paired protocol collects and derives a synthetic closed loop', () => {
   const result = collectEvidence(fixture(), options)
   assert.deepEqual(result.issues, [])
   assert.equal(result.verdict, 'synthetic-closed')
-  assert.equal(result.acceptance.verdict, 'closed')
+  assert.equal(result.syntheticAcceptance.verdict, 'closed')
   assert.equal(result.hostVerified, false)
   assert.equal(result.scope, 'synthetic-protocol')
   assert.deepEqual(result.binding, BINDING)
@@ -123,7 +59,10 @@ const negatives = [
   ['missing result', d => { delete d.operations[3].result }],
   ['partial result', d => { d.operations[3].result.complete = false }],
   ['failed write', d => { first(d, 'file-write').result.isError = true }],
-  ['missing read-back', d => { d.operations = d.operations.filter(o => o !== last(d, 'file-read')) }],
+  ['missing read-back', d => {
+    const read = d.operations.filter(o => o.observation.type === 'file-read' && o.sessionId === 'worker').at(-1)
+    d.operations = d.operations.filter(o => o !== read)
+  }],
   ['missing bytes', d => { delete last(d, 'file-read').observation.bytesBase64 }],
   ['partial bytes', d => { last(d, 'file-read').observation.coverage = 'partial' }],
   ['forged after-write byte snapshot', d => { last(d, 'file-write').observation.bytesBase64 = b64('other') }],
@@ -161,7 +100,7 @@ for (const [name, mutate] of negatives) check(name, () => {
   const d = fixture(); mutate(d)
   const result = collectEvidence(d, options)
   assert.notEqual(result.verdict, 'synthetic-closed')
-  assert.notEqual(result.acceptance.verdict, 'closed')
+  assert.notEqual(result.syntheticAcceptance.verdict, 'closed')
   assert.equal(result.hostVerified, false)
 })
 
@@ -192,7 +131,8 @@ check('CLI missing arguments returns usage error without executing anything', ()
 
 check('missing earlier file read-back cannot hide behind the latest file', () => {
   const d = fixture()
-  const read = structuredClone(last(d, 'file-read')), write = structuredClone(last(d, 'file-write'))
+  const read = structuredClone(d.operations.filter(o => o.observation.type === 'file-read' && o.sessionId === 'worker').at(-1))
+  const write = structuredClone(last(d, 'file-write'))
   for (const op of [read, write]) {
     op.observation.path = 'src/other.mjs'; op.call.input.file_path = 'src/other.mjs'
     op.call.id += '-other'; op.result.toolUseId = op.call.id
@@ -203,7 +143,7 @@ check('missing earlier file read-back cannot hide behind the latest file', () =>
   d.operations.forEach((op, i) => { op.order.call = i * 2; op.order.result = i * 2 + 1 })
   const report = collectEvidence(d, options)
   assert.equal(report.status, 'INCOMPLETE')
-  assert.notEqual(report.acceptance.verdict, 'closed')
+  assert.notEqual(report.syntheticAcceptance.verdict, 'closed')
 })
 
 check('Windows paths are case-insensitive within the expected root', () => {
@@ -243,6 +183,9 @@ check('complete CLI path reads a protocol and never reports a live closed verdic
     assert.equal(main(cli), 0)
     assert.equal(JSON.parse(output).verdict, 'synthetic-closed')
     assert.equal(JSON.parse(output).hostVerified, false)
+    assert.equal(JSON.parse(output).schema, 'tla.collected-evidence/v2')
+    assert.equal(Object.hasOwn(JSON.parse(output), 'acceptance'), false)
+    assert.equal(JSON.parse(output).syntheticAcceptance.verdict, 'closed')
     const broken = fixture(); broken.origin = 'legacy-log'
     writeFileSync(path, JSON.stringify(broken)); output = ''
     assert.equal(main(cli), 2)

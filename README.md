@@ -242,3 +242,9 @@ connects normalized paired observations to the acceptance predicate (68 test
 scenarios). Its output is explicitly `synthetic-closed` / `hostVerified: false`;
 there is no live DSH observer or integration into the old acceptance CLI.
 See [round 3 handoff](docs/handoffs/v0.2-two-person-round1/CORE-ROUND3.md).
+
+The [v2 collector report](docs/COLLECTED-EVIDENCE-v2.md) now closes each rejected
+work's lineage separately, requires the review attempt's own post-completion
+file reads, and emits task-subject hashes. `syntheticAcceptance` replaces the
+old generic `acceptance` output field. This remains an offline synthetic adapter;
+no real host repair-loop acceptance follows from these results.
