@@ -189,3 +189,9 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   `docs/handoffs/v0.2-two-person-round1/CORE-ROUND2.md`; host closure remains unverified.
 - The follow-up hash fix rejects non-string SHA-256 inputs without coercion or
   TypeError; the existing read-back condition reports invalid hash strings.
+- A standalone synthetic-observer protocol and collector now implement the
+  collection-to-predicate path, including run mapping, exact byte hashes,
+  same-suite test history and task/review lineage. This is opt-in offline work;
+  live capture and real host repair-loop closure remain unimplemented/unverified.
+  Contract: `docs/EVIDENCE-PROTOCOL-v1.md`; handoff: `CORE-ROUND3.md` in the
+  two-person round 1 handoff directory.

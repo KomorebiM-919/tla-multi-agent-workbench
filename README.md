@@ -236,3 +236,9 @@ uses explicit safe-integer file-event order and rejects duplicate indices;
 it also documents the unimplemented collector evidence contract.
 Non-string acceptance hashes now fail the existing read-back condition instead
 of throwing, including BigInt, array and object inputs (30 core checks).
+
+An opt-in [synthetic evidence collector](docs/EVIDENCE-PROTOCOL-v1.md) now
+connects normalized paired observations to the acceptance predicate (68 test
+scenarios). Its output is explicitly `synthetic-closed` / `hostVerified: false`;
+there is no live DSH observer or integration into the old acceptance CLI.
+See [round 3 handoff](docs/handoffs/v0.2-two-person-round1/CORE-ROUND3.md).
