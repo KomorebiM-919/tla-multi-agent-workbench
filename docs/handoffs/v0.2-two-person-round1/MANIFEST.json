@@ -15,7 +15,8 @@
     "Code baseline is 943901e; this handoff package commit only adds documentation.",
     "The round13 spec generated at 9037a22 is stale at this baseline and must not be launched.",
     "No host, fake upstream, model request, ACL change or profile change was made for this handoff.",
-    "All paths are repo-relative; public docs use placeholders, not local absolute paths."
+    "All paths are repo-relative; public docs use placeholders, not local absolute paths.",
+    "DSH-REVIEW.md records the independent review of 6299924; it does not change the baseline hashes of the core files listed here."
   ],
   "files": [
     {
@@ -131,6 +132,12 @@
       "bytes": 17991,
       "sha256": "1c6210c6effcfe401c79094222582979e3094739981b2fbe4c54bc7ef9b9f591",
       "blob": "b9c0434f4bc1d7d9fdbd162ebce43866cab187a7"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/DSH-REVIEW.md",
+      "bytes": 8559,
+      "sha256": "790e8b18fffcea6105f920890f941ebd422af0e09bd3e87c0e8849a1587dc431",
+      "blob": "a6f4e264106c2f6db9cfb38e3a7726a468ef9fc0"
     }
   ]
 }
