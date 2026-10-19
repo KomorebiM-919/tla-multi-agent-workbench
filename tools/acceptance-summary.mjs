@@ -101,6 +101,11 @@ function runProjectTest(project, testRel) {
  * `closed` needs every condition; a host that merely started is `partial`.
  */
 export const IMPLEMENTATION_PATH = /^src\/.*\.(?:mjs|cjs|js|ts)$/u
+function isImplementationPath(path) {
+  return typeof path === 'string' && IMPLEMENTATION_PATH.test(path) &&
+    path.split('/').every((part) => part !== '' && part !== '.' && part !== '..') && !path.includes('\\');
+}
+
 export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writes }) {
   const writeList = Array.isArray(writes) ? writes : [];
   const taskList = Array.isArray(tasks) ? tasks : [];
@@ -108,17 +113,23 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
   const history = Array.isArray(tests?.history) ? tests.history : [];
   // 实现文件必须由成员在本轮真的改过，并且改完回读到的字节与写下去的一致。
   // 只写 note.txt、只返回 exit 0、或摘要里自称"完成"，都不足以判 closed。
-  const implementationWrites = writeList.filter((write) => write.kind === 'write' && IMPLEMENTATION_PATH.test(String(write.path ?? '')));
+  const implementationWrites = writeList.filter((write) => write.kind === 'write' && isImplementationPath(write.path));
   const lastImplementationWrite = implementationWrites[implementationWrites.length - 1];
   const readBack = lastImplementationWrite === undefined
     ? null
     : writeList.filter((write) => write.path === lastImplementationWrite.path && write.kind === 'read' && write.index > lastImplementationWrite.index).pop() ?? null;
-  const readBackOk = readBack !== null && readBack.sha256 === lastImplementationWrite.sha256;
+  const readBackOk = readBack !== null && /^[a-f0-9]{64}$/iu.test(String(readBack.sha256 ?? '')) &&
+    /^[a-f0-9]{64}$/iu.test(String(lastImplementationWrite.sha256 ?? '')) &&
+    readBack.sha256.toLowerCase() === lastImplementationWrite.sha256.toLowerCase();
   const rejections = usageList.filter((entry) => /reject/iu.test(String(entry.rule ?? '')));
   const passes = usageList.filter((entry) => /pass/iu.test(String(entry.rule ?? '')));
   const repairRuns = usageList.filter((entry) => /repair/iu.test(String(entry.rule ?? '')));
-  const redFirst = history.findIndex((run) => run.exitCode !== 0);
+  const redFirst = history.findIndex((run) => Number.isInteger(run.exitCode) && run.exitCode > 0 &&
+    Number.isInteger(run.failed) && run.failed > 0 && typeof run.command === 'string' && run.command.trim() !== '');
   const greenAfterRed = redFirst >= 0 && history.slice(redFirst + 1).some((run) => run.exitCode === 0 && run.failed === 0 && run.command === history[redFirst].command);
+  const rejectionIndex = usageList.findIndex((entry) => /reject/iu.test(String(entry.rule ?? '')));
+  const orderedReview = rejectionIndex >= 0 && usageList.slice(rejectionIndex + 1).some((entry) => /pass/iu.test(String(entry.rule ?? '')));
+  const uniqueTasks = new Set(taskList.map((task) => task.id));
 
   const conditions = [
     { code: 'SUPERVISOR_COMPLETED', ok: supervisor.status === 'completed', detail: 'supervisor status ' + String(supervisor.status) },
@@ -131,7 +142,7 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
     {
       code: 'IMPLEMENTATION_FILE_CHANGED',
       ok: implementationWrites.length > 0,
-      detail: writes === null ? 'no evidence' : String(writes.length) + ' write(s)'
+      detail: String(writeList.length) + ' file event(s)'
     },
     {
       code: 'READ_BACK_AFTER_WRITE',
@@ -143,10 +154,10 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
       ok: greenAfterRed === true,
       detail: history.length === 0 ? 'no test history' : history.map((run) => 'exit ' + String(run.exitCode)).join(' -> ')
     },
-    { code: 'TESTS_GREEN', ok: tests !== null && tests.exitCode === 0 && tests.failed === 0, detail: tests === null ? 'no test run' : 'exit ' + String(tests.exitCode) + ', ' + String(tests.failed) + ' failed' },
+    { code: 'TESTS_GREEN', ok: tests != null && tests.exitCode === 0 && tests.failed === 0 && Number.isInteger(tests.passed) && tests.passed > 0, detail: tests == null ? 'no test run' : 'exit ' + String(tests.exitCode) + ', ' + String(tests.failed) + ' failed' },
     {
       code: 'REVIEW_REJECTED_THEN_PASSED',
-      ok: rejections.length > 0 && passes.length > 0,
+      ok: orderedReview,
       detail: String(rejections.length) + ' rejection(s), ' + String(passes.length) + ' pass(es)'
     },
     {
@@ -156,7 +167,7 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
     },
     {
       code: 'TASKS_COMPLETED',
-      ok: taskList.length >= 4 && taskList.every((task) => task.status === 'completed'),
+      ok: taskList.length >= 4 && uniqueTasks.size === taskList.length && taskList.every((task) => typeof task.id === 'string' && task.id.trim() !== '' && task.status === 'completed'),
       detail: taskList.length === 0 ? 'no tasks' : taskList.map((task) => task.id + '=' + String(task.status)).join(', ')
     }
   ];

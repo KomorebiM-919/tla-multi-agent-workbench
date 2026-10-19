@@ -225,3 +225,9 @@ python -B docs/evidence/v0.1-second-run/make-review-manifest.py --repo . --out d
 [`docs/evidence/v0.1-second-run/README.md`](docs/evidence/v0.1-second-run/README.md) 与
 [`docs/evidence/v0.1-run6-20261016T154400Z/README.md`](docs/evidence/v0.1-run6-20261016T154400Z/README.md)；
 被门禁拦下的 run 3 – run 5 记录在 [`docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md`](docs/evidence/v0.1-second-run/ACCEPTANCE-STATUS.md)。
+# Independent core acceptance review
+
+The first two-person core review adds eight acceptance counterexamples and
+tightens the existing verdict checks. It does not establish host repair-loop
+closure. Collector evidence gaps remain; see
+[core return notes](docs/handoffs/v0.2-two-person-round1/CORE-RETURN.md).
