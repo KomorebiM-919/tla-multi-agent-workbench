@@ -15,12 +15,16 @@
 //     --run-dir <new run dir> --gate-port 18921 --upstream-port 18920 \
 //     --require-file src/sum.mjs --require-file test/sum.test.mjs [--print] [--json]
 
-import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, UsageError } from './gated-run.mjs';
 import { inspectEffectiveConfig } from './inspect-effective-config.mjs';
 import { renderOverlay } from './overlay-template.mjs';
+import { preflightSpec } from './experiment-runner.mjs';
 import { runStaticChecks } from './static-preflight.mjs';
 
 export const COMMAND_SCHEMA = 'tla.experiment-command/v1';
@@ -164,7 +168,12 @@ export function buildCommand(spec, build = {}) {
     require('--policy', spec.policyPath);
     if (spec.fakeServerPath !== undefined && !existsSync(spec.fakeServerPath)) problems.push('--fake-server does not exist: ' + spec.fakeServerPath);
     if (spec.policyPath !== undefined && !existsSync(spec.policyPath)) problems.push('--policy does not exist: ' + spec.policyPath);
+    // A supervised run has to name the commits it executes. Leaving them out is not "no pins
+    // needed": it produces a spec that cannot tell stale fixtures from reviewed ones.
+    require('--pin-source', spec.pinned === undefined ? undefined : spec.pinned.sourceSha);
+    require('--pin-fixtures', spec.pinned === undefined ? undefined : spec.pinned.fixturesSha);
     notes.push('supervised: the runner renders the overlay it passes to the launcher; --overlay is optional here');
+    notes.push('pins: taken verbatim from --pin-source/--pin-fixtures; nothing is inferred from HEAD');
   } else {
     require('--overlay', spec.overlay);
   }
@@ -271,6 +280,56 @@ export function toPowerShell(command) {
   return pieces.join('\n');
 }
 
+// Git output has to go through a file: this sandbox refuses the named pipe that stdio: 'pipe'
+// creates, and a failed read must not be confused with an empty answer.
+function gitText(repoRoot, args) {
+  const dir = mkdtempSync(join(tmpdir(), 'tla-pin-'));
+  const out = join(dir, 'out.txt');
+  const fd = openSync(out, 'w');
+  const result = spawnSync('git', ['-C', repoRoot, ...args], { stdio: ['ignore', fd, fd] });
+  closeSync(fd);
+  let text = '';
+  try {
+    text = readFileSync(out, 'utf8').trim();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return { status: result.status, stdout: text };
+}
+
+function fileEvidence(path) {
+  if (typeof path !== 'string' || path === '' || !existsSync(path)) return null;
+  return {
+    path: resolve(path),
+    bytes: statSync(path).size,
+    sha256: createHash('sha256').update(readFileSync(path)).digest('hex')
+  };
+}
+
+/**
+ * Where the two pinned revisions came from.
+ *
+ * They are read verbatim from --pin-source/--pin-fixtures. Nothing is derived from HEAD: an
+ * operator who cannot name the commit that contains the reviewed fixtures has not chosen a
+ * revision, and silently substituting HEAD would turn a stale pin into a passing check.
+ */
+export function pinProvenanceFor(spec, repoRoot) {
+  const pinned = spec.pinned === undefined ? null : spec.pinned;
+  if (pinned === null) return null;
+  const at = (sha, args) => {
+    const result = gitText(repoRoot, [...args, sha]);
+    return result.status === 0 ? result.stdout : null;
+  };
+  return {
+    selectedBy: 'explicit --pin-source and --pin-fixtures; nothing inferred from HEAD',
+    repoRoot: resolve(repoRoot),
+    sourceSha: pinned.sourceSha ?? null,
+    fixturesSha: pinned.fixturesSha ?? null,
+    sourceSubject: pinned.sourceSha === undefined ? null : at(pinned.sourceSha, ['log', '-1', '--format=%s']),
+    fixturesSubject: pinned.fixturesSha === undefined ? null : at(pinned.fixturesSha, ['log', '-1', '--format=%s'])
+  };
+}
+
 /**
  * What the effective-config inspector needs for this spec. It must carry the same overlay the
  * launcher will receive: reading a field named `patch` (which the builder never sets — the flag
@@ -300,8 +359,20 @@ export function supervisorSpecFor(spec) {
     fakeKeyEnv: 'TLA_STAGE2_FAKE_KEY',
     fakeKeyValue: 'stage2-fake-key'
   };
-  for (const name of ['timeoutMs', 'leaseTtlMs', 'heartbeatMaxAgeMs', 'prompt', 'dshExe', 'dshCli', 'dshHome', 'pinned']) {
+  for (const name of ['timeoutMs', 'leaseTtlMs', 'heartbeatMaxAgeMs', 'prompt', 'dshExe', 'dshCli', 'dshHome']) {
     if (spec[name] !== undefined) derived[name] = spec[name];
+  }
+  if (spec.pinned !== undefined) {
+    // The two external files are part of what executes, so the spec carries their bytes and
+    // the runner compares them instead of merely recording a hash after the fact.
+    derived.pinned = {
+      ...spec.pinned,
+      external: {
+        fakeServer: fileEvidence(derived.fakeServerPath),
+        policy: fileEvidence(derived.policyPath)
+      },
+      provenance: pinProvenanceFor(spec, derived.repoRoot)
+    };
   }
   return derived;
 }
@@ -402,11 +473,25 @@ async function main(argv) {
     // One supervised command per experiment: it starts the fake upstream, proves readiness and
     // run identity, starts the protected host, watches both, and tears both down.
     if (supervised) {
+      const supervisor = supervisorSpecFor(spec);
+      // The same check the runner performs before its first spawn. It runs here, before the
+      // spec is written and before anyone is asked to approve a launch, so a stale pin cannot
+      // consume an approval again.
+      const preflight = preflightSpec(supervisor, { repoRoot: supervisor.repoRoot });
+      for (const check of preflight.checks) {
+        process.stderr.write('experiment-command: preflight ' + (check.ok ? 'ok   ' : 'FAIL ') + check.name + ' — ' + check.detail + '\n');
+      }
+      if (!preflight.ok) {
+        process.stderr.write('experiment-command: FULL PREFLIGHT REJECTED — ' + preflight.problems.join('; ') + '\n');
+        process.stderr.write('experiment-command: experiment-spec.json was NOT written\n');
+        return 1;
+      }
       const specPath = join(dirname(runDir), 'experiment-spec.json');
-      writeFileSync(specPath, JSON.stringify(supervisorSpecFor(spec), null, 2) + '\n', 'utf8');
+      writeFileSync(specPath, JSON.stringify(supervisor, null, 2) + '\n', 'utf8');
       // The supervised command must name the runner beside this generator, not a path that
       // happens to exist under the caller's working directory.
       const runnerPath = fileURLToPath(new URL('./experiment-runner.mjs', import.meta.url));
+      process.stdout.write('FULL PREFLIGHT OK — structure, source, fixtures and external hashes verified (' + String(preflight.checks.length) + ' checks)\n');
       process.stdout.write('supervised command: node "' + runnerPath + '" --spec "' + specPath + '"\n');
     } else {
       process.stdout.write('experiment-command: note — pass --fake-server and --policy to emit the supervised command\n');

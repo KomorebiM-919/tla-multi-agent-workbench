@@ -7,11 +7,13 @@
  * No DSH host is started and no external model is contacted.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { buildHostArgs, resolveEffective, runExperiment, runSpecFile, stopOwnedProcess, validateSpec, verifyInvocationArgs } from '../tools/experiment-runner.mjs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildHostArgs, preflightSpec, resolveEffective, runExperiment, runSpecFile, stopOwnedProcess, validateSpec, verifyInvocationArgs } from '../tools/experiment-runner.mjs';
 
 let failures = 0;
 let checks = 0;
@@ -458,6 +460,109 @@ const pinnedSha = gitIn(pinnedRepo, ['rev-parse', 'HEAD']).stdout.trim();
   const summary = await runExperiment(s, { repoRoot: dirtyRepo });
   check('an executing checkout with local modifications is refused', summary.status === 'spec-invalid', summary.status);
   check('the refusal names the local modification', /local modifications/u.test(String(summary.reason)), summary.reason);
+}
+
+// 23. one pre-flight for --check, the generator and a real run
+{
+  const runnerPath = fileURLToPath(new URL('../tools/experiment-runner.mjs', import.meta.url));
+  const hashOf = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+  const bytesOf = (path) => readFileSync(path).length;
+  const checkRepo = join(work, 'check-repo');
+  mkdirSync(join(checkRepo, 'tests', 'fixtures', 'repair-protocol'), { recursive: true });
+  writeFileSync(join(checkRepo, 'tests', 'fixtures', 'repair-protocol', 'request-001.json'), '{"fixture":1}\n', 'utf8');
+  writeFileSync(join(checkRepo, 'tests', 'fixtures', 'repair-loop-policy.v2.json'), '{"rules":[]}\n', 'utf8');
+  gitIn(checkRepo, ['init', '-q']);
+  gitIn(checkRepo, ['add', '-A']);
+  gitIn(checkRepo, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'fixtures without v3']);
+  const shaA = gitIn(checkRepo, ['rev-parse', 'HEAD']).stdout.trim();
+  // The fixture the run needs was added after shaA. This is the round11 shape: the spec names
+  // an older fixture revision while the checkout executes a newer policy.
+  const policyV3 = join(checkRepo, 'tests', 'fixtures', 'repair-loop-policy.v3.json');
+  writeFileSync(policyV3, '{"id":"repair-loop-policy/v3","rules":[]}\n', 'utf8');
+  gitIn(checkRepo, ['add', '-A']);
+  gitIn(checkRepo, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'add v3']);
+  const shaB = gitIn(checkRepo, ['rev-parse', 'HEAD']).stdout.trim();
+
+  let runs = 0;
+  const checkSpec = (pinned) => {
+    runs += 1;
+    return {
+      profile: 'standin',
+      projectCwd: projectDir,
+      runDir: join(work, 'check-run-' + String(runs)),
+      gatePort: 18_500 + runs * 2,
+      upstreamPort: 18_501 + runs * 2,
+      fakeServerPath: standinFake,
+      policyPath: policyV3,
+      repoRoot: checkRepo,
+      requirePinned: true,
+      prompt: 'pre-flight only',
+      pinned
+    };
+  };
+  const external = {
+    fakeServer: { sha256: hashOf(standinFake), bytes: bytesOf(standinFake) },
+    policy: { sha256: hashOf(policyV3), bytes: bytesOf(policyV3) }
+  };
+  const good = preflightSpec(checkSpec({ sourceSha: shaB, fixturesSha: shaB, external }));
+  check('a complete spec passes the full pre-flight', good.ok === true, JSON.stringify(good.problems));
+  check('the pre-flight reports structure and provenance checks', good.checks.some((entry) => entry.name === 'spec:structure') && good.checks.some((entry) => entry.name === 'pinned:source'), JSON.stringify(good.checks.map((entry) => entry.name)));
+  check('the pre-flight proves the external bytes', good.checks.some((entry) => entry.name === 'pinned:policy-declared' && entry.ok === true));
+
+  const stale = preflightSpec(checkSpec({ sourceSha: shaB, fixturesSha: shaA, external }));
+  check('a spec pinned to fixtures that predate its policy is refused', stale.ok === false, JSON.stringify(stale.problems));
+  check('the refusal names the fixture drift', stale.problems.some((problem) => /differ from pinned revision/u.test(problem)), JSON.stringify(stale.problems));
+  check('the refusal names the missing policy at that revision', stale.problems.some((problem) => /not part of fixture revision/u.test(problem)), JSON.stringify(stale.problems));
+
+  // The run reaches the same verdict as --check: no process was spawned.
+  const staleSummary = await runExperiment(checkSpec({ sourceSha: shaB, fixturesSha: shaA, external }));
+  check('the real run refuses the same stale pin', staleSummary.status === 'spec-invalid', staleSummary.status);
+  check('the run refusal carries the pre-flight problems', /pre-flight failed/u.test(String(staleSummary.reason)), staleSummary.reason);
+  check('the refused run spawned nothing', staleSummary.owned.length === 0, String(staleSummary.owned.length));
+
+  writeFileSync(join(checkRepo, 'tests', 'fixtures', 'repair-loop-policy.v2.json'), '{"rules":[1]}\n', 'utf8');
+  const drift = preflightSpec(checkSpec({ sourceSha: shaB, fixturesSha: shaB, external }));
+  check('fixture bytes changed but the pin unchanged is refused', drift.ok === false, JSON.stringify(drift.problems));
+  gitIn(checkRepo, ['checkout', '--', 'tests/fixtures/repair-loop-policy.v2.json']);
+
+  writeFileSync(join(checkRepo, 'tests', 'fixtures', 'extra-policy.json'), '{}\n', 'utf8');
+  const untracked = preflightSpec(checkSpec({ sourceSha: shaB, fixturesSha: shaB, external }));
+  check('an untracked fixture is drift too', untracked.ok === false && untracked.problems.some((problem) => /local modifications/u.test(problem)), JSON.stringify(untracked.problems));
+  unlinkSync(join(checkRepo, 'tests', 'fixtures', 'extra-policy.json'));
+
+  const wrongSha = preflightSpec(checkSpec({ sourceSha: '0'.repeat(40), fixturesSha: shaB, external }));
+  check('a wrong source sha is refused', wrongSha.ok === false && wrongSha.problems.some((problem) => /does not match pinned source/u.test(problem)), JSON.stringify(wrongSha.problems));
+  const unknownRevision = preflightSpec(checkSpec({ sourceSha: shaB, fixturesSha: 'f'.repeat(40), external }));
+  check('an unknown fixture revision is refused', unknownRevision.ok === false && unknownRevision.problems.some((problem) => /unknown fixture revision/u.test(problem)), JSON.stringify(unknownRevision.problems));
+
+  const externalDrift = preflightSpec(checkSpec({
+    sourceSha: shaB,
+    fixturesSha: shaB,
+    external: { ...external, policy: { ...external.policy, sha256: '0'.repeat(64) } }
+  }));
+  check('external policy bytes that differ from the declared hash are refused', externalDrift.ok === false && externalDrift.problems.some((problem) => /differ from the hash the spec declares/u.test(problem)), JSON.stringify(externalDrift.problems));
+
+  // --check is the same verdict, through the CLI a reviewer would run.
+  const badSpecPath = join(work, 'check-bad-spec.json');
+  writeFileSync(badSpecPath, JSON.stringify(checkSpec({ sourceSha: shaB, fixturesSha: shaA, external }), null, 2) + '\n', 'utf8');
+  const badOut = join(work, 'check-bad.out.txt');
+  const badFd = openSync(badOut, 'w');
+  const badExit = spawnSync(process.execPath, [runnerPath, '--spec', badSpecPath, '--check'], { stdio: ['ignore', badFd, badFd] });
+  closeSync(badFd);
+  const badText = readFileSync(badOut, 'utf8');
+  check('--check exits non-zero on a stale pin', badExit.status === 1, String(badExit.status));
+  check('--check does not say OK when provenance failed', badText.includes('FULL PREFLIGHT REJECTED') && !badText.includes('FULL PREFLIGHT OK'), badText.split(/\r?\n/u).slice(-2).join(' | '));
+  check('--check publishes the same problem the run reports', stale.problems.some((problem) => badText.includes(problem)), stale.problems.join('; '));
+
+  const goodSpecPath = join(work, 'check-good-spec.json');
+  writeFileSync(goodSpecPath, JSON.stringify(checkSpec({ sourceSha: shaB, fixturesSha: shaB, external }), null, 2) + '\n', 'utf8');
+  const goodOut = join(work, 'check-good.out.txt');
+  const goodFd = openSync(goodOut, 'w');
+  const goodExit = spawnSync(process.execPath, [runnerPath, '--spec', goodSpecPath, '--check'], { stdio: ['ignore', goodFd, goodFd] });
+  closeSync(goodFd);
+  const goodText = readFileSync(goodOut, 'utf8');
+  check('--check exits zero only when the full pre-flight passes', goodExit.status === 0, String(goodExit.status) + ' ' + goodText.split(/\r?\n/u).slice(-2).join(' | '));
+  check('--check says the source, fixtures and external hashes were verified', goodText.includes('FULL PREFLIGHT OK'), goodText.split(/\r?\n/u).slice(-2).join(' | '));
 }
 
 // 22. the argv carries the numbers the summary will report

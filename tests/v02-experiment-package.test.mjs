@@ -5,7 +5,7 @@
 // are checked against the launcher's own parseArgs and against the fake model's real
 // flags; nothing here starts a process, opens a socket, or touches the network.
 
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -299,6 +299,19 @@ try {
   });
   check(pinnedSpec.requirePinned === true, 'a pinned spec requires the provenance check');
   check(pinnedSpec.pinned.sourceSha === 'a'.repeat(40) && pinnedSpec.pinned.fixturesSha === 'b'.repeat(40), 'both pinned revisions reach the supervisor');
+  check(
+    /^[0-9a-f]{64}$/u.test(pinnedSpec.pinned.external.fakeServer.sha256) && pinnedSpec.pinned.external.fakeServer.bytes === statSync(standinFake).size,
+    'the supervisor spec carries the bytes of the external fake upstream'
+  );
+  check(
+    /^[0-9a-f]{64}$/u.test(pinnedSpec.pinned.external.policy.sha256) && pinnedSpec.pinned.external.policy.bytes === statSync(policy).size,
+    'the supervisor spec carries the bytes of the external policy'
+  );
+  check(
+    pinnedSpec.pinned.provenance.selectedBy.includes('nothing inferred from HEAD'),
+    'the supervisor spec records how the pins were chosen',
+    String(pinnedSpec.pinned.provenance.selectedBy)
+  );
   check(supervisorSpecFor({ ...spec, requireFiles: [], runDir: join(root, 'run-unpinned') }).requirePinned === false, 'an unpinned spec does not claim a pin');
   validateSpec(supSpec);
   check(true, 'the emitted supervisor spec passes the runner validator');
@@ -311,13 +324,35 @@ try {
     fakeServerPath: standinFake,
     policyPath: policy,
     requireFiles: ['src/sum.mjs'],
-    runDir: join(root, 'run-supervised')
+    runDir: join(root, 'run-supervised'),
+    pinned: { sourceSha: 'a'.repeat(40), fixturesSha: 'b'.repeat(40) }
   });
   check(supervisedBuild.problems.length === 0, 'a supervised spec needs no hand-written overlay', JSON.stringify(supervisedBuild.problems));
   check(supervisedBuild.notes.some((note) => /--overlay is optional/u.test(note)), 'the builder says the overlay is rendered by the runner');
+  const unpinnedBuild = buildCommand({
+    ...spec,
+    overlay: undefined,
+    fakeServerPath: standinFake,
+    policyPath: policy,
+    requireFiles: ['src/sum.mjs'],
+    runDir: join(root, 'run-supervised')
+  });
+  check(
+    unpinnedBuild.problems.some((problem) => /--pin-source is required/u.test(problem)) &&
+      unpinnedBuild.problems.some((problem) => /--pin-fixtures is required/u.test(problem)),
+    'a supervised run must name both revisions instead of inferring them',
+    JSON.stringify(unpinnedBuild.problems)
+  );
   const renderedPath = join(root, 'overlay-rendered.patch.yml');
   const withRendered = buildCommand(
-    { ...spec, overlay: undefined, fakeServerPath: standinFake, policyPath: policy, requireFiles: ['src/sum.mjs'] },
+    {
+      ...spec,
+      overlay: undefined,
+      fakeServerPath: standinFake,
+      policyPath: policy,
+      requireFiles: ['src/sum.mjs'],
+      pinned: { sourceSha: 'a'.repeat(40), fixturesSha: 'b'.repeat(40) }
+    },
     { overlayPath: renderedPath }
   );
   const patchFlag = withRendered.argv.indexOf('--patch');

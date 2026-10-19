@@ -150,6 +150,28 @@ export function validateSpec(spec) {
           problems.push('pinned.' + name + ' must be a 40-character lowercase hex commit');
         }
       }
+      // External files are not versioned with the checkout, so the spec names their bytes.
+      // Recording a hash is not verification; when the spec declares one, it is compared.
+      if (spec.pinned.external !== undefined) {
+        if (typeof spec.pinned.external !== 'object' || spec.pinned.external === null || Array.isArray(spec.pinned.external)) {
+          problems.push('pinned.external must be an object');
+        } else {
+          for (const name of ['fakeServer', 'policy']) {
+            const entry = spec.pinned.external[name];
+            if (entry === undefined) continue;
+            if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+              problems.push('pinned.external.' + name + ' must be an object');
+              continue;
+            }
+            if (typeof entry.sha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(entry.sha256)) {
+              problems.push('pinned.external.' + name + '.sha256 must be a 64-character lowercase hex digest');
+            }
+            if (entry.bytes !== undefined && (!Number.isInteger(entry.bytes) || entry.bytes < 0)) {
+              problems.push('pinned.external.' + name + '.bytes must be a non-negative integer');
+            }
+          }
+        }
+      }
     }
   }
   if (spec.requireFiles !== undefined) {
@@ -208,13 +230,22 @@ export async function main(argv) {
   let spec;
   try {
     spec = JSON.parse(readFileSync(resolve(specPath), 'utf8'));
-    validateSpec(spec);
   } catch (error) {
     console.error('SPEC REJECTED — ' + String(error.message));
     return 1;
   }
   if (checkOnly) {
-    console.log('SPEC OK — ' + resolve(specPath));
+    // --check proves everything the run proves before its first spawn, including the pinned
+    // revisions. A shape-only check let stale pins reach a launch and spend an approval.
+    const preflight = preflightSpec(spec, { repoRoot: spec.repoRoot });
+    for (const check of preflight.checks) {
+      console.log('PREFLIGHT ' + (check.ok ? 'ok   ' : 'FAIL ') + check.name + ' — ' + check.detail);
+    }
+    if (!preflight.ok) {
+      console.error('FULL PREFLIGHT REJECTED — ' + preflight.problems.join('; '));
+      return 1;
+    }
+    console.log('FULL PREFLIGHT OK — structure, source, fixtures and external hashes verified');
     return 0;
   }
   const summary = await runExperiment(spec);
@@ -327,10 +358,12 @@ export function verifyPinnedSources(spec, options = {}) {
   evidence.checks.push({ name: 'pinned:source', ok: headMatches, detail: 'HEAD ' + String(evidence.head) + ' vs pinned ' + String(evidence.sourceSha) });
   if (!headMatches) problems.push('HEAD ' + String(evidence.head) + ' does not match pinned source ' + String(evidence.sourceSha));
 
-  const status = runGit(repoRoot, ['status', '--porcelain', '--untracked-files=no'], gitBin);
+  // Untracked files count as drift too: a fixture copied next to the pinned one would be read
+  // by the run while the revision it claims to execute never contained it.
+  const status = runGit(repoRoot, ['status', '--porcelain', '--untracked-files=all'], gitBin);
   evidence.dirty = status.status === 0 && status.stdout !== '' ? status.stdout.split(/\r?\n/u) : [];
   const clean = evidence.dirty.length === 0;
-  evidence.checks.push({ name: 'pinned:clean', ok: clean, detail: clean ? 'no tracked modifications' : evidence.dirty.join('; ') });
+  evidence.checks.push({ name: 'pinned:clean', ok: clean, detail: clean ? 'no tracked or untracked modifications' : evidence.dirty.join('; ') });
   if (!clean) problems.push('the executing checkout has local modifications: ' + evidence.dirty.join('; '));
 
   if (evidence.fixturesSha !== null) {
@@ -372,9 +405,58 @@ export function verifyPinnedSources(spec, options = {}) {
       continue;
     }
     evidence[name] = { path: resolve(path), bytes: statSync(path).size, sha256: sha256File(path) };
+    const declared = pinned !== null && pinned.external !== undefined ? pinned.external[name] : undefined;
+    if (declared !== undefined) {
+      const hashMatches = declared.sha256 === undefined || declared.sha256 === evidence[name].sha256;
+      const bytesMatch = declared.bytes === undefined || declared.bytes === evidence[name].bytes;
+      const ok = hashMatches && bytesMatch;
+      evidence.checks.push({
+        name: 'pinned:' + name + '-declared',
+        ok,
+        detail: ok
+          ? 'bytes equal the hash the spec declares'
+          : 'actual ' + String(evidence[name].bytes) + 'B/' + evidence[name].sha256 + ' vs declared ' + String(declared.bytes) + 'B/' + String(declared.sha256)
+      });
+      if (!ok) problems.push('the ' + name + ' bytes differ from the hash the spec declares');
+    }
     evidence.checks.push({ name: 'pinned:' + name, ok: true, detail: evidence[name].sha256 });
   }
   return { ok: problems.length === 0, problems, evidence };
+}
+
+/**
+ * The one pre-flight used by `--check`, by a real run and by the command generator.
+ *
+ * `--check` used to validate only the shape of the spec; the source, fixtures and external
+ * bytes were verified later, after an approval had already been spent. Both callers now run
+ * this exact function, so "checked offline" and "checked before spawn" cannot diverge.
+ */
+export function preflightSpec(spec, options = {}) {
+  const checks = [];
+  try {
+    validateSpec(spec);
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'spec-invalid',
+      problems: [error.message],
+      checks: [{ name: 'spec:structure', ok: false, detail: error.message }],
+      evidence: null
+    };
+  }
+  checks.push({ name: 'spec:structure', ok: true, detail: 'shape, ranges, project files and external paths' });
+  const pinned = verifyPinnedSources(spec, {
+    repoRoot: options.repoRoot === undefined ? spec.repoRoot : options.repoRoot,
+    gitBin: options.gitBin
+  });
+  checks.push(...pinned.evidence.checks);
+  return {
+    ok: pinned.ok,
+    code: pinned.ok ? null : 'spec-invalid',
+    problems: pinned.problems,
+    checks,
+    evidence: pinned.evidence
+  };
 }
 
 /** True when nothing accepts connections on the port. */
@@ -726,11 +808,16 @@ export async function runExperiment(spec, options = {}) {
     return teardown();
   };
 
-  // Provenance is checked before anything is spawned: a label is not evidence.
-  const pinnedCheck = verifyPinnedSources(spec, { repoRoot: options.repoRoot === undefined ? spec.repoRoot : options.repoRoot, gitBin: options.gitBin });
+  // Provenance is checked before anything is spawned: a label is not evidence. This is the
+  // same function `--check` runs, so the offline verdict and the run verdict cannot diverge.
+  const pinnedCheck = preflightSpec(spec, {
+    repoRoot: options.repoRoot === undefined ? spec.repoRoot : options.repoRoot,
+    gitBin: options.gitBin
+  });
   summary.pinnedEvidence = pinnedCheck.evidence;
-  if (!pinnedCheck.ok) return fail('spec-invalid', 'pinned sources not verified: ' + pinnedCheck.problems.join('; '));
-  phase('pinned-verified', { checks: pinnedCheck.evidence.checks.length });
+  summary.preflightChecks = pinnedCheck.checks;
+  if (!pinnedCheck.ok) return fail('spec-invalid', 'pre-flight failed: ' + pinnedCheck.problems.join('; '));
+  phase('pinned-verified', { checks: pinnedCheck.checks.length });
 
   // Everything below owns child processes, so it runs inside a guard: a throw of any kind must
   // still go through teardown rather than leave a host or an upstream behind.
