@@ -13,12 +13,14 @@
 export const AGENT_TEAMS_PACKAGE = '@nanmicoder/dsh-agent-teams';
 export const AGENT_TEAMS_REVIEWED_VERSION = '0.1.24-rc.1';
 export const AGENT_TEAMS_REVIEWED_COMMIT = '6768de25aede12056a497b0a79ebf6cd8bb1e987';
+export const AGENT_TEAMS_INSTALLED_VERSION = '0.1.25';
 export const AGENT_TEAMS_LICENSE = 'MIT';
-export const AGENT_TEAMS_RECOMMENDED_HOST = '0.2.1-rc.1';
+export const AGENT_TEAMS_RECOMMENDED_HOST = '0.2.1-rc.2';
 
-/** compatibility.json 里列出的宿主版本（track 只是上游自己的分级，不代表已验证程度）。 */
+/** compatibility.json 里列出的宿主版本（0.1.25 的清单；track 只是上游自己的分级，不代表已验证程度）。 */
 export const AGENT_TEAMS_SUPPORTED_HOSTS = Object.freeze([
-  { version: '0.2.1-rc.1', track: 'recommended' },
+  { version: '0.2.1-rc.2', track: 'recommended' },
+  { version: '0.2.1-rc.1', track: 'legacy' },
   { version: '0.2.0-rc.2', track: 'legacy' },
   { version: '0.1.7-rc.2', track: 'legacy' },
   { version: '0.1.5-rc.3', track: 'legacy' },
@@ -62,8 +64,8 @@ export const AGENT_TEAMS_LIMITATIONS = Object.freeze([
 
 export const AGENT_TEAMS_NOT_PROOF_OF = Object.freeze([
   '没有在本机安装、启用或运行该插件，兼容性判断只基于上游 compatibility.json 与公开导出名',
-  '没有验证 0.2.0-rc.2 宿主上的真实行为；上游把它标为 legacy，0.2.1-rc.1 才是 recommended',
-  '没有证明 create 工具参数在 0.2.0-rc.2 上语义一致（只核对到 0.1.24-rc.1 的 schema）',
+  '0.2.1-rc.2 上的真实行为尚未验证；这里只确认了宿主愿意加载 0.1.25、compatibility.json 把它标为 recommended',
+  '没有证明 create 工具参数在 0.1.25 上语义一致（调用点仍按 0.1.24-rc.1 的 schema 核对，0.1.25 只做了静态扫描）',
 ]);
 
 export class AgentTeamsAdapterError extends Error {

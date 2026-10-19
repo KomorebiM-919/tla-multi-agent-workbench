@@ -60,7 +60,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 
 ### 规划中（未开始）
 
-- [x] **V0.2 原型：手动多模型分工与预算规划**（分支 `feat/v0.2-component-reuse`，2026-10-18；**真实外部模型调用 0 次**；`dsh-agent-teams@0.1.23` 只装进隔离 profile `stage1`，未触碰现用 Desktop profile）：
+- [x] **V0.2 原型：手动多模型分工与预算规划**（分支 `feat/v0.2-component-reuse`，2026-10-18；**真实外部模型调用 0 次**；`@nanmicoder/dsh-agent-teams@0.1.25` 只装进隔离 profile `stage1`，未触碰现用 Desktop profile；0.2.1-rc.2 宿主更新后由 0.1.23 升级并按新指纹重钉）：
 
   - `orchestration/`：配置校验、离线价格快照查询、整数金额估算、按基点分配预算（最大余数法，各项之和恒等于总额）、计划生成与 `create` 入参翻译
   - 价格快照 `orchestration/data/pricing-snapshot.portkey-72e1084.json`：取自 portkey-models@`72e1084` 的 6 条真实条目，由"美分/token"换算为"微-分/百万 token"整数；该仓库无时间戳，**新鲜度未知、未与官网核对**

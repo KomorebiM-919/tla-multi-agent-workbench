@@ -69,9 +69,9 @@ const KNOWN_FACT_KEYS = new Set([
   'reportStatus',
 ]);
 
-// 宿主的两种唤醒文本（来自 @nanmicoder/dsh-agent-teams 0.1.23 的 mailbox.js：
-// PREFIX = 'AgentTeams inbox receipt: '，body 以 'AgentTeams message from member <name>:' 开头；
-// 原生结算通知的原文是 'Background subagent <id> finished and will do no further work unless you send it more.'）。
+// 宿主的两种唤醒文本（来自 @nanmicoder/dsh-agent-teams 0.1.23 的 mailbox.js；
+// 2026-10-19 在 0.1.25 的 lib/mailbox.js 复核，PREFIX / 'AgentTeams message from member' /
+// 'Background subagent … will do no further work unless you send it more.' 均未变）。
 const WAKE_RECEIPT_RE = /^AgentTeams inbox receipt: /m;
 const WAKE_MESSAGE_RE = /AgentTeams message from (?:member )?([A-Za-z0-9_-]+):/;
 const WAKE_SETTLEMENT_RE = /Background subagent \S+ finished and will do no further work/;

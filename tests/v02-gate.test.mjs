@@ -1069,7 +1069,7 @@ async function scenarioReviewedPluginEvidence() {
   check(coverage.plumbing.includes('agent-teams'), 'reviewed: registered plugin is plumbing', coverage.plumbing);
   check(coverage.unknown.includes('rogue'), 'reviewed: unregistered plugin stays unknown', coverage.unknown);
   const evidence = REVIEWED_PLUGIN_EVIDENCE['@nanmicoder/dsh-agent-teams'];
-  check(evidence && evidence.version === '0.1.23', 'reviewed: entry names the fixed version', evidence);
+  check(evidence && evidence.version === '0.1.25', 'reviewed: entry names the fixed version', evidence);
   check(Array.isArray(evidence.evidence) && evidence.evidence.length >= 4, 'reviewed: entry carries evidence lines', evidence && evidence.evidence.length);
   const blocked = decideStart({ gateReady: true, baseUrl: { ok: true }, heartbeat: { ok: true }, coverage });
   check(blocked.allow === false, 'reviewed: unregistered plugin still blocks start', blocked);

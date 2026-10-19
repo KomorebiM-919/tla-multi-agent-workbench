@@ -3,7 +3,9 @@
  *
  * 来源：隔离 profile `stage1` 在未安装任何第三方插件时执行 `dsh --dump-config`
  * 得到的 95 个唯一组件名，去掉所有 `@deepseek-ai/dsh-llm-*`（那部分由
- * preflight.mjs 的 KNOWN_PROVIDER_ADAPTERS 逐条判定）。
+ * preflight.mjs 的 KNOWN_PROVIDER_ADAPTERS 逐条判定）。2026-10-19 宿主更新到
+ * `0.2.1-rc.2` 后，base bundle 新增 4 项（见下方注释），按 `--dump-config` 的实际
+ * 清单补登记。
  *
  * 为什么需要白名单：覆盖率检查必须"失败即拒绝"。旧实现只处理
  * `@deepseek-ai/dsh-llm-` 前缀的条目，其余名字直接跳过——于是任何不遵守
@@ -26,6 +28,13 @@ export const KNOWN_COMPONENT_NAMES = new Set([
   '@deepseek-ai/dsh-typert-registry',
   '@deepseek-ai/dsh-typert-loader',
   '@deepseek-ai/dsh-api-gateway',
+  // Added in DSH 0.2.1-rc.2's base bundle. They are host plumbing, not model adapters:
+  // api-remote-access exposes the local API, the two working-directory plugins resolve cwd,
+  // and web-deepseek-api is the web-search backend (disabled by the experiment overlay).
+  '@deepseek-ai/dsh-api-remote-access',
+  '@deepseek-ai/dsh-working-directory',
+  '@deepseek-ai/dsh-tool-working-directory',
+  '@deepseek-ai/dsh-web-deepseek-api',
   '@deepseek-ai/dsh-session-title',
   '@deepseek-ai/dsh-session-title-first-prompt-llm',
   '@deepseek-ai/dsh-user-questions',

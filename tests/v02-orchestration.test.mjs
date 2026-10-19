@@ -395,7 +395,7 @@ scenario('backend probing is explicit and never pretends to be executable');
   const notInstalled = probeAgentTeams({ hostVersion: '0.2.0-rc.2' });
   check(notInstalled.status === 'unavailable', 'uninstalled plugin is unavailable');
   check(notInstalled.reason === 'BACKEND_NOT_INSTALLED', 'uninstalled reason is explicit', notInstalled.reason);
-  check(notInstalled.compatibility.recommendedHost === '0.2.1-rc.1', 'recommended host is recorded from compatibility.json');
+  check(notInstalled.compatibility.recommendedHost === '0.2.1-rc.2', 'recommended host is recorded from compatibility.json');
 
   const allGood = {
     hostVersion: '0.2.0-rc.2',
