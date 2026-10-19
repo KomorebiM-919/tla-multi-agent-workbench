@@ -320,6 +320,50 @@ writeFileSync(standinPolicy, '{"rules":[]}\n', 'utf8');
   await sleep(300);
 }
 
+// 15b. A host that exits on its own cannot prove its tree, so a run that requires tree
+// proof must not report completed even though the host exited 0.
+{
+  const s = await spec({ requireTreeProof: true });
+  s.hostArgs = [join(scripts, 'host.mjs'), '--sleep-ms', '200', '--exit-code', '0'];
+  const summary = await runExperiment(s);
+  check('a clean host exit without tree proof is not completed', summary.status === 'cleanup-anomaly', summary.status);
+  check('the tree-proof anomaly names the reason', /descendants|tree/u.test(String(summary.reason)), summary.reason);
+  check('the anomaly records the exited-before-teardown proof', summary.treeProof === 'exited-before-teardown', String(summary.treeProof));
+}
+{
+  const s = await spec({});
+  s.hostArgs = [join(scripts, 'host.mjs'), '--sleep-ms', '200', '--exit-code', '0'];
+  const summary = await runExperiment(s);
+  check('without a tree-proof requirement a host exit 0 still completes', summary.status === 'completed', summary.status);
+  check('the completed run records how the host ended', summary.treeProof === 'exited-before-teardown', String(summary.treeProof));
+}
+
+// 15c. When teardown gets to a live host that already spawned a child of its own, the run
+// records what it collected and that child is gone afterwards.
+{
+  const grandchildFile = join(work, 'teardown-grandchild.pid');
+  const s = await spec({ timeoutMs: 1500 });
+  s.hostArgs = [join(scripts, 'host.mjs'), '--sleep-ms', '10000', '--exit-code', '0', '--grandchild-pid-file', grandchildFile];
+  const summary = await runExperiment(s);
+  const grandchildPid = existsSync(grandchildFile) ? Number(readFileSync(grandchildFile, 'utf8')) : 0;
+  check('the timed-out host had started a child of its own', grandchildPid > 0, String(grandchildPid));
+  check('the timed-out run is torn down, not left running', summary.status === 'timeout', summary.status);
+  const hostTeardown = summary.teardown.find((entry) => entry.role === 'host');
+  const proof = hostTeardown === undefined ? 'missing' : hostTeardown.descendantsProof;
+  check(
+    'teardown says whether it could enumerate the tree',
+    proof === 'collected' || proof === 'unavailable',
+    String(proof)
+  );
+  if (proof === 'collected') {
+    check('teardown enumerated the descendants it killed', summary.treeProof === 'descendants-killed', String(summary.treeProof));
+  } else {
+    check('without enumeration the run does not claim descendant proof', summary.treeProof === 'tree-killed', String(summary.treeProof));
+  }
+  check('the grandchild did not survive the supervisor', grandchildPid > 0 && !pidAlive(grandchildPid), String(grandchildPid));
+  if (grandchildPid > 0 && pidAlive(grandchildPid)) spawnSync('taskkill', ['/PID', String(grandchildPid), '/T', '/F'], { encoding: 'utf8' });
+}
+
 // 16. an exception mid-run still tears the run down
 {
   const s = await spec({});

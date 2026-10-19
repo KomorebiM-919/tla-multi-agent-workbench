@@ -141,18 +141,33 @@ function isNewDirectory(path) {
 
 // Pure builder: takes a local spec, returns the argv plus every problem found.
 // Exported so the offline test can check the documented command shape directly.
-export function buildCommand(spec) {
+export function buildCommand(spec, build = {}) {
   const problems = [];
   const notes = [];
   const require = (name, value) => {
     if (value === undefined || value === '') problems.push(name + ' is required');
     else if (PLACEHOLDER_PATTERN.test(String(value))) problems.push(name + ' still holds a placeholder: ' + value);
   };
+  const supervised = spec.fakeServerPath !== undefined && spec.policyPath !== undefined;
+  const overlayPath = build.overlayPath !== undefined
+    ? resolve(build.overlayPath)
+    : (spec.overlay === undefined ? undefined : resolve(spec.overlay));
 
   require('--dsh-exe', spec.dshExe);
   require('--dsh-cli', spec.dshCli);
   require('--dsh-home', spec.dshHome);
-  require('--overlay', spec.overlay);
+  if (supervised) {
+    // The supervisor renders the overlay from the same template and passes it to the
+    // launcher itself, so asking the operator for a second overlay only creates a file that
+    // can drift from the executed one.
+    require('--fake-server', spec.fakeServerPath);
+    require('--policy', spec.policyPath);
+    if (spec.fakeServerPath !== undefined && !existsSync(spec.fakeServerPath)) problems.push('--fake-server does not exist: ' + spec.fakeServerPath);
+    if (spec.policyPath !== undefined && !existsSync(spec.policyPath)) problems.push('--policy does not exist: ' + spec.policyPath);
+    notes.push('supervised: the runner renders the overlay it passes to the launcher; --overlay is optional here');
+  } else {
+    require('--overlay', spec.overlay);
+  }
   require('--project-cwd', spec.projectCwd);
   require('--run-dir', spec.runDir);
   require('--prompt', spec.prompt);
@@ -175,7 +190,8 @@ export function buildCommand(spec) {
   if (timeoutMs < 1000) problems.push('--timeout-ms must be at least 1000');
 
   const runDir = spec.runDir === undefined ? '' : resolve(spec.runDir);
-  const argv = ['--profile', profile, '--patch', spec.overlay === undefined ? '<overlay>' : spec.overlay];
+  const patchArg = overlayPath !== undefined ? overlayPath : '<overlay>';
+  const argv = ['--profile', profile, '--patch', patchArg];
   if (spec.projectCwd !== undefined) argv.push('--project-cwd', spec.projectCwd);
   if (runDir !== '') argv.push('--run-dir', runDir);
   argv.push('--gate-port', String(gatePort));
@@ -218,7 +234,7 @@ export function buildCommand(spec) {
       const candidate = resolve(options.projectCwd ?? process.cwd(), file);
       if (!existsSync(candidate)) problems.push('required project file is missing: ' + file + ' (' + candidate + ')');
     }
-    if (spec.overlay !== undefined && !existsSync(spec.overlay)) problems.push('overlay patch is missing: ' + spec.overlay);
+    if (overlayPath !== undefined && !existsSync(overlayPath)) problems.push('overlay patch is missing: ' + overlayPath);
     if (spec.dshExe !== undefined && !existsSync(spec.dshExe)) problems.push('--dsh-exe does not exist: ' + spec.dshExe);
     if (spec.dshCli !== undefined) {
       const state = runtimePathState(spec.dshCli);
@@ -272,9 +288,11 @@ export function supervisorSpecFor(spec) {
     gatePort: spec.gatePort,
     upstreamPort: spec.upstreamPort,
     modelRequests: spec.modelRequests,
-    requireFiles: [...spec.requireFiles],
-    fakeServerPath: spec.fakeServerPath,
-    policyPath: spec.policyPath,
+    requireFiles: [...(spec.requireFiles ?? [])],
+    // Absolute paths: the runner may be started from another working directory, and a
+    // relative harness path would then name a different file (or none at all).
+    fakeServerPath: spec.fakeServerPath === undefined ? undefined : resolve(spec.fakeServerPath),
+    policyPath: spec.policyPath === undefined ? undefined : resolve(spec.policyPath),
     repoRoot: resolve(spec.repoRoot === undefined ? process.cwd() : spec.repoRoot),
     // The supervisor proves the pinned revisions against this checkout; a run without pins is
     // not "the experiment", it is an unpinned rehearsal, so ask for the proof.
@@ -329,7 +347,15 @@ async function main(argv) {
     process.stderr.write('experiment-command: ' + error.message + '\n');
     return 2;
   }
-  const command = buildCommand(spec);
+  const supervised = spec.fakeServerPath !== undefined && spec.policyPath !== undefined;
+  const runDir = spec.runDir === undefined ? '' : resolve(spec.runDir);
+  // The inspected overlay must be the one the launcher will receive. In supervised mode the
+  // runner renders it, so this pre-flight renders the same template now rather than asking
+  // the operator to hand-write a second copy.
+  const overlayPath = spec.overlay !== undefined
+    ? resolve(spec.overlay)
+    : (supervised && runDir !== '' && Number.isInteger(spec.gatePort) ? ensureOverlayFile(spec, runDir) : undefined);
+  const command = buildCommand(spec, { overlayPath });
   if (command.problems.length > 0) {
     for (const problem of command.problems) process.stderr.write('experiment-command: ' + problem + '\n');
     return 2;
@@ -342,7 +368,7 @@ async function main(argv) {
     redTest: spec.redTest,
     dshHome: spec.dshHome,
     profile: spec.profile,
-    overlay: spec.overlay,
+    overlay: overlayPath,
     gatePort: spec.gatePort,
     upstreamPort: spec.upstreamPort
   }).then((statics) => {
@@ -354,9 +380,7 @@ async function main(argv) {
     // The overlay text is not the configuration the host loads. Ask the CLI for the merged
     // configuration and judge that; the dump goes to a scratch directory so the evidence
     // directory stays untouched and still "new" for the launcher.
-    const runDir = spec.runDir === undefined ? '' : resolve(spec.runDir);
-    const overlayPath = ensureOverlayFile(spec, runDir);
-    const inspection = inspectEffectiveConfig({ ...inspectionInputFor(spec, runDir), patches: [overlayPath] });
+    const inspection = inspectEffectiveConfig({ ...inspectionInputFor(spec, runDir), patches: overlayPath === undefined ? [] : [overlayPath] });
     for (const check of inspection.checks) process.stderr.write('experiment-command: config ' + (check.ok ? 'ok   ' : 'FAIL ') + check.name + ' — ' + check.detail + '\n');
     if (inspection.ok !== true) {
       process.stderr.write('experiment-command: EFFECTIVE CONFIG FAILED — do not request an escalation for this command\n');
@@ -377,10 +401,13 @@ async function main(argv) {
     }
     // One supervised command per experiment: it starts the fake upstream, proves readiness and
     // run identity, starts the protected host, watches both, and tears both down.
-    if (spec.fakeServerPath !== undefined && spec.policyPath !== undefined) {
+    if (supervised) {
       const specPath = join(dirname(runDir), 'experiment-spec.json');
       writeFileSync(specPath, JSON.stringify(supervisorSpecFor(spec), null, 2) + '\n', 'utf8');
-      process.stdout.write('supervised command: node "' + resolve('tools/experiment-runner.mjs') + '" --spec "' + specPath + '"\n');
+      // The supervised command must name the runner beside this generator, not a path that
+      // happens to exist under the caller's working directory.
+      const runnerPath = fileURLToPath(new URL('./experiment-runner.mjs', import.meta.url));
+      process.stdout.write('supervised command: node "' + runnerPath + '" --spec "' + specPath + '"\n');
     } else {
       process.stdout.write('experiment-command: note — pass --fake-server and --policy to emit the supervised command\n');
     }

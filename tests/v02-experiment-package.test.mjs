@@ -7,7 +7,7 @@
 
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, buildInvocation, UsageError } from '../tools/gated-run.mjs';
 import { buildCommand, ensureOverlayFile, inspectionInputFor, PLACEHOLDER_PATTERN, REPORTED_FLAGS, runCommandBuilder, supervisorSpecFor } from '../tools/experiment-command.mjs';
@@ -80,7 +80,7 @@ const SUBSTITUTIONS = new Map([
   ['<path-to-host-cli.js>', 'C:\\work\\host\\cli.js'],
   ['<dir>', 'C:\\work\\repo\\bodies'],
   ['<source sha>', '45b6540e61c2bf0da477a0b7009fc4b8e1640023'],
-  ['<fixtures sha>', '4fc9515935fbbe67ad567ef12921bc1ff5b47d1d'],
+  ['<fixtures sha>', '509067753c29af2d37c794acb0a89fc850e9e2ff'],
 ]);
 function filled(value) {
   let result = value;
@@ -111,7 +111,7 @@ check(requireFiles.length === 3, 'the command requires every project file the ru
 check(typeof valueOf(filledArgs, '--prompt') === 'string' && valueOf(filledArgs, '--prompt').length > 0, 'the command carries the captain prompt');
 check((valueOf(filledArgs, '--dsh-home') ?? '').includes('dshhome'), 'the command carries the isolated DSH_HOME', String(valueOf(filledArgs, '--dsh-home')));
 check((valueOf(filledArgs, '--fake-server') ?? '').endsWith('fake-model-server.mjs'), 'the command names the local fake upstream', String(valueOf(filledArgs, '--fake-server')));
-check((valueOf(filledArgs, '--policy') ?? '').endsWith('policy.json'), 'the command names the reactive policy', String(valueOf(filledArgs, '--policy')));
+check((valueOf(filledArgs, '--policy') ?? '').endsWith('policy.v3.json'), 'the command names the reactive policy', String(valueOf(filledArgs, '--policy')));
 check(valueOf(filledArgs, '--pin-source') !== undefined && valueOf(filledArgs, '--pin-fixtures') !== undefined, 'the command pins the executing source and the fixtures');
 check(supervised.args.length > 0, 'the package contains the one supervised command');
 check((valueOf(supervised.args, '--spec') ?? '').endsWith('experiment-spec.json'), 'the supervised command takes the generated spec', String(valueOf(supervised.args, '--spec')));
@@ -136,7 +136,7 @@ check(SHAS.length >= 2, 'the package pins the executing revision and the fixture
 check(/执行源码（executable source）/u.test(DOC), 'the package labels the execution source revision');
 check(/夹具（fixtures）/u.test(DOC), 'the package labels the fixture revision');
 check(/说明文档（this document）/u.test(DOC) && /git log -1 --format=%H -- docs\/V0\.2-NEXT-EXPERIMENT\.md/u.test(DOC), 'the package states how to read the document revision without hashing itself');
-check(SHAS.includes('4fc9515935fbbe67ad567ef12921bc1ff5b47d1d'), 'the frozen fixture revision is still the one that replays offline');
+check(SHAS.includes('509067753c29af2d37c794acb0a89fc850e9e2ff'), 'the frozen fixture revision is still the one that replays offline');
 
 // 4. Preconditions the run depends on are stated, not implied.
 const PRE = [
@@ -302,6 +302,41 @@ try {
   check(supervisorSpecFor({ ...spec, requireFiles: [], runDir: join(root, 'run-unpinned') }).requirePinned === false, 'an unpinned spec does not claim a pin');
   validateSpec(supSpec);
   check(true, 'the emitted supervisor spec passes the runner validator');
+
+  // Supervised shape: the runner renders the overlay it will pass to the launcher, so the
+  // operator must not be forced to write a second copy that could drift from the executed one.
+  const supervisedBuild = buildCommand({
+    ...spec,
+    overlay: undefined,
+    fakeServerPath: standinFake,
+    policyPath: policy,
+    requireFiles: ['src/sum.mjs'],
+    runDir: join(root, 'run-supervised')
+  });
+  check(supervisedBuild.problems.length === 0, 'a supervised spec needs no hand-written overlay', JSON.stringify(supervisedBuild.problems));
+  check(supervisedBuild.notes.some((note) => /--overlay is optional/u.test(note)), 'the builder says the overlay is rendered by the runner');
+  const renderedPath = join(root, 'overlay-rendered.patch.yml');
+  const withRendered = buildCommand(
+    { ...spec, overlay: undefined, fakeServerPath: standinFake, policyPath: policy, requireFiles: ['src/sum.mjs'] },
+    { overlayPath: renderedPath }
+  );
+  const patchFlag = withRendered.argv.indexOf('--patch');
+  check(patchFlag >= 0 && withRendered.argv[patchFlag + 1] === renderedPath, 'the built command carries the overlay the pre-flight inspected');
+  const unsupervised = buildCommand({ ...spec, overlay: undefined, fakeServerPath: undefined, policyPath: undefined });
+  check(unsupervised.problems.some((problem) => /--overlay is required/u.test(problem)), 'an unsupervised spec still requires an overlay');
+
+  // The runner resolves its harness paths against its own working directory, so the emitted
+  // spec must carry absolute paths; a relative one would name a different file when the
+  // supervisor is started from elsewhere.
+  const relativeSup = supervisorSpecFor({
+    ...spec,
+    fakeServerPath: relative(process.cwd(), standinFake),
+    policyPath: relative(process.cwd(), policy),
+    requireFiles: ['src/sum.mjs'],
+    runDir: join(root, 'run-relative')
+  });
+  check(isAbsolute(relativeSup.fakeServerPath) && relativeSup.fakeServerPath === resolve(standinFake), 'the supervisor spec makes the fake upstream path absolute');
+  check(isAbsolute(relativeSup.policyPath) && relativeSup.policyPath === resolve(policy), 'the supervisor spec makes the policy path absolute');
 
   const rendered = ensureOverlayFile(
     { ...spec, overlay: undefined, runDir: join(root, 'run-supervised'), requireFiles: ['src/sum.mjs'] },

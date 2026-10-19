@@ -18,9 +18,15 @@ import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, r
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { probeUpstreamHealth, describeHealth } from './health-probe.mjs';
 import { renderOverlay } from './overlay-template.mjs';
+
+// Every default path is resolved from this module, never from the caller's working
+// directory: the runner must launch the launcher that lives beside it even when it is
+// started from the repository root or from another checkout.
+const TOOLS_DIR = dirname(fileURLToPath(import.meta.url));
 
 export const RUNNER_SCHEMA = 'tla.experiment-run/v1';
 
@@ -49,6 +55,10 @@ const READY_INTERVAL_MS = 100;
 const MONITOR_INTERVAL_MS = 100;
 const STOP_GRACE_MS = 2_000;
 const STOP_KILL_MS = 2_000;
+// Windows only: one process-table query is enough to name every descendant before the tree
+// is killed, so a detached member process cannot outlive the run it belongs to.
+const DESCENDANT_PROBE_MS = 4_000;
+const MAX_DESCENDANT_DEPTH = 32;
 const PORT_FREE_TIMEOUT_MS = 2_000;
 
 // Bounds for the knobs that used to be recorded but never passed on. A lease shorter than the
@@ -129,6 +139,18 @@ export function validateSpec(spec) {
   if (Number(spec.gatePort) === Number(spec.upstreamPort)) problems.push('gatePort and upstreamPort must differ');
   if (spec.heartbeatMaxAgeMs !== undefined && spec.leaseTtlMs !== undefined && spec.heartbeatMaxAgeMs > spec.leaseTtlMs) {
     problems.push('heartbeatMaxAgeMs must not exceed leaseTtlMs');
+  }
+  if (spec.pinned !== undefined && spec.pinned !== null) {
+    if (typeof spec.pinned !== 'object' || Array.isArray(spec.pinned)) {
+      problems.push('pinned must be an object with sourceSha and fixturesSha');
+    } else {
+      for (const name of ['sourceSha', 'fixturesSha']) {
+        const value = spec.pinned[name];
+        if (typeof value !== 'string' || !/^[0-9a-f]{40}$/u.test(value)) {
+          problems.push('pinned.' + name + ' must be a 40-character lowercase hex commit');
+        }
+      }
+    }
   }
   if (spec.requireFiles !== undefined) {
     if (!Array.isArray(spec.requireFiles)) problems.push('requireFiles must be an array');
@@ -257,6 +279,17 @@ function sha256File(path) {
 }
 
 /**
+ * Repository-relative form of a path, or null when it is outside the repository. Only a path
+ * inside the checkout can be versioned by the fixture revision; an external one is hashed.
+ */
+function repoRelative(repoRoot, path) {
+  if (typeof path !== 'string' || path === '') return null;
+  const rel = relative(resolve(repoRoot), resolve(path));
+  if (rel === '' || rel.startsWith('..') || /^[A-Za-z]:/u.test(rel) || rel.startsWith('/') || rel.startsWith('\\')) return null;
+  return rel.split('\\').join('/');
+}
+
+/**
  * Prove the pinned revisions instead of trusting the label.
  *
  * A spec can say "I ran revision X with fixtures Y"; that sentence is worth nothing unless the
@@ -306,12 +339,29 @@ export function verifyPinnedSources(spec, options = {}) {
       evidence.checks.push({ name: 'pinned:fixtures', ok: false, detail: 'unknown revision ' + evidence.fixturesSha });
       problems.push('unknown fixture revision ' + evidence.fixturesSha);
     } else {
-      const diff = runGit(repoRoot, ['diff', '--quiet', evidence.fixturesSha, '--', 'tests/fixtures/repair-protocol', 'tests/fixtures/repair-loop-policy.v2.json'], gitBin);
-      const fixtureStatus = runGit(repoRoot, ['status', '--porcelain', '--untracked-files=all', '--', 'tests/fixtures/repair-protocol', 'tests/fixtures/repair-loop-policy.v2.json'], gitBin);
+      // Pin the whole fixture tree, not two chosen files: a policy or protocol file the run
+      // actually reads must be part of the revision the spec names. The policy can live
+      // outside tests/fixtures; when it does, it is pinned by its own path instead.
+      const pinnedPaths = ['tests/fixtures'];
+      const policyRel = repoRelative(repoRoot, spec.policyPath);
+      if (policyRel !== null && !policyRel.startsWith('tests/fixtures/')) pinnedPaths.push(policyRel);
+      evidence.pinnedPaths = pinnedPaths;
+      const diff = runGit(repoRoot, ['diff', '--quiet', evidence.fixturesSha, '--', ...pinnedPaths], gitBin);
+      const fixtureStatus = runGit(repoRoot, ['status', '--porcelain', '--untracked-files=all', '--', ...pinnedPaths], gitBin);
       const noDrift = fixtureStatus.status === 0 && fixtureStatus.stdout === '';
       const same = diff.status === 0 && noDrift;
       evidence.checks.push({ name: 'pinned:fixtures', ok: same, detail: same ? 'fixture bytes equal ' + evidence.fixturesSha : 'fixture bytes differ from ' + evidence.fixturesSha + (noDrift ? '' : ' (' + fixtureStatus.stdout.replace(/\n/gu, '; ') + ')') });
       if (!same) problems.push('fixture bytes differ from pinned revision ' + evidence.fixturesSha);
+      // Byte equality is not the only claim: the revision must also contain the policy the
+      // run is about to execute. A policy added after the pinned revision passed the old
+      // check because only repair-protocol and v2 were compared.
+      if (policyRel !== null) {
+        const tracked = runGit(repoRoot, ['cat-file', '-e', evidence.fixturesSha + ':' + policyRel], gitBin);
+        const versioned = tracked.status === 0;
+        evidence.policyVersioned = versioned;
+        evidence.checks.push({ name: 'pinned:policy-versioned', ok: versioned, detail: versioned ? policyRel + ' is in ' + evidence.fixturesSha : policyRel + ' is not tracked at ' + evidence.fixturesSha });
+        if (!versioned) problems.push('the policy ' + policyRel + ' is not part of fixture revision ' + evidence.fixturesSha);
+      }
     }
   }
 
@@ -378,42 +428,109 @@ async function waitPidGone(pid, timeoutMs) {
 }
 
 /**
+ * Every process below `rootPid`, read once from the Windows process table.
+ *
+ * A tree kill only reaches processes still linked to the parent it kills. A member subagent
+ * that detached itself (or was started after the launcher began exiting) survives `taskkill
+ * /T` and keeps holding a port or a file. Naming the descendants before the kill is what
+ * makes the teardown proof about processes rather than about the parent's word.
+ */
+function listDescendants(rootPid) {
+  if (process.platform !== 'win32' || !Number.isInteger(rootPid) || rootPid <= 0) return { ok: false, pids: [] };
+  const dir = mkdtempSync(join(tmpdir(), 'tla-ps-'));
+  const out = join(dir, 'out.txt');
+  const fd = openSync(out, 'w');
+  let status = null;
+  try {
+    const query = 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', query], {
+      stdio: ['ignore', fd, fd],
+      timeout: DESCENDANT_PROBE_MS,
+      windowsHide: true
+    });
+    status = result.status;
+  } catch { /* the probe is best effort, the kill below still runs */ } finally {
+    closeSync(fd);
+  }
+  let text = '';
+  try {
+    text = readFileSync(out, 'utf8');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  if (status !== 0) return { ok: false, pids: [] };
+  const parentOf = new Map();
+  for (const line of text.split(/\r?\n/u)) {
+    const match = /^(\d+)\s+(\d+)$/u.exec(line.trim());
+    if (match !== null) parentOf.set(Number(match[1]), Number(match[2]));
+  }
+  const pids = [];
+  for (const [pid, parent] of parentOf) {
+    let cursor = parent;
+    let depth = 0;
+    while (cursor !== 0 && cursor !== undefined && depth < MAX_DESCENDANT_DEPTH) {
+      if (cursor === rootPid) {
+        pids.push(pid);
+        break;
+      }
+      cursor = parentOf.get(cursor);
+      depth += 1;
+    }
+  }
+  return { ok: true, pids };
+}
+
+/** Kill one pid this runner recorded, bounded, and report whether it is gone. */
+async function forceKillPid(pid, timeoutMs) {
+  if (!pidAlive(pid)) return true;
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: timeoutMs });
+    else process.kill(pid, 'SIGKILL');
+  } catch { /* already gone */ }
+  return waitPidGone(pid, timeoutMs);
+}
+
+/**
  * Stop a process this runner owns: polite signal first, then force, then a
- * bounded tree kill on Windows. Every step is time-boxed so cleanup itself can
- * never hang the experiment.
+ * bounded tree kill on Windows, then a sweep of every descendant named before
+ * the kill. Every step is time-boxed so cleanup itself can never hang the
+ * experiment.
  */
 export async function stopOwnedProcess(child, options = {}) {
   const graceMs = Number.isInteger(options.graceMs) ? options.graceMs : STOP_GRACE_MS;
   const killMs = Number.isInteger(options.killMs) ? options.killMs : STOP_KILL_MS;
-  const record = { pid: child === null || child === undefined ? null : child.pid, how: 'none' };
+  const record = { pid: child === null || child === undefined ? null : child.pid, how: 'none', descendants: [], survivors: [], descendantsProof: 'skipped' };
   if (child === null || child === undefined || child.pid === undefined) return record;
   if (child.exitCode !== null && child.exitCode !== undefined) {
     record.how = 'already-exited';
     return record;
   }
-  try { child.kill('SIGTERM'); } catch { /* already gone */ }
-  if (await waitPidGone(child.pid, graceMs)) {
-    record.how = 'terminated';
-    return record;
+  if (options.descendants !== false) {
+    const snapshot = listDescendants(child.pid);
+    record.descendants = snapshot.pids;
+    record.descendantsProof = snapshot.ok ? 'collected' : 'unavailable';
   }
+  const settle = async (how) => {
+    record.how = how;
+    for (const descendant of record.descendants) {
+      if (!(await forceKillPid(descendant, killMs))) record.survivors.push(descendant);
+    }
+    if (record.survivors.length > 0 && record.how !== 'still-alive') record.how = 'descendants-survived';
+    return record;
+  };
+  try { child.kill('SIGTERM'); } catch { /* already gone */ }
+  if (await waitPidGone(child.pid, graceMs)) return settle('terminated');
   if (process.platform === 'win32') {
     // A child we own may itself own a host process; kill the tree so nothing
     // survives the experiment. `taskkill` is time-boxed like every other step.
     try {
       spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: killMs });
     } catch { /* best effort */ }
-    if (await waitPidGone(child.pid, killMs)) {
-      record.how = 'tree-killed';
-      return record;
-    }
+    if (await waitPidGone(child.pid, killMs)) return settle('tree-killed');
   }
   try { child.kill('SIGKILL'); } catch { /* already gone */ }
-  if (await waitPidGone(child.pid, killMs)) {
-    record.how = 'killed';
-    return record;
-  }
-  record.how = 'still-alive';
-  return record;
+  if (await waitPidGone(child.pid, killMs)) return settle('killed');
+  return settle('still-alive');
 }
 
 /**
@@ -555,13 +672,33 @@ export async function runExperiment(spec, options = {}) {
     for (const role of ['host', 'upstream']) {
       const entry = owned[role];
       if (entry === null) continue;
-      const result = await stopOwnedProcess(entry.child, { graceMs: options.graceMs, killMs: options.killMs });
-      summary.teardown.push({ role, pid: result.pid, how: result.how });
-      if (result.how === 'still-alive') summary.status = 'cleanup-anomaly';
-      // "already-exited" means the child ended on its own before we could kill its tree. We
-      // cannot enumerate the descendants of a dead pid without platform support, so say so.
-      if (result.how === 'already-exited') summary.treeProof = 'exited-before-teardown';
-      if (result.how === 'tree-killed') summary.treeProof = 'tree-killed';
+      // Only the launcher owns a process tree; the fake upstream is one process.
+      const result = await stopOwnedProcess(entry.child, { graceMs: options.graceMs, killMs: options.killMs, descendants: role === 'host' });
+      summary.teardown.push({
+        role,
+        pid: result.pid,
+        how: result.how,
+        descendants: result.descendants,
+        descendantsProof: result.descendantsProof,
+        survivors: result.survivors
+      });
+      if (result.how === 'still-alive' || result.how === 'descendants-survived' || result.survivors.length > 0) {
+        summary.status = 'cleanup-anomaly';
+        const detail = result.survivors.length > 0
+          ? 'descendants still alive: ' + result.survivors.join(', ')
+          : 'pid ' + String(result.pid) + ' still alive';
+        summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + role + ' teardown: ' + detail;
+      }
+      // The host is the tree; the upstream is a single process. Record the host's proof, and
+      // never let the upstream's clean stop overwrite it.
+      if (role === 'host') {
+        // "already-exited" means the child ended on its own before we could kill its tree. We
+        // cannot enumerate the descendants of a dead pid without platform support, so say so.
+        if (result.how === 'already-exited') summary.treeProof = 'exited-before-teardown';
+        else if (result.descendantsProof === 'collected') {
+          summary.treeProof = result.descendants.length > 0 ? 'descendants-killed' : 'tree-killed';
+        } else summary.treeProof = 'tree-killed';
+      }
     }
     const gateFree = await waitPortFree(endpoints.gatePort);
     const upstreamFree = await waitPortFree(endpoints.upstreamPort);
@@ -660,7 +797,8 @@ export async function runExperiment(spec, options = {}) {
   summary.hostArgs = hostArgv;
   // The summary must describe the argv the host really received, not the intent behind it.
   if (spec.hostCommand === undefined) {
-    const agreement = verifyInvocationArgs(hostArgv, {
+    if (!existsSync(hostArgv[0])) return fail('spec-invalid', 'the launcher is missing next to the runner: ' + hostArgv[0]);
+    const expectedArgs = {
       '--model-requests': String(effective.modelRequests),
       '--lease-ttl-ms': String(effective.leaseTtlMs),
       '--heartbeat-max-age-ms': String(effective.heartbeatMaxAgeMs),
@@ -671,7 +809,17 @@ export async function runExperiment(spec, options = {}) {
       '--project-cwd': resolve(spec.projectCwd),
       '--run-dir': runDir,
       '--patch': overlayPath
-    });
+    };
+    for (const [flag, value] of [['--dsh-exe', spec.dshExe], ['--dsh-cli', spec.dshCli], ['--dsh-home', spec.dshHome], ['--prompt', spec.prompt]]) {
+      if (value !== undefined) expectedArgs[flag] = value;
+    }
+    const agreement = verifyInvocationArgs(hostArgv, expectedArgs);
+    // A spec field that never reaches the launcher is the same bug as a knob that is
+    // recorded but not passed on, so the required files are checked one by one.
+    for (const rel of spec.requireFiles === undefined ? [] : spec.requireFiles) {
+      const at = hostArgv.indexOf(rel);
+      if (at <= 0 || hostArgv[at - 1] !== '--require-file') agreement.mismatches.push('--require-file is missing ' + rel);
+    }
     summary.hostArgsAgreement = agreement;
     if (!agreement.ok) return fail('spec-invalid', 'the host argv does not carry the resolved spec: ' + agreement.mismatches.join('; '));
   }
@@ -725,7 +873,7 @@ function buildHostEnv(spec) {
 
 export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective) {
   const args = [
-    resolve(spec.launcherPath === undefined ? 'tools/gated-run.mjs' : spec.launcherPath),
+    spec.launcherPath === undefined ? join(TOOLS_DIR, 'gated-run.mjs') : resolve(spec.launcherPath),
     '--profile', spec.profile,
     '--patch', overlayPath,
     '--project-cwd', resolve(spec.projectCwd),
