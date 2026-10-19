@@ -248,3 +248,11 @@ work's lineage separately, requires the review attempt's own post-completion
 file reads, and emits task-subject hashes. `syntheticAcceptance` replaces the
 old generic `acceptance` output field. This remains an offline synthetic adapter;
 no real host repair-loop acceptance follows from these results.
+
+The collector also diagnoses implementation writes without their own required
+review/closure provenance, including failed or unfinished repairs hidden behind
+a later approved repair. Each issue locates the write call, order index, task,
+attempt, session and normalized path. Historical repairs with their own passes
+remain supported. See [the diagnostic contract](docs/COLLECTED-EVIDENCE-v2.md#implementation-write-diagnostics)
+and `tests/v02-write-review-diagnostics.test.mjs`. This does not add live capture
+or change the unverified real-host repair-loop milestone.

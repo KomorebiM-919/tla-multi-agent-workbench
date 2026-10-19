@@ -54,6 +54,49 @@ every intermediate write. They establish byte observation, not that a reviewer
 understood the program or ran an independent test. A distinct session/role does
 not prove distinct model/provider identity. All assertions are still synthetic.
 
+## Implementation-write diagnostics
+
+After every normalized operation has been validated, the collector audits each
+accepted implementation-write event. Work writes need that work/attempt's closed
+current chain. Repair writes need the repair's own completed attempt and matching
+historical passing review, including the correct work, rejection epoch and review
+task/attempt/session. A later repair's pass cannot approve an abandoned, failed
+or unreviewed earlier repair, even when it rewrites the same path.
+
+Every uncovered write adds this locatable issue and makes `status: INCOMPLETE`:
+
+```text
+{
+  code: IMPLEMENTATION_WRITE_REVIEW_UNPROVEN,
+  callId, writeIndex, taskId, attemptId, sessionId,
+  path, taskKind, taskStatus
+}
+```
+
+`writeIndex` is the validated call's result-order index; `path` is the same
+normalized project-relative path used in file evidence. Each write gets its own
+issue, including intermediate writes to one path. Canonical replay is deduplicated
+before this audit. No raw file or subject bytes are exposed by these fields.
+
+An older completed repair with its own valid historical pass remains reviewed;
+it need not be the latest selected repair in `evidence.chains`. That field still
+lists current selections, not a complete historical review transcript. Current
+chain freshness rules remain unchanged. This is no automatic supersession rule
+for unreviewed attempts or independent chains.
+
+Existing validation/closure errors remain first in `issues`. Supplemental write
+issues are appended only when the entire operation stream was validated. An
+invalid/failed/truncated protocol prefix is already incomplete and is not claimed
+to provide an exhaustive list of unreviewed writes. No-write or note-only tasks
+do not produce implementation-write issues; unfinished tasks can still make the
+outer verdict `partial` with collection status `COMPLETE`. Consumers must continue
+to check schema, scope, status and verdict together.
+
+The input, CLI, output v2 identity, old acceptance CLI and ten condition codes
+are unchanged. New issue context and multiple supplemental issues are additive;
+consumers must not assume one issue or a fixed two-field issue shape. Clean-looking
+reports from older collector revisions are not retrospectively revalidated.
+
 ## Audit fields
 
 `evidence.tasks` keeps existing task IDs/kinds/statuses/attempt/lineage fields and

@@ -185,6 +185,35 @@ function closureChains(state) {
   })
 }
 
+function repairHasReview(state, task) {
+  const pass = state.passes.get(task.id)
+  const review = pass === undefined ? undefined : state.tasks.get(pass.reviewTaskId)
+  return task.status === 'completed' && pass !== undefined &&
+    pass.workTaskId === task.sourceTaskId &&
+    pass.workAttemptId === state.tasks.get(task.sourceTaskId)?.attemptId &&
+    pass.repairAttemptId === task.attemptId && pass.rejectionIndex === task.rejectionIndex &&
+    review?.status === 'completed' && review.reviewedTaskId === task.id &&
+    review.attemptId === pass.reviewAttemptId && review.assignee === pass.reviewerSessionId
+}
+
+function implementationWriteIssues(state) {
+  const closedWork = new Set(closureChains(state).filter(chain => chain.closed)
+    .map(chain => JSON.stringify([chain.workTaskId, chain.workAttemptId])))
+  return state.files.filter(event => event.kind === 'write' && IMPLEMENTATION_PATH.test(event.path))
+    .filter(write => {
+      const task = state.tasks.get(write.taskId)
+      // A repair needs its own historical approval. A newer repair touching the
+      // same path cannot retrospectively approve an abandoned/failed attempt.
+      return task.taskKind === 'repair' ? !repairHasReview(state, task) :
+        !closedWork.has(JSON.stringify([write.taskId, write.attemptId]))
+    }).map(write => {
+      const task = state.tasks.get(write.taskId)
+      return { code: 'IMPLEMENTATION_WRITE_REVIEW_UNPROVEN', callId: state.writeCalls.get(write.index),
+        writeIndex: write.index, taskId: write.taskId, attemptId: write.attemptId,
+        sessionId: write.sessionId, path: write.path, taskKind: task.taskKind, taskStatus: task.status }
+    })
+}
+
 function collectTask(state, op, role) {
   const o = op.observation, input = op.call.input, index = op.order.result
   if (o.type === 'task-create') {
@@ -255,6 +284,7 @@ function collectFile(state, op, project, role) {
   state.fileState.set(path, sha256)
   state.files.push({ kind: write ? 'write' : 'read', path, sha256, bytes: content.length,
     index: op.order.result, taskId: task.id, attemptId: task.attemptId, sessionId: op.sessionId })
+  if (write) state.writeCalls.set(op.order.result, op.call.id)
 }
 
 function collectTest(state, op, project) {
@@ -312,8 +342,9 @@ export function collectEvidence(input, options = {}) {
   let binding = null
   const issues = []
   const state = { tasks: new Map(), attempts: new Set(), sessions: new Map(), rejected: new Map(), passes: new Map(), chains: [],
-    files: [], fileState: new Map(), sessionReads: new Map(), tests: [], usage: [] }
+    files: [], fileState: new Map(), sessionReads: new Map(), writeCalls: new Map(), tests: [], usage: [] }
   let operationId = null
+  let observationsComplete = false
   try {
     jsonValue(input)
     const encoded = JSON.stringify(input)
@@ -354,6 +385,7 @@ export function collectEvidence(input, options = {}) {
       else throw new EvidenceError('OBSERVATION_TYPE_UNSUPPORTED')
     }
     operationId = null
+    observationsComplete = true
     const changed = state.files.filter(e => e.kind === 'write' && IMPLEMENTATION_PATH.test(e.path))
     requireThat(readBackFor(state.files, changed), 'IMPLEMENTATION_READ_BACK_INCOMPLETE')
     state.chains = closureChains(state)
@@ -365,15 +397,16 @@ export function collectEvidence(input, options = {}) {
     requireThat(openChain === undefined, openChain?.problem)
     for (const task of state.tasks.values()) {
       if (task.taskKind === 'repair' && task.status === 'completed') {
-        const pass = state.passes.get(task.id)
-        requireThat(pass !== undefined && pass.repairAttemptId === task.attemptId &&
-          pass.rejectionIndex === task.rejectionIndex, 'REPAIR_REVIEW_INCOMPLETE')
+        requireThat(repairHasReview(state, task), 'REPAIR_REVIEW_INCOMPLETE')
       }
     }
   } catch (error) {
     if (!(error instanceof EvidenceError)) throw error
     issues.push({ code: error.code, callId: operationId })
   }
+  // Do not infer exhaustive absence of reviews from a protocol prefix that
+  // stopped at a malformed/failed operation. Preserve its primary error first.
+  if (observationsComplete) issues.push(...implementationWriteIssues(state))
   const tasks = [...state.tasks.values()]
   const tests = state.tests.length === 0 ? null : { ...state.tests.at(-1), history: state.tests }
   const valid = issues.length === 0

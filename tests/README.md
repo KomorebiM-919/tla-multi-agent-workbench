@@ -374,3 +374,16 @@ node tests/extract-native-events.mjs --parent <sessionId> --workflow-name tla-v0
 
 - V0.2 起：多模型分工（按角色分配模型）与状态持久化/续跑的验证也会落到本目录。
 - V0.3 起引入测试 Agent 与项目级测试框架（`docs/ROADMAP.md` V0.3），届时本目录承载 TLA 自身的单元测试与集成测试。
+
+### Synthetic implementation-write review diagnostics
+
+```text
+node tests/v02-write-review-diagnostics.test.mjs
+```
+
+Seventeen synthetic scenarios cover unfinished/failed/completed unreviewed
+repairs, superseded rejection epochs, every uncovered path/write, later rewrites,
+legitimate historical passes, work diagnostics, replay/immutability, Windows path
+normalization and no-write/note-only/invalid-prefix boundaries. No host or model
+is started. This is an independent formal core regression; the DSH handoff
+regression package remains separately maintained and is not copied into this test.

@@ -200,3 +200,10 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   and adds subject digests plus per-chain audit records. The renamed nested
   `syntheticAcceptance` field is an explicit breaking output change. Real host
   observation and acceptance are still not implemented/verified.
+
+- The synthetic collector now emits per-write review-provenance diagnostics for
+  abandoned, failed and otherwise unreviewed implementation-changing attempts.
+  A newer approved repair cannot hide those writes. Seventeen regression
+  scenarios cover locator fields, historical approvals, multiple paths/writes,
+  replay, Windows paths and partial-stream handling. Real host capture and
+  repair-loop acceptance remain unverified.
