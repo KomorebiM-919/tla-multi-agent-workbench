@@ -46,7 +46,11 @@ const cases = [
   ['null file event', x => { x.writes.push(null) }, 'READ_BACK_AFTER_WRITE'],
   ['duplicate index across files', x => {
     x.writes.push({ kind: 'write', path: 'src/other.mjs', index: 1, sha256: 'b'.repeat(64) })
-  }, 'READ_BACK_AFTER_WRITE']
+  }, 'READ_BACK_AFTER_WRITE'],
+  ['BigInt hashes', x => x.writes.forEach(e => { e.sha256 = BigInt('1'.repeat(64)) }), 'READ_BACK_AFTER_WRITE'],
+  ['numeric hashes', x => x.writes.forEach(e => { e.sha256 = 1e63 }), 'READ_BACK_AFTER_WRITE'],
+  ['array hashes', x => x.writes.forEach(e => { e.sha256 = ['a'.repeat(64)] }), 'READ_BACK_AFTER_WRITE'],
+  ['object hashes', x => x.writes.forEach(e => { e.sha256 = { toString: () => 'a'.repeat(64) } }), 'READ_BACK_AFTER_WRITE']
 ]
 assert.equal(deriveAcceptance(valid()).verdict, 'closed')
 const failures = []

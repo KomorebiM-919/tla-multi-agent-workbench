@@ -234,3 +234,5 @@ closure. Collector evidence gaps remain; see
 The follow-up [ordering fix](docs/handoffs/v0.2-two-person-round1/CORE-ROUND2.md)
 uses explicit safe-integer file-event order and rejects duplicate indices;
 it also documents the unimplemented collector evidence contract.
+Non-string acceptance hashes now fail the existing read-back condition instead
+of throwing, including BigInt, array and object inputs (30 core checks).

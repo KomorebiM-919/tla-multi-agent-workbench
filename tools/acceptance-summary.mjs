@@ -138,8 +138,9 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
   const readBack = lastImplementationWrite === undefined
     ? null
     : orderedFiles.events.filter((write) => write.path === lastImplementationWrite.path && write.kind === 'read' && write.index > lastImplementationWrite.index).pop() ?? null;
-  const readBackOk = readBack !== null && /^[a-f0-9]{64}$/iu.test(String(readBack.sha256 ?? '')) &&
-    /^[a-f0-9]{64}$/iu.test(String(lastImplementationWrite.sha256 ?? '')) &&
+  const validReadHash = readBack !== null && typeof readBack.sha256 === 'string' && /^[a-f0-9]{64}$/iu.test(readBack.sha256);
+  const validWriteHash = typeof lastImplementationWrite?.sha256 === 'string' && /^[a-f0-9]{64}$/iu.test(lastImplementationWrite.sha256);
+  const readBackOk = validReadHash && validWriteHash &&
     readBack.sha256.toLowerCase() === lastImplementationWrite.sha256.toLowerCase();
   const rejections = usageList.filter((entry) => /reject/iu.test(String(entry.rule ?? '')));
   const passes = usageList.filter((entry) => /pass/iu.test(String(entry.rule ?? '')));
@@ -167,7 +168,8 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
     {
       code: 'READ_BACK_AFTER_WRITE',
       ok: readBackOk === true,
-      detail: orderedFiles.problem ?? (readBack === null ? 'no read after the last implementation write' : 'read-back sha matches ' + String(readBackOk))
+      detail: orderedFiles.problem ?? (readBack === null ? 'no read after the last implementation write' :
+        !validReadHash || !validWriteHash ? 'write/read sha256 must be 64-character hexadecimal strings' : 'read-back sha matches ' + String(readBackOk))
     },
     {
       code: 'TESTS_RED_THEN_GREEN',

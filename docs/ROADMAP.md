@@ -187,3 +187,5 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - Evidence collection remains incomplete. The next collector contract and its
   missing run binding, byte history and review lineage are recorded in
   `docs/handoffs/v0.2-two-person-round1/CORE-ROUND2.md`; host closure remains unverified.
+- The follow-up hash fix rejects non-string SHA-256 inputs without coercion or
+  TypeError; the existing read-back condition reports invalid hash strings.
