@@ -1,0 +1,388 @@
+{
+  "schema": "tla.core-self-check/v1",
+  "codeCommit": "a0b445048a65dbd63c08d3c52cfdbc9d0d99b90b",
+  "parent": "c71dbc95edd57082756719b1eec572996f325305",
+  "scope": "offline-and-synthetic-only",
+  "hostVerified": false,
+  "realHostStartupAuthorization": 0,
+  "commands": [
+    {
+      "name": "v02-acceptance-summary.test",
+      "command": [
+        "node",
+        "tests\\v02-acceptance-summary.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-b1-scenarios.test",
+      "command": [
+        "node",
+        "tests\\v02-b1-scenarios.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-checkout-fidelity.test",
+      "command": [
+        "node",
+        "tests\\v02-checkout-fidelity.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-core-acceptance.test",
+      "command": [
+        "node",
+        "tests\\v02-core-acceptance.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-effective-config.test",
+      "command": [
+        "node",
+        "tests\\v02-effective-config.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-evidence-collector.test",
+      "command": [
+        "node",
+        "tests\\v02-evidence-collector.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-evidence-lineage.test",
+      "command": [
+        "node",
+        "tests\\v02-evidence-lineage.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-experiment-package.test",
+      "command": [
+        "node",
+        "tests\\v02-experiment-package.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-experiment-runner.test",
+      "command": [
+        "node",
+        "tests\\v02-experiment-runner.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-fs-observation.test",
+      "command": [
+        "node",
+        "tests\\v02-fs-observation.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-gate.test",
+      "command": [
+        "node",
+        "tests\\v02-gate.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-health-probe.test",
+      "command": [
+        "node",
+        "tests\\v02-health-probe.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-ledger.test",
+      "command": [
+        "node",
+        "tests\\v02-ledger.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-migration-links.test",
+      "command": [
+        "node",
+        "tests\\v02-migration-links.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-orchestration.test",
+      "command": [
+        "node",
+        "tests\\v02-orchestration.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-plugin-identity.test",
+      "command": [
+        "node",
+        "tests\\v02-plugin-identity.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-prelaunch-budget.test",
+      "command": [
+        "node",
+        "tests\\v02-prelaunch-budget.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-reactive-model.test",
+      "command": [
+        "node",
+        "tests\\v02-reactive-model.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-repair-loop-v3.test",
+      "command": [
+        "node",
+        "tests\\v02-repair-loop-v3.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-repair-loop.test",
+      "command": [
+        "node",
+        "tests\\v02-repair-loop.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-repair-protocol.test",
+      "command": [
+        "node",
+        "tests\\v02-repair-protocol.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-repair-rehearsal.test",
+      "command": [
+        "node",
+        "tests\\v02-repair-rehearsal.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-static-preflight.test",
+      "command": [
+        "node",
+        "tests\\v02-static-preflight.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "v02-write-review-diagnostics.test",
+      "command": [
+        "node",
+        "tests\\v02-write-review-diagnostics.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "preflight-script",
+      "command": [
+        "node",
+        "tests/preflight-script.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "workflow-logic",
+      "command": [
+        "node",
+        "tests/workflow-logic.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "preflight-claim-integration",
+      "command": [
+        "node",
+        "tests/preflight-claim-integration.test.mjs"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "python-tests",
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_*.py"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "python-example",
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/text-stats",
+        "-p",
+        "test_*.py"
+      ],
+      "exit": 0
+    }
+  ],
+  "extraChecks": [
+    {
+      "name": "original-baseline-pinned",
+      "ok": true,
+      "detail": "c71dbc95edd57082756719b1eec572996f325305"
+    },
+    {
+      "name": "original-six-case-reproduction",
+      "ok": true,
+      "detail": {
+        "exit": 1,
+        "failures": 4
+      }
+    },
+    {
+      "name": "fixed-six-case-reproduction",
+      "ok": true,
+      "detail": {
+        "exit": 0,
+        "failures": 0
+      }
+    },
+    {
+      "name": "synthetic-cli-inputs",
+      "ok": true,
+      "detail": "existing DSH package, no host or model"
+    },
+    {
+      "name": "cli-negative",
+      "ok": true,
+      "detail": {
+        "exit": 2,
+        "status": "INCOMPLETE",
+        "verdict": "partial"
+      }
+    },
+    {
+      "name": "cli-locators",
+      "ok": true,
+      "detail": {
+        "code": "IMPLEMENTATION_WRITE_REVIEW_UNPROVEN",
+        "callId": "c17",
+        "writeIndex": 35,
+        "taskId": "t3",
+        "attemptId": "a-t3",
+        "sessionId": "worker",
+        "path": "src/extra.mjs",
+        "taskKind": "repair",
+        "taskStatus": "in_progress"
+      }
+    },
+    {
+      "name": "cli-positive",
+      "ok": true,
+      "detail": {
+        "exit": 0,
+        "status": "COMPLETE",
+        "verdict": "synthetic-closed"
+      }
+    },
+    {
+      "name": "mutation-remove-write-audit",
+      "ok": true,
+      "detail": {
+        "syntaxExit": 0,
+        "testExit": 1
+      }
+    },
+    {
+      "name": "mutation-remove-call-locator",
+      "ok": true,
+      "detail": {
+        "syntaxExit": 0,
+        "testExit": 1
+      }
+    },
+    {
+      "name": "mutation-only-latest-write",
+      "ok": true,
+      "detail": {
+        "syntaxExit": 0,
+        "testExit": 1
+      }
+    },
+    {
+      "name": "source-unchanged-by-self-check",
+      "ok": true,
+      "detail": "5cb2b4fee70ccaffb1e8261ba1df96198b097a29acb03b021129683776269e99"
+    }
+  ],
+  "codeFiles": [
+    {
+      "path": "README.md",
+      "canonical": "git-blob",
+      "bytes": 44496,
+      "sha256": "07c7d1422cfe58b4f23c28835be1b938f1d6b07442250b6f6f94b4b89fe1576c"
+    },
+    {
+      "path": "docs/COLLECTED-EVIDENCE-v2.md",
+      "canonical": "git-blob",
+      "bytes": 7413,
+      "sha256": "5a094096dc598bb15edc2ecd63edc95185d4a4ed3b4d369c96131dadedd3aea0"
+    },
+    {
+      "path": "docs/ROADMAP.md",
+      "canonical": "git-blob",
+      "bytes": 70831,
+      "sha256": "eb1bc73640e956d723c50de03e1e0ef8ceb0029205a7c7855b0eddd01868eeaf"
+    },
+    {
+      "path": "tests/README.md",
+      "canonical": "git-blob",
+      "bytes": 45787,
+      "sha256": "459a1f2b45dbc9728fccfa994db2811a6139108d892b0b63c2963c930ef160d0"
+    },
+    {
+      "path": "tests/v02-write-review-diagnostics.test.mjs",
+      "canonical": "git-blob",
+      "bytes": 10933,
+      "sha256": "a2770f5568aeabeec7664317f726d44d0fa0de459e052b133467711cc0789473"
+    },
+    {
+      "path": "tools/collect-run-evidence.mjs",
+      "canonical": "git-blob",
+      "bytes": 28211,
+      "sha256": "5cb2b4fee70ccaffb1e8261ba1df96198b097a29acb03b021129683776269e99"
+    }
+  ],
+  "externalRegression": {
+    "sourceCommit": "356e902d4d31c3d030cc9a915c7c93815e83ba7a",
+    "scenarios": 6,
+    "failed": 0
+  },
+  "note": "This is author self-check, not independent DSH acceptance. Code file hashes are canonical Git blobs, not platform checkout bytes."
+}
