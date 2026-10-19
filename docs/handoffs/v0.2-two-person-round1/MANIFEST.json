@@ -18,7 +18,8 @@
     "All paths are repo-relative; public docs use placeholders, not local absolute paths.",
     "DSH-REVIEW.md records the independent review of 6299924; it does not change the baseline hashes of the core files listed here.",
     "DSH-ROUND2-REVIEW.md records the independent review of e3f8573 against parent 6299924; it is documentation only and does not change the baseline hashes of the core files listed here. The collector interface it discusses remains unimplemented.",
-    "DSH-ROUND3-REVIEW.md records the independent review of e3f8573..1d316c6; only this documentation entry is added. The core-file hashes above remain the original handoff baseline and were not refreshed from the review branch."
+    "DSH-ROUND3-REVIEW.md records the independent review of e3f8573..1d316c6; only this documentation entry is added. The core-file hashes above remain the original handoff baseline and were not refreshed from the review branch.",
+    "DSH-ROUND4-REVIEW.md records the independent review of 1d316c6..c71dbc9; only this documentation entry is added. The original core-file hashes above remain frozen and were not refreshed from the review branch."
   ],
   "files": [
     {
@@ -152,6 +153,12 @@
       "bytes": 11182,
       "sha256": "dcc257e825ea50b156a3021d18cf79f5fcdd268dd3b7a1140fbd0bb5b602768e",
       "blob": "aee4c30759690b1f1f125d71198f43756bf6ada4"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/DSH-ROUND4-REVIEW.md",
+      "bytes": 9143,
+      "sha256": "b9633903a0c8b899b24efbbe7fea6a50277ad0e0af979dcec12583329b10d6d9",
+      "blob": "cfe56fa99ac0d40366e843bec9c79d6b3ef746ad"
     }
   ]
 }
