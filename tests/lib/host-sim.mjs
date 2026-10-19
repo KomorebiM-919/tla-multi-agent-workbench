@@ -146,7 +146,10 @@ export function runRehearsal({ policy, maxRequests = 80, options = {} }) {
   // ---- 工具执行 -----------------------------------------------------------
 
   function toolRead(session, input) {
-    const path = normalizePath(input.path);
+    if (typeof input.file_path !== 'string') {
+      return { isError: true, text: 'Error: invalid arguments: missing required property "file_path"' };
+    }
+    const path = normalizePath(input.file_path);
     const absolute = join(root, path);
     if (!existsSync(absolute)) {
       return { isError: true, text: 'Error: no such file: ' + path };
@@ -158,7 +161,10 @@ export function runRehearsal({ policy, maxRequests = 80, options = {} }) {
   }
 
   function toolWrite(session, input) {
-    const path = normalizePath(input.path);
+    if (typeof input.file_path !== 'string') {
+      return { isError: true, text: 'Error: invalid arguments: missing required property "file_path"' };
+    }
+    const path = normalizePath(input.file_path);
     if (!session.observed.has(path)) {
       return {
         isError: true,
@@ -180,6 +186,9 @@ export function runRehearsal({ policy, maxRequests = 80, options = {} }) {
   }
 
   function toolPwsh(input) {
+    if (typeof input.description !== 'string' || input.description.trim() === '') {
+      return { isError: true, text: 'Error: invalid arguments: missing required property "description"' };
+    }
     const command = String(input.command ?? '').trim();
     if (command !== 'node test/sum.test.mjs') {
       return { isError: true, text: 'Error: the fixture only allows "node test/sum.test.mjs", got: ' + command };
@@ -222,7 +231,16 @@ export function runRehearsal({ policy, maxRequests = 80, options = {} }) {
     const taskId = String(input.task_id ?? '');
     const task = world.team.tasks.get(taskId);
     if (task === undefined) return { isError: true, text: 'Error: no task "' + taskId + '"' };
-    if (task.attemptId !== null && task.attemptId !== session.attemptId) {
+    // 0.1.25 不再按会话隐式认领：带状态的更新必须回传当前 attempt_id。
+    // 这里复刻它的拒绝文本，避免夹具在缺少参数时被当成"更新成功"。
+    const attemptId = input.attempt_id === undefined ? null : String(input.attempt_id);
+    if (attemptId === null) {
+      return {
+        isError: true,
+        text: 'Error: missing attempt_id for task ' + taskId + '. Retry this update with attempt_id="' + String(session.attemptId) + '" from your current assignment. This is a missing parameter, not a revoked attempt; do not restart the work or request reassignment.'
+      };
+    }
+    if (task.attemptId !== null && (attemptId !== task.attemptId || task.attemptId !== session.attemptId)) {
       return { isError: true, text: 'Error: task "' + taskId + '" is claimed by another attempt' };
     }
     const status = String(input.status ?? '');

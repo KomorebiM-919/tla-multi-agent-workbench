@@ -213,7 +213,9 @@ function factsOf(parsed, identity) {
     fileOutcome: null,
     filePath: null,
     promptTaskId: null,
-    currentAttemptId: null,
+    // 当前 assignment 的 attempt_id：从会话里最近一次 claim 结果来，后续的
+    // update_task 必须回传它（0.1.25 不再按会话隐式认领）。
+    currentAttemptId: identity === null ? null : identity.attemptId,
     // 最近一次工具结果的原文：规则用它把真实测试输出贴进报告，避免手抄数字。
     lastToolText: null,
   };

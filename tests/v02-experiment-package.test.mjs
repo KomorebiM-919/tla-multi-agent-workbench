@@ -140,7 +140,7 @@ check(SHAS.includes('509067753c29af2d37c794acb0a89fc850e9e2ff'), 'the frozen fix
 
 // 4. Preconditions the run depends on are stated, not implied.
 const PRE = [
-  ['defect hash', /3C1B1584AD85CEB46CB65251A19ABF93435A973B4C19CEA72BC57094195460/u],
+  ['defect hash', /3C1B1584AD85CE60B46CB65251A19ABF93435A973B4C19CEA72BC57094195460/u],
   ['red test command', /node test\/sum\.test\.mjs/u],
   ['expected fixed behaviour', /修复版|fixed revision|转绿/u],
   ['fresh team directory', /团队状态目录|teams/u],

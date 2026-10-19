@@ -110,6 +110,34 @@ check(budget.required <= REQUEST_CEILING, 'the widest path stays under 40 reques
 check(budget.runs.shortest.requests === 31 && budget.runs.conservative.requests === 35, 'budget reports the measured paths', JSON.stringify(budget.runs));
 check(Object.values(budget.runs).every((item) => item.polls === 0), 'no path relies on polling', JSON.stringify(budget.runs));
 
+// ---- 8. 策略里的工具参数必须符合真实宿主的 schema -------------------------
+//
+// 这份 schema 是第一次真实运行（exp-mvetu4cl-b631b01f）里宿主自己发来的工具清单，
+// 不是手抄。0.2.1-rc.2 的 read/write 要 `file_path`、pwsh 要 `description`，
+// 0.1.25 的 update_task 还要求回传 attempt_id——旧策略在这三处都会立刻失败。
+
+const TOOL_SCHEMAS = JSON.parse(readFileSync(join(HERE, 'fixtures', 'host-tool-schemas.dsh-0.2.1-rc.2.json'), 'utf8')).tools;
+const policyCalls = [];
+for (const rule of POLICY.rules) {
+  for (const call of (rule.reply && rule.reply.toolCalls) || []) policyCalls.push({ rule: rule.name, call });
+}
+check(policyCalls.length > 0, 'the policy actually calls tools', String(policyCalls.length));
+check(policyCalls.every(({ call }) => TOOL_SCHEMAS[call.name] !== undefined), 'every policy tool name exists in the host tool list', JSON.stringify(policyCalls.filter(({ call }) => TOOL_SCHEMAS[call.name] === undefined).map(({ call }) => call.name)));
+const unknownCalls = policyCalls.filter(({ call }) => {
+  const schema = TOOL_SCHEMAS[call.name];
+  if (schema === undefined) return false;
+  return Object.keys(call.input ?? {}).some((key) => !schema.properties.includes(key));
+});
+check(unknownCalls.length === 0, 'no policy tool argument is unknown to the host', JSON.stringify(unknownCalls.map(({ rule, call }) => rule + ':' + call.name + ':' + JSON.stringify(Object.keys(call.input ?? {})))));
+const missingCalls = policyCalls.filter(({ call }) => {
+  const schema = TOOL_SCHEMAS[call.name];
+  if (schema === undefined) return false;
+  return schema.required.some((key) => call.input === undefined || call.input[key] === undefined);
+});
+check(missingCalls.length === 0, 'every required host argument is present', JSON.stringify(missingCalls.map(({ rule, call }) => rule + ':' + call.name)));
+check(policyCalls.filter(({ call }) => call.name === 'agent_teams_update_task' && call.input.status !== undefined).every(({ call }) => call.input.attempt_id !== undefined), 'every status update carries the current attempt_id');
+check(policyCalls.filter(({ call }) => call.name === 'pwsh').every(({ call }) => typeof call.input.description === 'string' && call.input.description !== ''), 'every shell call carries a description');
+
 // ---- 报告 ----------------------------------------------------------------
 
 if (failures.length > 0) {

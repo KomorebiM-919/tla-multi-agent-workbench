@@ -1,0 +1,398 @@
+{
+  "schema": "tla.host-tool-schemas/v1",
+  "hostVersion": "0.2.1-rc.2",
+  "capturedFrom": "the tool list of the host own /v1/messages request during experiment exp-mvetu4cl-b631b01f (2026-10-19)",
+  "tools": {
+    "agent_teams_add_member": {
+      "required": [
+        "name"
+      ],
+      "properties": [
+        "name",
+        "role",
+        "provider",
+        "model",
+        "reasoning_effort",
+        "executionPrompt",
+        "tool_policy"
+      ]
+    },
+    "agent_teams_amend_task": {
+      "required": [
+        "task_id",
+        "reason"
+      ],
+      "properties": [
+        "task_id",
+        "reason",
+        "objective",
+        "acceptance",
+        "verify",
+        "inScope",
+        "outOfScope"
+      ]
+    },
+    "agent_teams_approve": {
+      "required": [
+        "confirmation"
+      ],
+      "properties": [
+        "confirmation"
+      ]
+    },
+    "agent_teams_claim_task": {
+      "required": [
+        "task_id"
+      ],
+      "properties": [
+        "task_id",
+        "assignee"
+      ]
+    },
+    "agent_teams_create": {
+      "required": [
+        "name"
+      ],
+      "properties": [
+        "name",
+        "description",
+        "profile",
+        "plan",
+        "approval"
+      ]
+    },
+    "agent_teams_create_task": {
+      "required": [
+        "subject"
+      ],
+      "properties": [
+        "subject",
+        "description",
+        "dependencies",
+        "assignee",
+        "kind",
+        "round",
+        "objective",
+        "inScope",
+        "outOfScope",
+        "acceptance",
+        "verify",
+        "deliverables",
+        "nonGoals",
+        "reviewedTaskId",
+        "sourceTaskId",
+        "sourceFindingIds",
+        "coverageOf",
+        "resume",
+        "resumeReason"
+      ]
+    },
+    "agent_teams_delete": {
+      "required": [],
+      "properties": []
+    },
+    "agent_teams_edit_plan": {
+      "required": [
+        "operations"
+      ],
+      "properties": [
+        "operations"
+      ]
+    },
+    "agent_teams_reassign_task": {
+      "required": [
+        "task_id",
+        "assignee"
+      ],
+      "properties": [
+        "task_id",
+        "assignee",
+        "reason"
+      ]
+    },
+    "agent_teams_remove_member": {
+      "required": [
+        "name"
+      ],
+      "properties": [
+        "name"
+      ]
+    },
+    "agent_teams_resume": {
+      "required": [
+        "reason"
+      ],
+      "properties": [
+        "reason"
+      ]
+    },
+    "agent_teams_send_message": {
+      "required": [
+        "to",
+        "content"
+      ],
+      "properties": [
+        "source_task_id",
+        "source_attempt_id",
+        "to",
+        "content",
+        "from"
+      ]
+    },
+    "agent_teams_status": {
+      "required": [],
+      "properties": []
+    },
+    "agent_teams_update_task": {
+      "required": [
+        "task_id"
+      ],
+      "properties": [
+        "task_id",
+        "attempt_id",
+        "status",
+        "output",
+        "evidence_note",
+        "verdict",
+        "findings",
+        "changedPaths",
+        "acceptanceResults",
+        "commandsRun"
+      ]
+    },
+    "create_goal": {
+      "required": [
+        "objective"
+      ],
+      "properties": [
+        "objective",
+        "max_goal_rounds"
+      ]
+    },
+    "edit": {
+      "required": [
+        "file_path",
+        "old_string",
+        "new_string"
+      ],
+      "properties": [
+        "file_path",
+        "old_string",
+        "new_string",
+        "replace_all",
+        "sandbox_permissions",
+        "justification"
+      ]
+    },
+    "exit_plan_mode": {
+      "required": [
+        "plan"
+      ],
+      "properties": [
+        "plan"
+      ]
+    },
+    "get_goal": {
+      "required": [],
+      "properties": []
+    },
+    "glob": {
+      "required": [
+        "pattern"
+      ],
+      "properties": [
+        "pattern",
+        "path"
+      ]
+    },
+    "grep": {
+      "required": [
+        "pattern"
+      ],
+      "properties": [
+        "pattern",
+        "path",
+        "include"
+      ]
+    },
+    "interrupt_agent": {
+      "required": [
+        "agent_id"
+      ],
+      "properties": [
+        "agent_id"
+      ]
+    },
+    "job_kill": {
+      "required": [
+        "job_id"
+      ],
+      "properties": [
+        "job_id",
+        "reason"
+      ]
+    },
+    "job_list": {
+      "required": [],
+      "properties": []
+    },
+    "job_output": {
+      "required": [
+        "job_id"
+      ],
+      "properties": [
+        "job_id",
+        "wait",
+        "timeout_ms"
+      ]
+    },
+    "list_agents": {
+      "required": [],
+      "properties": [
+        "scope"
+      ]
+    },
+    "pwsh": {
+      "required": [
+        "description",
+        "command"
+      ],
+      "properties": [
+        "description",
+        "command",
+        "timeoutMs",
+        "workdir",
+        "run_in_background",
+        "sandbox_permissions",
+        "justification"
+      ]
+    },
+    "read": {
+      "required": [
+        "file_path"
+      ],
+      "properties": [
+        "file_path",
+        "offset",
+        "limit"
+      ]
+    },
+    "read_image": {
+      "required": [
+        "file_path"
+      ],
+      "properties": [
+        "file_path"
+      ]
+    },
+    "send_message": {
+      "required": [
+        "agent_id",
+        "message"
+      ],
+      "properties": [
+        "agent_id",
+        "message"
+      ]
+    },
+    "skill": {
+      "required": [
+        "name"
+      ],
+      "properties": [
+        "name"
+      ]
+    },
+    "subagent": {
+      "required": [
+        "description",
+        "prompt"
+      ],
+      "properties": [
+        "cwd",
+        "description",
+        "prompt"
+      ]
+    },
+    "subagent_fork": {
+      "required": [
+        "description",
+        "prompt"
+      ],
+      "properties": [
+        "cwd",
+        "description",
+        "prompt"
+      ]
+    },
+    "todo_write": {
+      "required": [
+        "todos"
+      ],
+      "properties": [
+        "todos"
+      ]
+    },
+    "update_goal": {
+      "required": [
+        "goal_id",
+        "revision",
+        "action"
+      ],
+      "properties": [
+        "goal_id",
+        "revision",
+        "action",
+        "objective",
+        "max_goal_rounds",
+        "blocked_reason"
+      ]
+    },
+    "web_fetch": {
+      "required": [
+        "url"
+      ],
+      "properties": [
+        "url"
+      ]
+    },
+    "web_search": {
+      "required": [
+        "queries"
+      ],
+      "properties": [
+        "queries"
+      ]
+    },
+    "workflow": {
+      "required": [
+        "script",
+        "meta"
+      ],
+      "properties": [
+        "script",
+        "meta",
+        "args",
+        "run_in_background"
+      ]
+    },
+    "working_directory": {
+      "required": [],
+      "properties": [
+        "cd"
+      ]
+    },
+    "write": {
+      "required": [
+        "file_path",
+        "content"
+      ],
+      "properties": [
+        "file_path",
+        "content",
+        "sandbox_permissions",
+        "justification"
+      ]
+    }
+  }
+}

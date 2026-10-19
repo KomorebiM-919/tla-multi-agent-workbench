@@ -137,16 +137,17 @@ try {
     })), 'NO_PROGRESS', 'a success-looking text with is_error=true cannot advance the state machine');
   }
 
-  // 3. 历史里的旧 attempt 不能被当成当前 attempt。
+  // 3. 当前 attempt 来自会话里最近一次 claim：0.1.25 的 update_task 要求回传它，
+  //    所以它不能只在“本轮刚好调了 claim”时才可用。
   {
     const model = createReactiveModel(POLICY);
     const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const decision = replay(model, [CLAIM_TURN('t1', id), IN_PROGRESS_TURN('t1'), READ_OK_TURN()]);
     check(decision.rule === 'worker-writes-after-read', 'the read step advanced the machine', decision.rule);
-    check(decision.facts.currentAttemptId === null, 'currentAttemptId stays null when this turn has no claim result');
+    check(decision.facts.currentAttemptId === id, 'the current attempt is inherited from the session claim', String(decision.facts.currentAttemptId));
     check(decision.facts.claimAttemptId === id, 'the session identity still knows the claimed attempt');
 
-    // 只认"本轮"的规则：模板变量 currentAttemptId 没有值时必须报错，不能借用历史。
+    // 没有任何 claim 的会话里，模板变量没有值时必须报错，不能凭空编一个。
     const strict = createReactiveModel({
       schema: REACTIVE_SCHEMA,
       rules: [{
@@ -158,8 +159,7 @@ try {
         reply: { text: 'attempt {{currentAttemptId}}' },
       }],
     });
-    // 手工把状态推到 read：先用同一条规则前的空状态不行，所以直接构造一个新模型并在同一轮里只放 read。
-    expectError(() => strict.decide(body({ turns: [READ_OK_TURN()] })), 'TEMPLATE_UNRESOLVED', 'a rule that needs the current attempt cannot borrow a stale one from history');
+    expectError(() => strict.decide(body({ turns: [READ_OK_TURN()] })), 'TEMPLATE_UNRESOLVED', 'a rule that needs the current attempt cannot invent one when the session never claimed');
   }
 
   // 4. 一条消息里多个 tool_result：按 tool_use_id 各归其位。

@@ -10,7 +10,9 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "noToolResult": true },
+      "match": {
+        "noToolResult": true
+      },
       "reply": {
         "toolCalls": [
           {
@@ -21,8 +23,14 @@
               "approval": "automatic",
               "plan": {
                 "members": [
-                  { "name": "worker", "role": "engineer" },
-                  { "name": "reviewer", "role": "reviewer" }
+                  {
+                    "name": "worker",
+                    "role": "engineer"
+                  },
+                  {
+                    "name": "reviewer",
+                    "role": "reviewer"
+                  }
                 ],
                 "tasks": [
                   {
@@ -45,8 +53,13 @@
       "state": "dispatched",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_create", "isError": false },
-      "reply": { "text": "Team is dispatched. I end this turn and wait for a report." }
+      "match": {
+        "tool": "agent_teams_create",
+        "isError": false
+      },
+      "reply": {
+        "text": "Team is dispatched. I end this turn and wait for a report."
+      }
     },
     {
       "name": "captain-idle-while-work",
@@ -54,8 +67,12 @@
       "state": "dispatched",
       "kind": "idle-wait",
       "maxUses": 12,
-      "match": { "wakeKind": "settlement" },
-      "reply": { "text": "Nothing to do yet: the implementation is still running. Ending this turn." }
+      "match": {
+        "wakeKind": "settlement"
+      },
+      "reply": {
+        "text": "Nothing to do yet: the implementation is still running. Ending this turn."
+      }
     },
     {
       "name": "captain-dispatches-review",
@@ -63,7 +80,10 @@
       "state": "dispatched",
       "kind": "action",
       "maxUses": 1,
-      "match": { "wakeKind": "mailbox", "textMatches": "message from member worker[\\s\\S]*status=completed" },
+      "match": {
+        "wakeKind": "mailbox",
+        "textMatches": "message from member worker[\\s\\S]*status=completed"
+      },
       "reply": {
         "toolCalls": [
           {
@@ -84,8 +104,13 @@
       "state": "reviewing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_create_task", "isError": false },
-      "reply": { "text": "Review task is queued. Ending this turn." }
+      "match": {
+        "tool": "agent_teams_create_task",
+        "isError": false
+      },
+      "reply": {
+        "text": "Review task is queued. Ending this turn."
+      }
     },
     {
       "name": "captain-idle-while-review",
@@ -93,8 +118,12 @@
       "state": "reviewing",
       "kind": "idle-wait",
       "maxUses": 12,
-      "match": { "wakeKind": "settlement" },
-      "reply": { "text": "The review is still running. Ending this turn." }
+      "match": {
+        "wakeKind": "settlement"
+      },
+      "reply": {
+        "text": "The review is still running. Ending this turn."
+      }
     },
     {
       "name": "captain-dispatches-repair",
@@ -102,7 +131,10 @@
       "state": "reviewing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "wakeKind": "mailbox", "textMatches": "message from member reviewer[\\s\\S]*REJECTED" },
+      "match": {
+        "wakeKind": "mailbox",
+        "textMatches": "message from member reviewer[\\s\\S]*REJECTED"
+      },
       "reply": {
         "toolCalls": [
           {
@@ -123,8 +155,13 @@
       "state": "repairing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_create_task", "isError": false },
-      "reply": { "text": "Repair task is queued. Ending this turn." }
+      "match": {
+        "tool": "agent_teams_create_task",
+        "isError": false
+      },
+      "reply": {
+        "text": "Repair task is queued. Ending this turn."
+      }
     },
     {
       "name": "captain-idle-while-repair",
@@ -132,8 +169,12 @@
       "state": "repairing",
       "kind": "idle-wait",
       "maxUses": 12,
-      "match": { "wakeKind": "settlement" },
-      "reply": { "text": "The repair is still running. Ending this turn." }
+      "match": {
+        "wakeKind": "settlement"
+      },
+      "reply": {
+        "text": "The repair is still running. Ending this turn."
+      }
     },
     {
       "name": "captain-dispatches-rereview",
@@ -141,7 +182,10 @@
       "state": "repairing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "wakeKind": "mailbox", "textMatches": "message from member worker[\\s\\S]*status=completed" },
+      "match": {
+        "wakeKind": "mailbox",
+        "textMatches": "message from member worker[\\s\\S]*status=completed"
+      },
       "reply": {
         "toolCalls": [
           {
@@ -162,8 +206,13 @@
       "state": "rereviewing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_create_task", "isError": false },
-      "reply": { "text": "Re-review task is queued. Ending this turn." }
+      "match": {
+        "tool": "agent_teams_create_task",
+        "isError": false
+      },
+      "reply": {
+        "text": "Re-review task is queued. Ending this turn."
+      }
     },
     {
       "name": "captain-idle-while-rereview",
@@ -171,8 +220,12 @@
       "state": "rereviewing",
       "kind": "idle-wait",
       "maxUses": 12,
-      "match": { "wakeKind": "settlement" },
-      "reply": { "text": "The re-review is still running. Ending this turn." }
+      "match": {
+        "wakeKind": "settlement"
+      },
+      "reply": {
+        "text": "The re-review is still running. Ending this turn."
+      }
     },
     {
       "name": "captain-closes-the-loop",
@@ -180,20 +233,34 @@
       "state": "rereviewing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "wakeKind": "mailbox", "textMatches": "message from member reviewer[\\s\\S]*PASSED" },
-      "reply": { "text": "The review passed. The task is complete and no repair is needed." },
+      "match": {
+        "wakeKind": "mailbox",
+        "textMatches": "message from member reviewer[\\s\\S]*PASSED"
+      },
+      "reply": {
+        "text": "The review passed. The task is complete and no repair is needed."
+      },
       "next": "closed"
     },
-
     {
       "name": "worker-claims-t1",
       "role": "worker",
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "noToolResult": true, "promptTaskId": "t1" },
+      "match": {
+        "noToolResult": true,
+        "promptTaskId": "t1"
+      },
       "reply": {
-        "toolCalls": [{ "name": "agent_teams_claim_task", "input": { "task_id": "{{promptTaskId}}" } }]
+        "toolCalls": [
+          {
+            "name": "agent_teams_claim_task",
+            "input": {
+              "task_id": "{{promptTaskId}}"
+            }
+          }
+        ]
       }
     },
     {
@@ -202,9 +269,19 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "noToolResult": true, "promptTaskId": "t3" },
+      "match": {
+        "noToolResult": true,
+        "promptTaskId": "t3"
+      },
       "reply": {
-        "toolCalls": [{ "name": "agent_teams_claim_task", "input": { "task_id": "{{promptTaskId}}" } }]
+        "toolCalls": [
+          {
+            "name": "agent_teams_claim_task",
+            "input": {
+              "task_id": "{{promptTaskId}}"
+            }
+          }
+        ]
       }
     },
     {
@@ -213,14 +290,28 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_claim_task", "isError": false, "claimTaskId": "t1" },
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": false,
+        "claimTaskId": "t1"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t1", "status": "in_progress", "output": "Reading src/sum.mjs before editing it." }
+            "input": {
+              "task_id": "t1",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "in_progress",
+              "output": "Reading src/sum.mjs before editing it."
+            }
           },
-          { "name": "read", "input": { "path": "src/sum.mjs" } }
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
         ]
       },
       "next": "implementing"
@@ -231,12 +322,18 @@
       "state": "implementing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "read", "isError": false },
+      "match": {
+        "tool": "read",
+        "isError": false
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "write",
-            "input": { "path": "src/sum.mjs", "content": "export function sum(values) {\n  return values.reduce((total, value) => total + Math.abs(value), 0);\n}\n" }
+            "input": {
+              "content": "export function sum(values) {\n  return values.reduce((total, value) => total + Math.abs(value), 0);\n}\n",
+              "file_path": "src/sum.mjs"
+            }
           }
         ]
       },
@@ -248,9 +345,20 @@
       "state": "implemented",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "write", "isError": false },
+      "match": {
+        "tool": "write",
+        "isError": false
+      },
       "reply": {
-        "toolCalls": [{ "name": "pwsh", "input": { "command": "node test/sum.test.mjs" } }]
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "description": "Run the sum test suite",
+              "command": "node test/sum.test.mjs"
+            }
+          }
+        ]
       },
       "next": "tested"
     },
@@ -260,12 +368,20 @@
       "state": "tested",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh", "resultNotMatches": "0 failed" },
+      "match": {
+        "tool": "pwsh",
+        "resultNotMatches": "0 failed"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t1", "status": "completed", "output": "Implemented sum() in src/sum.mjs but the suite is still red:\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t1",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "Implemented sum() in src/sum.mjs but the suite is still red:\n{{lastToolText}}"
+            }
           }
         ]
       },
@@ -277,12 +393,20 @@
       "state": "tested",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh", "resultMatches": "0 failed" },
+      "match": {
+        "tool": "pwsh",
+        "resultMatches": "0 failed"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t1", "status": "completed", "output": "Implemented sum() in src/sum.mjs and the suite is green:\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t1",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "Implemented sum() in src/sum.mjs and the suite is green:\n{{lastToolText}}"
+            }
           }
         ]
       },
@@ -294,8 +418,13 @@
       "state": "reported",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_update_task", "isError": false },
-      "reply": { "text": "Task reported. Ending this turn." }
+      "match": {
+        "tool": "agent_teams_update_task",
+        "isError": false
+      },
+      "reply": {
+        "text": "Task reported. Ending this turn."
+      }
     },
     {
       "name": "worker-starts-t3",
@@ -303,14 +432,28 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_claim_task", "isError": false, "claimTaskId": "t3" },
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": false,
+        "claimTaskId": "t3"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t3", "status": "in_progress", "output": "Reading src/sum.mjs again before repairing it." }
+            "input": {
+              "task_id": "t3",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "in_progress",
+              "output": "Reading src/sum.mjs again before repairing it."
+            }
           },
-          { "name": "read", "input": { "path": "src/sum.mjs" } }
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
         ]
       },
       "next": "repairing"
@@ -321,12 +464,18 @@
       "state": "repairing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "read", "isError": false },
+      "match": {
+        "tool": "read",
+        "isError": false
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "write",
-            "input": { "path": "src/sum.mjs", "content": "export function sum(values) {\n  return values.reduce((total, value) => total + value, 0);\n}\n" }
+            "input": {
+              "content": "export function sum(values) {\n  return values.reduce((total, value) => total + value, 0);\n}\n",
+              "file_path": "src/sum.mjs"
+            }
           }
         ]
       },
@@ -338,9 +487,20 @@
       "state": "repaired",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "write", "isError": false },
+      "match": {
+        "tool": "write",
+        "isError": false
+      },
       "reply": {
-        "toolCalls": [{ "name": "pwsh", "input": { "command": "node test/sum.test.mjs" } }]
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "description": "Run the sum test suite",
+              "command": "node test/sum.test.mjs"
+            }
+          }
+        ]
       },
       "next": "retested"
     },
@@ -350,27 +510,43 @@
       "state": "retested",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh" },
+      "match": {
+        "tool": "pwsh"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t3", "status": "completed", "output": "Repaired src/sum.mjs.\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t3",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "Repaired src/sum.mjs.\n{{lastToolText}}"
+            }
           }
         ]
       },
       "next": "reported"
     },
-
     {
       "name": "reviewer-claims-t2",
       "role": "reviewer",
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "noToolResult": true, "promptTaskId": "t2" },
+      "match": {
+        "noToolResult": true,
+        "promptTaskId": "t2"
+      },
       "reply": {
-        "toolCalls": [{ "name": "agent_teams_claim_task", "input": { "task_id": "{{promptTaskId}}" } }]
+        "toolCalls": [
+          {
+            "name": "agent_teams_claim_task",
+            "input": {
+              "task_id": "{{promptTaskId}}"
+            }
+          }
+        ]
       }
     },
     {
@@ -379,9 +555,19 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "noToolResult": true, "promptTaskId": "t4" },
+      "match": {
+        "noToolResult": true,
+        "promptTaskId": "t4"
+      },
       "reply": {
-        "toolCalls": [{ "name": "agent_teams_claim_task", "input": { "task_id": "{{promptTaskId}}" } }]
+        "toolCalls": [
+          {
+            "name": "agent_teams_claim_task",
+            "input": {
+              "task_id": "{{promptTaskId}}"
+            }
+          }
+        ]
       }
     },
     {
@@ -390,14 +576,28 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_claim_task", "isError": false, "claimTaskId": "t2" },
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": false,
+        "claimTaskId": "t2"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t2", "status": "in_progress", "output": "Reading the implementation before judging it." }
+            "input": {
+              "task_id": "t2",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "in_progress",
+              "output": "Reading the implementation before judging it."
+            }
           },
-          { "name": "read", "input": { "path": "src/sum.mjs" } }
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
         ]
       },
       "next": "reviewing"
@@ -408,9 +608,21 @@
       "state": "reviewing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "read", "isError": false, "claimTaskId": "t2" },
+      "match": {
+        "tool": "read",
+        "isError": false,
+        "claimTaskId": "t2"
+      },
       "reply": {
-        "toolCalls": [{ "name": "pwsh", "input": { "command": "node test/sum.test.mjs" } }]
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "description": "Run the sum test suite",
+              "command": "node test/sum.test.mjs"
+            }
+          }
+        ]
       },
       "next": "reviewed"
     },
@@ -420,12 +632,21 @@
       "state": "reviewed",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh", "resultNotMatches": "0 failed", "claimTaskId": "t2" },
+      "match": {
+        "tool": "pwsh",
+        "resultNotMatches": "0 failed",
+        "claimTaskId": "t2"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t2", "status": "completed", "output": "REJECTED: the suite still fails, so src/sum.mjs does not satisfy the test contract.\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t2",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "REJECTED: the suite still fails, so src/sum.mjs does not satisfy the test contract.\n{{lastToolText}}"
+            }
           }
         ]
       },
@@ -437,12 +658,21 @@
       "state": "reviewed",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh", "resultMatches": "0 failed", "claimTaskId": "t2" },
+      "match": {
+        "tool": "pwsh",
+        "resultMatches": "0 failed",
+        "claimTaskId": "t2"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t2", "status": "completed", "output": "PASSED: every case in test/sum.test.mjs passes.\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t2",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "PASSED: every case in test/sum.test.mjs passes.\n{{lastToolText}}"
+            }
           }
         ]
       },
@@ -454,14 +684,28 @@
       "state": "new",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "agent_teams_claim_task", "isError": false, "claimTaskId": "t4" },
+      "match": {
+        "tool": "agent_teams_claim_task",
+        "isError": false,
+        "claimTaskId": "t4"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t4", "status": "in_progress", "output": "Reading the repaired implementation." }
+            "input": {
+              "task_id": "t4",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "in_progress",
+              "output": "Reading the repaired implementation."
+            }
           },
-          { "name": "read", "input": { "path": "src/sum.mjs" } }
+          {
+            "name": "read",
+            "input": {
+              "file_path": "src/sum.mjs"
+            }
+          }
         ]
       },
       "next": "rereviewing"
@@ -472,9 +716,20 @@
       "state": "rereviewing",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "read", "isError": false },
+      "match": {
+        "tool": "read",
+        "isError": false
+      },
       "reply": {
-        "toolCalls": [{ "name": "pwsh", "input": { "command": "node test/sum.test.mjs" } }]
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "description": "Run the sum test suite",
+              "command": "node test/sum.test.mjs"
+            }
+          }
+        ]
       },
       "next": "rereviewed"
     },
@@ -484,12 +739,20 @@
       "state": "rereviewed",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh", "resultMatches": "0 failed" },
+      "match": {
+        "tool": "pwsh",
+        "resultMatches": "0 failed"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t4", "status": "completed", "output": "PASSED: the repair fixed the failing case and the suite is green.\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t4",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "PASSED: the repair fixed the failing case and the suite is green.\n{{lastToolText}}"
+            }
           }
         ]
       },
@@ -501,12 +764,20 @@
       "state": "rereviewed",
       "kind": "action",
       "maxUses": 1,
-      "match": { "tool": "pwsh", "resultNotMatches": "0 failed" },
+      "match": {
+        "tool": "pwsh",
+        "resultNotMatches": "0 failed"
+      },
       "reply": {
         "toolCalls": [
           {
             "name": "agent_teams_update_task",
-            "input": { "task_id": "t4", "status": "completed", "output": "REJECTED: the repair did not fix the failing case.\n{{lastToolText}}" }
+            "input": {
+              "task_id": "t4",
+              "attempt_id": "{{currentAttemptId}}",
+              "status": "completed",
+              "output": "REJECTED: the repair did not fix the failing case.\n{{lastToolText}}"
+            }
           }
         ]
       },
@@ -514,4 +785,3 @@
     }
   ]
 }
-
