@@ -1,0 +1,136 @@
+{
+  "schema": "tla.handoff-manifest/v1",
+  "handoff": "v0.2-two-person-round1",
+  "createdAt": "2026-10-19T16:02:24+08:00",
+  "codeBaseline": "943901ed9ee1b21e74c44f1fd1bfc7628a284d2e",
+  "branch": "feat/v0.2-component-reuse",
+  "remote": {
+    "ref": "refs/heads/feat/v0.2-component-reuse",
+    "sha": "943901ed9ee1b21e74c44f1fd1bfc7628a284d2e",
+    "verifiedBy": "public GitHub API, object.type=commit"
+  },
+  "worktreePlaceholder": "<repo>\\..\\workspaces\\v0.2-component-reuse",
+  "packageRoot": "docs/handoffs/v0.2-two-person-round1",
+  "notes": [
+    "Code baseline is 943901e; this handoff package commit only adds documentation.",
+    "The round13 spec generated at 9037a22 is stale at this baseline and must not be launched.",
+    "No host, fake upstream, model request, ACL change or profile change was made for this handoff.",
+    "All paths are repo-relative; public docs use placeholders, not local absolute paths."
+  ],
+  "files": [
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/README.md",
+      "bytes": 14788,
+      "sha256": "b4dc094318408fdde609e7feccde9168c377638512f5efb583b5c79e740b1c23",
+      "blob": "0d6f60559d39b8310aab5eb92aae0cd31b66441e"
+    },
+    {
+      "path": "tools/experiment-runner.mjs",
+      "bytes": 45479,
+      "sha256": "f3e045f589b69c08b5da0f9e6c54bc5f64397d2b999b59a1d022486960d49dfe",
+      "blob": "b3855ba7dab29858f95ba0f1c681919ecc33d32a"
+    },
+    {
+      "path": "tools/gated-run.mjs",
+      "bytes": 41624,
+      "sha256": "feee49da9dc1f4e20eea6f0ebdb592e4961a3352257fdedccd82cd3c14b37ed9",
+      "blob": "d664f44c5b0dbf005d13aac0674d5b65e5ffbc15"
+    },
+    {
+      "path": "tools/experiment-command.mjs",
+      "bytes": 24840,
+      "sha256": "aa3cfbb9190040aa9708ed50320151e82a98ec161b65b1a473bb2740eb10af0b",
+      "blob": "44118bc8fef8fe26aab7f1a99faabc506de6d2a7"
+    },
+    {
+      "path": "orchestration/gate/preflight.mjs",
+      "bytes": 54165,
+      "sha256": "946b48b0beb5263611c3034f6774169197cc8b391739659295bcc5ee7e87dd65",
+      "blob": "34a2826daf316beccd8d40c64bedd82a062867e5"
+    },
+    {
+      "path": "orchestration/interceptor-plugin/index.js",
+      "bytes": 10362,
+      "sha256": "75c6ce4c511af13b3b86e79ae371ab4e06098ebf5719a77d64ebe21668228911",
+      "blob": "ba59f310a33141a388169eb702273f8d89c06edc"
+    },
+    {
+      "path": "orchestration/interceptor-plugin/lib/budget.mjs",
+      "bytes": 5189,
+      "sha256": "49ce3e4184999742ad29a4d673e3c111f79680f92c6e7a5281e7563b132b5716",
+      "blob": "c8f90976d6b57d13c111b266d4b3403779f0322f"
+    },
+    {
+      "path": "tools/acceptance-summary.mjs",
+      "bytes": 12471,
+      "sha256": "6cb747a7b63e80ff50182079121ab2d792506f889ec5e1803f0200620fa99752",
+      "blob": "1e7294f9d8d047ef6fd29c4966c146f22645aaa1"
+    },
+    {
+      "path": "tools/recompute-ledger.mjs",
+      "bytes": 16547,
+      "sha256": "9a4baf4d38e93a0e63591c4d6ca7854dde523e87f05a8a4076f1169eb2c13ff0",
+      "blob": "f0b5419e6cd0136b4d35b8e87a359ee53d55ae7e"
+    },
+    {
+      "path": "tools/ledger-from-run.mjs",
+      "bytes": 3315,
+      "sha256": "d4822be59034d9dbb08edc7dbf90e0e22f6e3c608bd1add29c4fcff697063e8d",
+      "blob": "2d8536b02751f82a140b294f2ea9e9675d50a08c"
+    },
+    {
+      "path": "tools/static-preflight.mjs",
+      "bytes": 6989,
+      "sha256": "8cc78be51770cf280ea2deabe9e2c0673c9ba9091a7c8aab3fed711ae678c995",
+      "blob": "4210feaa9d5676ae5b6fb1f5f3e54e05909eab06"
+    },
+    {
+      "path": "tests/lib/reactive-model.mjs",
+      "bytes": 28520,
+      "sha256": "ba34886bcb311893853ec713c3f8ef567e81c6b0c155ecae8e646cef2a84eb05",
+      "blob": "bf42887e6052053cfc209de313bf6c104b07fac9"
+    },
+    {
+      "path": "tests/fixtures/repair-loop-policy.v3.json",
+      "bytes": 19594,
+      "sha256": "874f4ddbf3c77cd465ff1a58eb7431fcfdd959383fcfb5d46c68017b2f97a921",
+      "blob": "61cb550dfd3072fb6646130788c7ecc77322c65a"
+    },
+    {
+      "path": "tests/fixtures/repair-protocol/MANIFEST.json",
+      "bytes": 3286,
+      "sha256": "fdc232c3a9259019563a27d6a4cd44a42cb05b52cf196850e8369cdbe70c3110",
+      "blob": "1783f85dd97350c01bd08fb9a76eb7e5fcb1d14a"
+    },
+    {
+      "path": "tests/fixtures/host-tool-schemas.dsh-0.2.1-rc.2.json",
+      "bytes": 6932,
+      "sha256": "63dc38c03aa2e4b4085f1b61c343dc7c6170c943d6da6b694f3cbce3894ca62e",
+      "blob": "efbbb265ced8cebfa2f0231c1b964e724f5ca59c"
+    },
+    {
+      "path": "docs/V0.2-B1-MATRIX.md",
+      "bytes": 81802,
+      "sha256": "2d8daa06148b48b355f932e1bd8bde08b88c0f560a1e83e14471754cb6e61349",
+      "blob": "76dbe9b37798c07adcf1239db2282cb3fd97e1db"
+    },
+    {
+      "path": "docs/V0.2-NEXT-EXPERIMENT.md",
+      "bytes": 29099,
+      "sha256": "525e7df6940771f179ad9b4761279abb5f0576dfdd091d819686b9af271fb55d",
+      "blob": "3f1a3d51f08142fde423fcda7b1b2a615dd660cb"
+    },
+    {
+      "path": "docs/V0.2-ROUND13-ENV-BLOCK-2026-10-19.md",
+      "bytes": 13259,
+      "sha256": "02e0ac75da60af86946a3b9e4048729a9bda7a5225941d6883570e29064fa98c",
+      "blob": "79eedf4dfda29a37bbf52621d003fa6d120c416b"
+    },
+    {
+      "path": "docs/handoffs/v0.2-2026-10-19/README.md",
+      "bytes": 17991,
+      "sha256": "1c6210c6effcfe401c79094222582979e3094739981b2fbe4c54bc7ef9b9f591",
+      "blob": "b9c0434f4bc1d7d9fdbd162ebce43866cab187a7"
+    }
+  ]
+}
