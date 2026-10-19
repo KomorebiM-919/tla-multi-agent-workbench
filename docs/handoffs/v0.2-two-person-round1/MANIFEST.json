@@ -21,6 +21,7 @@
     "DSH-ROUND3-REVIEW.md records the independent review of e3f8573..1d316c6; only this documentation entry is added. The core-file hashes above remain the original handoff baseline and were not refreshed from the review branch.",
     "DSH-ROUND4-REVIEW.md records the independent review of 1d316c6..c71dbc9; only this documentation entry is added. The original core-file hashes above remain frozen and were not refreshed from the review branch.",
     "Round 5 appends SKILLS.md, P2-REGRESSION.md, COMPATIBILITY.md and the regressions/ package. The original core-file hashes remain frozen; they were not refreshed from c71dbc9 or from the current workspace.",
+    "Round 6 appends DSH-ROUND5-REVIEW.md and updates only the SKILLS.md entry to the current skill re-read hashes; the original core-file hashes remain frozen and were not refreshed from a0b4450 or from the current workspace.",
     "Current workspace HEAD at round 5 is b6e1a47; codeBaseline above remains the original handoff baseline 943901e, and remote above records its original verification."
   ],
   "files": [
@@ -163,10 +164,16 @@
       "blob": "cfe56fa99ac0d40366e843bec9c79d6b3ef746ad"
     },
     {
+      "path": "docs/handoffs/v0.2-two-person-round1/DSH-ROUND5-REVIEW.md",
+      "bytes": 9193,
+      "sha256": "d03d9f7d481586dce16a8362d0c77830eaef8d46b7775a55d6bcf033a498b1d3",
+      "blob": "c5e37909aec11dc2261c12fa778045e31133f844"
+    },
+    {
       "path": "docs/handoffs/v0.2-two-person-round1/SKILLS.md",
-      "bytes": 2199,
-      "sha256": "40e5e8ae121da393ffae51caf8ec635ee4154e3e87555a212bdf4735e2c29d51",
-      "blob": "261be5ff7b400d78ab38104083ca9fda827d1822"
+      "bytes": 3073,
+      "sha256": "87c793c1841d20295b860fc0b9aec15106270768dd4839bab2844cafdbbb4131",
+      "blob": "7dce670863ea9fe08259336b7ab4a2a32d475548"
     },
     {
       "path": "docs/handoffs/v0.2-two-person-round1/P2-REGRESSION.md",

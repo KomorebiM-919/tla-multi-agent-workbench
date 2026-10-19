@@ -1,4 +1,4 @@
-# Skill discovery and resolution audit (round 5)
+# Skill discovery and resolution audit (rounds 5–6)
 
 Status: read-only verification. No skill was reinstalled, updated, bootstrapped or
 executed; no browser page, network request or frontend build was used. This audit
@@ -30,14 +30,30 @@ files match its recorded bytes and SHA-256:
 | skill | bytes | sha256 (prefix) |
 |---|---:|---|
 | agent-browser | 2943 | `b6a694e2...` |
-| agent-handoff | 2748 | `34b7a6a6...` |
-| find-skills | 1638 | `c4ecc44c...` |
+| agent-handoff | 3305 | `1668aabf...` |
+| find-skills | 2195 | `c8952e07...` |
 | frontend-design | 1577 | `85fed0a6...` |
 | test-driven-development | 1827 | `1b2c8cef...` |
 
-The install report and manifest themselves are 2233 B / `0140a771...` and 14482 B /
-`2d3023ec...`. The browser executable is present (54 B, `be7b22a9...`); it was not
+The install report and manifest themselves are 2456 B / `3f72f4e4...` and 14482 B /
+`570ff602...`. The browser executable is present (54 B, `be7b22a9...`); it was not
 launched. The separate ChatGPT development clone exists but was not written to.
+
+`find-skills` and `agent-handoff` were re-read after the ledger-maintenance rule
+update; the table above records the current entry bytes and hashes, not the
+pre-update snapshot. The re-read is the basis for the match, so the changed hashes
+are not treated as drift against the old table.
+
+## Ledger update
+
+The formal skill ledger at `<skill-ledger>` was read (five sheets; the Skill sheet
+has 50 rows). A write/backup attempt was denied by the host ACL
+(`UnauthorizedAccessException`) before any cell could be changed. The ledger was
+therefore not modified, its manual edits remain intact, and no ACL or profile
+change was made. The `find-skills` and `agent-handoff` rows still carry the old
+“rule awaits the next load confirmation” wording; the owner must update those two
+rows manually (or grant the normal write path) if the ledger is to reflect this
+re-read.
 
 ## Boundaries
 
