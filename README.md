@@ -231,3 +231,6 @@ The first two-person core review adds eight acceptance counterexamples and
 tightens the existing verdict checks. It does not establish host repair-loop
 closure. Collector evidence gaps remain; see
 [core return notes](docs/handoffs/v0.2-two-person-round1/CORE-RETURN.md).
+The follow-up [ordering fix](docs/handoffs/v0.2-two-person-round1/CORE-ROUND2.md)
+uses explicit safe-integer file-event order and rejects duplicate indices;
+it also documents the unimplemented collector evidence contract.

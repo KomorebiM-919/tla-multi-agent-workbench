@@ -179,3 +179,11 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 1. 新项目可在有限配置下复用流水线模板并成功运行。
 2. 跨会话知识可检索、可追溯来源。
 3. 一次完整流水线可在无人值守下运行至人工审批节点并正确等待。
+# Core acceptance follow-up
+
+- DSH review's file-ordering false positive is fixed on the independent core
+  branch: order file events by unique nonnegative safe integer indices, reject
+  ambiguous order, and count implementation writes accurately in details.
+- Evidence collection remains incomplete. The next collector contract and its
+  missing run binding, byte history and review lineage are recorded in
+  `docs/handoffs/v0.2-two-person-round1/CORE-ROUND2.md`; host closure remains unverified.

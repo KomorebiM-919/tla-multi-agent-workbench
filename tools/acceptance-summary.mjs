@@ -106,6 +106,24 @@ function isImplementationPath(path) {
     path.split('/').every((part) => part !== '' && part !== '.' && part !== '..') && !path.includes('\\');
 }
 
+// Index is an explicit order supplied by the collector, not array position.
+// Reject ambiguous evidence instead of dropping an invalid latest write and
+// accidentally certifying an older write/read pair. Never sort caller input.
+function orderFileEvidence(events) {
+  const indices = new Set();
+  for (const event of events) {
+    if (event === null || typeof event !== 'object' ||
+        !Number.isSafeInteger(event.index) || event.index < 0) {
+      return { events: [], problem: 'file indices must be nonnegative safe integers' };
+    }
+    if (indices.has(event.index)) {
+      return { events: [], problem: 'duplicate file index ' + String(event.index) };
+    }
+    indices.add(event.index);
+  }
+  return { events: [...events].sort((a, b) => a.index - b.index), problem: null };
+}
+
 export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writes }) {
   const writeList = Array.isArray(writes) ? writes : [];
   const taskList = Array.isArray(tasks) ? tasks : [];
@@ -113,11 +131,13 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
   const history = Array.isArray(tests?.history) ? tests.history : [];
   // 实现文件必须由成员在本轮真的改过，并且改完回读到的字节与写下去的一致。
   // 只写 note.txt、只返回 exit 0、或摘要里自称"完成"，都不足以判 closed。
-  const implementationWrites = writeList.filter((write) => write.kind === 'write' && isImplementationPath(write.path));
-  const lastImplementationWrite = implementationWrites[implementationWrites.length - 1];
+  const implementationWrites = writeList.filter((write) => write?.kind === 'write' && isImplementationPath(write.path));
+  const orderedFiles = orderFileEvidence(writeList);
+  const orderedImplementationWrites = orderedFiles.events.filter((write) => write.kind === 'write' && isImplementationPath(write.path));
+  const lastImplementationWrite = orderedImplementationWrites[orderedImplementationWrites.length - 1];
   const readBack = lastImplementationWrite === undefined
     ? null
-    : writeList.filter((write) => write.path === lastImplementationWrite.path && write.kind === 'read' && write.index > lastImplementationWrite.index).pop() ?? null;
+    : orderedFiles.events.filter((write) => write.path === lastImplementationWrite.path && write.kind === 'read' && write.index > lastImplementationWrite.index).pop() ?? null;
   const readBackOk = readBack !== null && /^[a-f0-9]{64}$/iu.test(String(readBack.sha256 ?? '')) &&
     /^[a-f0-9]{64}$/iu.test(String(lastImplementationWrite.sha256 ?? '')) &&
     readBack.sha256.toLowerCase() === lastImplementationWrite.sha256.toLowerCase();
@@ -142,12 +162,12 @@ export function deriveAcceptance({ supervisor, ledger, tests, tasks, usage, writ
     {
       code: 'IMPLEMENTATION_FILE_CHANGED',
       ok: implementationWrites.length > 0,
-      detail: String(writeList.length) + ' file event(s)'
+      detail: String(implementationWrites.length) + ' implementation write(s)'
     },
     {
       code: 'READ_BACK_AFTER_WRITE',
       ok: readBackOk === true,
-      detail: readBack === null ? 'no read after the last implementation write' : 'read-back sha matches ' + String(readBackOk)
+      detail: orderedFiles.problem ?? (readBack === null ? 'no read after the last implementation write' : 'read-back sha matches ' + String(readBackOk))
     },
     {
       code: 'TESTS_RED_THEN_GREEN',
