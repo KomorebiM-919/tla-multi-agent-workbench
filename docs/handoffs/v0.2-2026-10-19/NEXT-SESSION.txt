@@ -1,0 +1,17 @@
+接续 TLA V0.2（不启动宿主实验）。先恢复现场，再继续不需要审批的离线开发。
+
+工作区：<repo>\..\workspaces\v0.2-component-reuse
+分支：feat/v0.2-component-reuse
+先读：docs/handoffs/v0.2-2026-10-19/README.md（含 §12 迁移记录）、docs/VERSIONING.md、
+docs/V0.2-ROUND13-ENV-BLOCK-2026-10-19.md；不要导入历史日志。
+
+开工前只读核对，逐项贴出实际值，不猜：
+1. 分支、HEAD、`git status --porcelain`（须为空）、`git worktree list` 里本工作区的登记路径；
+2. 常态写权限：在本工作区根、`tests/`、`docs/`、以及 `<repo>\.git\worktrees\<name>` 各写一个临时文件再删掉。
+   任何一处 `EPERM` 就报告并停在核验点，不要靠反复放宽外层权限来维持日常开发；
+3. 端口 18920 / 18921 空闲；
+4. 团队插件版本与安装字节；安装目录 `version` 只是运行时版本，不得当作产品版本。
+
+不要继承任何启动授权：剩余启动授权 0 次。
+V0.2 尚未整体验收；监督器 completed、宿主 exit 0 都不等于业务闭环通过。
+先报“实际 HEAD / 与交接包的差异 / 写权限结论 / 已完成 / 未完成”，再动手。

@@ -2,12 +2,19 @@
   "schema": "tla.handoff-manifest/v1",
   "handoff": "v0.2-2026-10-19",
   "headAtAuthoring": "95d76184e8ca25f48892fb8f739ed6eeb801beef",
+  "headAtMigrationUpdate": "9be304c9d9a68ce9df271435df73fd2c1c9934a9",
   "branch": "feat/v0.2-component-reuse",
+  "note": "headAtAuthoring 是首次成包时的钩子；headAtMigrationUpdate 是 2026-10-19 15:0x 迁移更新的父提交。两者都只是历史，启动 pin 必须用启动当时 git rev-parse HEAD 重新确定。evidence/** 在本轮未改动，哈希与首次成包一致。",
   "files": [
     {
+      "path": "NEXT-SESSION.txt",
+      "bytes": 1203,
+      "sha256": "2f0f6995ec7766f216e00b59bc8a6a78dea619aa7701a642a8ec82dbd03992d3"
+    },
+    {
       "path": "README.md",
-      "bytes": 11870,
-      "sha256": "3db8118406700b24e7f24736115db496219da2f247ee533a7664f057aec681e3"
+      "bytes": 16110,
+      "sha256": "b60abc6dffec72030b20eea6f68fa174d191667c49e9b439408023de33080ab6"
     },
     {
       "path": "evidence/ORIGINALS.json",
