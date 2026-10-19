@@ -19,7 +19,9 @@
     "DSH-REVIEW.md records the independent review of 6299924; it does not change the baseline hashes of the core files listed here.",
     "DSH-ROUND2-REVIEW.md records the independent review of e3f8573 against parent 6299924; it is documentation only and does not change the baseline hashes of the core files listed here. The collector interface it discusses remains unimplemented.",
     "DSH-ROUND3-REVIEW.md records the independent review of e3f8573..1d316c6; only this documentation entry is added. The core-file hashes above remain the original handoff baseline and were not refreshed from the review branch.",
-    "DSH-ROUND4-REVIEW.md records the independent review of 1d316c6..c71dbc9; only this documentation entry is added. The original core-file hashes above remain frozen and were not refreshed from the review branch."
+    "DSH-ROUND4-REVIEW.md records the independent review of 1d316c6..c71dbc9; only this documentation entry is added. The original core-file hashes above remain frozen and were not refreshed from the review branch.",
+    "Round 5 appends SKILLS.md, P2-REGRESSION.md, COMPATIBILITY.md and the regressions/ package. The original core-file hashes remain frozen; they were not refreshed from c71dbc9 or from the current workspace.",
+    "Current workspace HEAD at round 5 is b6e1a47; codeBaseline above remains the original handoff baseline 943901e, and remote above records its original verification."
   ],
   "files": [
     {
@@ -159,6 +161,42 @@
       "bytes": 9143,
       "sha256": "b9633903a0c8b899b24efbbe7fea6a50277ad0e0af979dcec12583329b10d6d9",
       "blob": "cfe56fa99ac0d40366e843bec9c79d6b3ef746ad"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/SKILLS.md",
+      "bytes": 2199,
+      "sha256": "40e5e8ae121da393ffae51caf8ec635ee4154e3e87555a212bdf4735e2c29d51",
+      "blob": "261be5ff7b400d78ab38104083ca9fda827d1822"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/P2-REGRESSION.md",
+      "bytes": 3650,
+      "sha256": "7c8aed9101026ac7dae54b9898b2f99b7254e0060ee1f60452388310eacfb4f3",
+      "blob": "4c0ae998fa25aed15b2c33fa9d3c04db8e045c68"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/COMPATIBILITY.md",
+      "bytes": 2332,
+      "sha256": "20ba0c5a1c7d9ca5ac8277d69e88e3e299d50be3f39dd3d29f3536370d18461f",
+      "blob": "3879ce90fe396aad5bdf33a4b29da9466cbf5f3e"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/regressions/README.md",
+      "bytes": 1226,
+      "sha256": "a7e0c0bdf8068973fab5b0f3eaeb773055bb69738b07aa921d6159c085752437",
+      "blob": "c7e772c6c22a2b05e2aadf98f59724e15f53be4d"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/regressions/inputs.mjs",
+      "bytes": 10534,
+      "sha256": "1d227f13f7aee7bbe81a4cf8c12cf2d89697b3083128dabf579c1f4f8c8b9ead",
+      "blob": "2a8c471f6361267e7da571bd4b9ab842295d162f"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/regressions/run-p2-regressions.mjs",
+      "bytes": 5602,
+      "sha256": "00caaabaa838b042bdf11c161efaa8a3d4bfb03c5df7d2ce3251ec3bd6422315",
+      "blob": "f36083a7d642da656139201a7a84edefe355d8f3"
     }
   ]
 }
