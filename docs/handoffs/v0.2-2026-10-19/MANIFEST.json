@@ -1,0 +1,48 @@
+{
+  "schema": "tla.handoff-manifest/v1",
+  "handoff": "v0.2-2026-10-19",
+  "headAtAuthoring": "95d76184e8ca25f48892fb8f739ed6eeb801beef",
+  "branch": "feat/v0.2-component-reuse",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 11870,
+      "sha256": "3db8118406700b24e7f24736115db496219da2f247ee533a7664f057aec681e3"
+    },
+    {
+      "path": "evidence/ORIGINALS.json",
+      "bytes": 2162,
+      "sha256": "3ac09799121e91e5c442141b35416d4925b71913a4011376c3e88fc00ea03b87"
+    },
+    {
+      "path": "evidence/round11-check-old-spec.txt",
+      "bytes": 2576,
+      "sha256": "c9f3e0ab20d6b855eb78ce175710b24322811e3df63f9fe85c52ad422a54fb47"
+    },
+    {
+      "path": "evidence/round11-experiment-spec.json",
+      "bytes": 1228,
+      "sha256": "6d9c7111a7c5ae84a7e965519f94c7a5452b00f3e46a5c588f6caae5e503b566"
+    },
+    {
+      "path": "evidence/round11-launch.out.txt",
+      "bytes": 574,
+      "sha256": "cc429e2cf74e6813c8651f14a0aaeb6ffba5de5752394f8584a5585d4a215084"
+    },
+    {
+      "path": "evidence/round11-runner-exp-mvev7adf-ec166edb.json",
+      "bytes": 3549,
+      "sha256": "d3f90bd6f55a807d1024426bd86e32505e58bb01b9aa05c3d06c884304ff0511"
+    },
+    {
+      "path": "evidence/round12-experiment-spec.json",
+      "bytes": 2165,
+      "sha256": "bb52a01afa4579bc20e5784f923470955e5fac0b2ed0fa3aed120f8b347f3dd5"
+    },
+    {
+      "path": "evidence/round12-generator-preflight.txt",
+      "bytes": 3866,
+      "sha256": "da1a861a448e46b628b35624d243cb361f7fe09a7566ffbe0dfdc5c616f59c0b"
+    }
+  ]
+}

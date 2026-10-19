@@ -1,0 +1,48 @@
+{
+  "schema": "tla.experiment-spec/v1",
+  "profile": "stage1",
+  "projectCwd": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round12\\project",
+  "runDir": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round12\\run",
+  "gatePort": 18921,
+  "upstreamPort": 18920,
+  "modelRequests": 40,
+  "requireFiles": [
+    "src/sum.mjs",
+    "src/note.txt",
+    "test/sum.test.mjs"
+  ],
+  "fakeServerPath": "<repo>\\tests\\.scratch\\v02-stage2\\fake-model-server.mjs",
+  "policyPath": "<repo>\\tests\\.scratch\\v02-worktree\\tests\\fixtures\\repair-loop-policy.v3.json",
+  "repoRoot": "<repo>\\tests\\.scratch\\v02-worktree",
+  "requirePinned": true,
+  "fakeKeyEnv": "TLA_STAGE2_FAKE_KEY",
+  "fakeKeyValue": "stage2-fake-key",
+  "prompt": "You are the captain of team fixture-loop. Create the team, dispatch the tasks, and keep polling until the review task is completed.",
+  "dshExe": "<dsh-install>\\DeepSeek Harness.exe",
+  "dshCli": "<dsh-install>\\resources\\app.asar\\dsh\\node_modules\\@deepseek-ai\\dsh-desktop-host\\lib\\cli.js",
+  "dshHome": "<repo>\\tests\\.scratch\\v02-stage1\\dshhome",
+  "pinned": {
+    "sourceSha": "95d76184e8ca25f48892fb8f739ed6eeb801beef",
+    "fixturesSha": "95d76184e8ca25f48892fb8f739ed6eeb801beef",
+    "external": {
+      "fakeServer": {
+        "path": "<repo>\\tests\\.scratch\\v02-stage2\\fake-model-server.mjs",
+        "bytes": 13341,
+        "sha256": "9326e7a76f0d417895803cbe504f585ce327ad5ddac57b9b70bd7575271c30a8"
+      },
+      "policy": {
+        "path": "<repo>\\tests\\.scratch\\v02-worktree\\tests\\fixtures\\repair-loop-policy.v3.json",
+        "bytes": 19594,
+        "sha256": "874f4ddbf3c77cd465ff1a58eb7431fcfdd959383fcfb5d46c68017b2f97a921"
+      }
+    },
+    "provenance": {
+      "selectedBy": "explicit --pin-source and --pin-fixtures; nothing inferred from HEAD",
+      "repoRoot": "<repo>\\tests\\.scratch\\v02-worktree",
+      "sourceSha": "95d76184e8ca25f48892fb8f739ed6eeb801beef",
+      "fixturesSha": "95d76184e8ca25f48892fb8f739ed6eeb801beef",
+      "sourceSubject": "fix(v0.2): decide the launch from one pre-flight",
+      "fixturesSubject": "fix(v0.2): decide the launch from one pre-flight"
+    }
+  }
+}

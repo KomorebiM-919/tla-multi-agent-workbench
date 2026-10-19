@@ -1,0 +1,108 @@
+{
+  "schema": "tla.experiment-run/v1",
+  "runId": "exp-mvev7adf-ec166edb",
+  "status": "spec-invalid",
+  "startedAt": "2026-10-19T06:19:57.124Z",
+  "finishedAt": "2026-10-19T06:19:57.601Z",
+  "spec": {
+    "profile": "stage1",
+    "projectCwd": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round11\\project",
+    "runDir": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round11\\run",
+    "gatePort": 18921,
+    "upstreamPort": 18920,
+    "modelRequests": 40,
+    "leaseTtlMs": 6000,
+    "heartbeatMaxAgeMs": 4000,
+    "timeoutMs": 300000
+  },
+  "derived": {
+    "runId": "exp-mvev7adf-ec166edb",
+    "upstreamPort": 18920,
+    "gatePort": 18921,
+    "upstreamUrl": "http://127.0.0.1:18920",
+    "healthUrl": "http://127.0.0.1:18920/health",
+    "gateUrl": "http://127.0.0.1:18921"
+  },
+  "overlayPath": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round11\\overlay-exp-mvev7adf-ec166edb.patch.yml",
+  "logDir": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round11\\logs-exp-mvev7adf-ec166edb",
+  "pinned": {
+    "sourceSha": "f0aa1ba4e3bc66de98dd5dce4f70c7c2de5cea68",
+    "fixturesSha": "509067753c29af2d37c794acb0a89fc850e9e2ff"
+  },
+  "pinnedEvidence": {
+    "schema": "tla.pinned-sources/v1",
+    "repoRoot": "<repo>\\tests\\.scratch\\v02-worktree",
+    "sourceSha": "f0aa1ba4e3bc66de98dd5dce4f70c7c2de5cea68",
+    "fixturesSha": "509067753c29af2d37c794acb0a89fc850e9e2ff",
+    "head": "f0aa1ba4e3bc66de98dd5dce4f70c7c2de5cea68",
+    "dirty": [],
+    "fakeServer": {
+      "path": "<repo>\\tests\\.scratch\\v02-stage2\\fake-model-server.mjs",
+      "bytes": 13341,
+      "sha256": "9326e7a76f0d417895803cbe504f585ce327ad5ddac57b9b70bd7575271c30a8"
+    },
+    "policy": {
+      "path": "<repo>\\tests\\.scratch\\v02-worktree\\tests\\fixtures\\repair-loop-policy.v3.json",
+      "bytes": 19594,
+      "sha256": "874f4ddbf3c77cd465ff1a58eb7431fcfdd959383fcfb5d46c68017b2f97a921"
+    },
+    "checks": [
+      {
+        "name": "pinned:source",
+        "ok": true,
+        "detail": "HEAD f0aa1ba4e3bc66de98dd5dce4f70c7c2de5cea68 vs pinned f0aa1ba4e3bc66de98dd5dce4f70c7c2de5cea68"
+      },
+      {
+        "name": "pinned:clean",
+        "ok": true,
+        "detail": "no tracked modifications"
+      },
+      {
+        "name": "pinned:fixtures",
+        "ok": false,
+        "detail": "fixture bytes differ from 509067753c29af2d37c794acb0a89fc850e9e2ff"
+      },
+      {
+        "name": "pinned:policy-versioned",
+        "ok": true,
+        "detail": "tests/fixtures/repair-loop-policy.v3.json is in 509067753c29af2d37c794acb0a89fc850e9e2ff"
+      },
+      {
+        "name": "pinned:fakeServer",
+        "ok": true,
+        "detail": "9326e7a76f0d417895803cbe504f585ce327ad5ddac57b9b70bd7575271c30a8"
+      },
+      {
+        "name": "pinned:policy",
+        "ok": true,
+        "detail": "874f4ddbf3c77cd465ff1a58eb7431fcfdd959383fcfb5d46c68017b2f97a921"
+      }
+    ],
+    "pinnedPaths": [
+      "tests/fixtures"
+    ],
+    "policyVersioned": true
+  },
+  "hostArgs": null,
+  "treeProof": null,
+  "phases": [
+    {
+      "phase": "stop",
+      "at": "2026-10-19T06:19:57.579Z",
+      "detail": {
+        "status": "spec-invalid",
+        "reason": "pinned sources not verified: fixture bytes differ from pinned revision 509067753c29af2d37c794acb0a89fc850e9e2ff"
+      }
+    }
+  ],
+  "owned": [],
+  "health": [],
+  "teardown": [
+    {
+      "role": "ports",
+      "gateFree": true,
+      "upstreamFree": true
+    }
+  ],
+  "reason": "pinned sources not verified: fixture bytes differ from pinned revision 509067753c29af2d37c794acb0a89fc850e9e2ff"
+}

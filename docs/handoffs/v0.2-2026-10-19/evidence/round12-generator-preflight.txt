@@ -1,0 +1,46 @@
+node : experiment-command: supervised: the runner renders the overlay it passes to the launcher; --overlay is optional
+here
+
+experiment-command: pins: taken verbatim from --pin-source/--pin-fixtures; nothing is inferred from HEAD
+experiment-command: --dsh-cli lives inside an asar archive; only the archive itself was checked
+experiment-command: run directory: does not exist yet
+experiment-command: static ok   project:red-test — the project test is red (exit 1): sum tests: 2 passed, 1 failed
+experiment-command: static ok   overlay:credentials — llm-deepseek takes its key from TLA_STAGE2_FAKE_KEY (set, 15 char
+s)
+experiment-command: static ok   plugin:tla-prelaunch-budget — tla-prelaunch-budget 0.0.0-local verified, 3 files, 54f1a
+8e32f717f52…
+experiment-command: static ok   plugin:@nanmicoder/dsh-agent-teams — @nanmicoder/dsh-agent-teams 0.1.25 verified, 126 f
+iles, 54c53836fa85e3e3…
+experiment-command: static ok   port:gate — port 18921 is free
+experiment-command: static ok   port:upstream — port 18920 is free
+experiment-command: config ok   config:readable — effective-config.yml, 13672 bytes, sha256 7233ae96e1441171…
+experiment-command: config ok   provider:llm-deepseek — baseURL http://127.0.0.1:18921, apiKeyEnv TLA_STAGE2_FAKE_KEY
+experiment-command: config ok   credential:dedicated-fake — TLA_STAGE2_FAKE_KEY is the dedicated placeholder
+experiment-command: config ok   credential:no-other-env — no enabled provider reads a different key variable
+experiment-command: config ok   channel:account-disabled — llm-deepseek-account / deepseek-account are disabled in the
+loaded configuration
+experiment-command: config ok   provider:web-search-deepseek — disabled true
+experiment-command: config ok   coverage:every-enabled-provider — guarded [llm-deepseek], unguarded [], unknown [], dis
+abled [llm-deepseek-account], notConfigured [llm-pi-ai]
+experiment-command: config ok   plugin:budget-inserted — modelRequests 40, eventLog <repo>
+/tests/.scratch/v02-stage2/host1/round12/run/plugin-events.jsonl
+experiment-command: config ok   coverage:launcher-classifier — launcher sees guarded [llm-deepseek], unknown []
+experiment-command: config ok   identity:per-instance — agent-teams → @nanmicoder/dsh-agent-teams (verified); tla-prela
+unch-budget → tla-prelaunch-budget (verified)
+experiment-command: config ok   identity:no-conflict-or-duplicate — no conflicting names, duplicate instances or missin
+g identity results
+command validated: 44 arguments, 3 required files
+experiment-command: preflight ok   spec:structure — shape, ranges, project files and external paths
+experiment-command: preflight ok   pinned:source — HEAD 95d76184e8ca25f48892fb8f739ed6eeb801beef vs pinned 95d76184e8ca
+25f48892fb8f739ed6eeb801beef
+experiment-command: preflight ok   pinned:clean — no tracked or untracked modifications
+experiment-command: preflight ok   pinned:fixtures — fixture bytes equal 95d76184e8ca25f48892fb8f739ed6eeb801beef
+experiment-command: preflight ok   pinned:policy-versioned — tests/fixtures/repair-loop-policy.v3.json is in 95d76184e8
+ca25f48892fb8f739ed6eeb801beef
+experiment-command: preflight ok   pinned:fakeServer-declared — bytes equal the hash the spec declares
+experiment-command: preflight ok   pinned:fakeServer — 9326e7a76f0d417895803cbe504f585ce327ad5ddac57b9b70bd7575271c30a8
+experiment-command: preflight ok   pinned:policy-declared — bytes equal the hash the spec declares
+experiment-command: preflight ok   pinned:policy — 874f4ddbf3c77cd465ff1a58eb7431fcfdd959383fcfb5d46c68017b2f97a921
+FULL PREFLIGHT OK — structure, source, fixtures and external hashes verified (9 checks)
+supervised command: node "<repo>\tests\.scratch\v02-worktree\tools\experiment-runner.mjs" --spec "<repo>\tests\.scratch\v02-stage2\host1\round12\experiment-spec.json"
+STATIC PREFLIGHT OK

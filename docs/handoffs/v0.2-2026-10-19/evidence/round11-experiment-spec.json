@@ -1,0 +1,28 @@
+{
+  "schema": "tla.experiment-spec/v1",
+  "profile": "stage1",
+  "projectCwd": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round11\\project",
+  "runDir": "<repo>\\tests\\.scratch\\v02-stage2\\host1\\round11\\run",
+  "gatePort": 18921,
+  "upstreamPort": 18920,
+  "modelRequests": 40,
+  "requireFiles": [
+    "src/sum.mjs",
+    "src/note.txt",
+    "test/sum.test.mjs"
+  ],
+  "fakeServerPath": "<repo>\\tests\\.scratch\\v02-stage2\\fake-model-server.mjs",
+  "policyPath": "<repo>\\tests\\.scratch\\v02-worktree\\tests\\fixtures\\repair-loop-policy.v3.json",
+  "repoRoot": "<repo>\\tests\\.scratch\\v02-worktree",
+  "requirePinned": true,
+  "fakeKeyEnv": "TLA_STAGE2_FAKE_KEY",
+  "fakeKeyValue": "stage2-fake-key",
+  "prompt": "You are the captain of team fixture-loop. Create the team, dispatch the tasks, and keep polling until the review task is completed.",
+  "dshExe": "<dsh-install>\\DeepSeek Harness.exe",
+  "dshCli": "<dsh-install>\\resources\\app.asar\\dsh\\node_modules\\@deepseek-ai\\dsh-desktop-host\\lib\\cli.js",
+  "dshHome": "<repo>\\tests\\.scratch\\v02-stage1\\dshhome",
+  "pinned": {
+    "sourceSha": "f0aa1ba4e3bc66de98dd5dce4f70c7c2de5cea68",
+    "fixturesSha": "509067753c29af2d37c794acb0a89fc850e9e2ff"
+  }
+}

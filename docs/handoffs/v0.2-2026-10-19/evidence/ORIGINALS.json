@@ -1,0 +1,48 @@
+{
+  "schema": "tla.handoff-evidence/v1",
+  "note": "Originals stay under tests/.scratch (not versioned); these are redacted copies. Absolute install paths were replaced with <repo> and <dsh-install>.",
+  "files": [
+    {
+      "file": "round11-experiment-spec.json",
+      "original": "experiment-spec.json",
+      "originalSha256": "60fad13af6e49b8f374818b5789e7bea75d97e5850af906c1a13c3f40bc9bfd4",
+      "redactedSha256": "6d9c7111a7c5ae84a7e965519f94c7a5452b00f3e46a5c588f6caae5e503b566",
+      "stillHasAbsolutePath": false
+    },
+    {
+      "file": "round11-runner-exp-mvev7adf-ec166edb.json",
+      "original": "runner-exp-mvev7adf-ec166edb.json",
+      "originalSha256": "a37eaa5939a1acb294f033fc5e7c290b0c166f17275340e915b23168debeef3d",
+      "redactedSha256": "d3f90bd6f55a807d1024426bd86e32505e58bb01b9aa05c3d06c884304ff0511",
+      "stillHasAbsolutePath": false
+    },
+    {
+      "file": "round11-launch.out.txt",
+      "original": "launch.out.txt",
+      "originalSha256": "b69c5029d83f56e794e7ca7d34fec86c848bcea8eea11c94f2e3b0e62e3ffc0a",
+      "redactedSha256": "b69c5029d83f56e794e7ca7d34fec86c848bcea8eea11c94f2e3b0e62e3ffc0a",
+      "stillHasAbsolutePath": false
+    },
+    {
+      "file": "round11-check-old-spec.txt",
+      "original": "check-old-spec.txt",
+      "originalSha256": "4cda2378eaf1d1a7a3f863cef3efb32d68cd15316ee2e7919c950ee6e35ccefe",
+      "redactedSha256": "4cda2378eaf1d1a7a3f863cef3efb32d68cd15316ee2e7919c950ee6e35ccefe",
+      "stillHasAbsolutePath": false
+    },
+    {
+      "file": "round12-experiment-spec.json",
+      "original": "experiment-spec.json",
+      "originalSha256": "b6c669867e3264ecf4408a98c1229659a56704c8a181a174556e81ed105d1ad0",
+      "redactedSha256": "bb52a01afa4579bc20e5784f923470955e5fac0b2ed0fa3aed120f8b347f3dd5",
+      "stillHasAbsolutePath": false
+    },
+    {
+      "file": "round12-generator-preflight.txt",
+      "original": "generator-preflight.txt",
+      "originalSha256": "0a3a25ce0275b7cd3e5a26a969b34e3ee4aa97e55c7ffed4cc4ef63227b9e834",
+      "redactedSha256": "4633f853dd2c8cb3b91cc1c9db06dad8aa9d3535e0a63b32d433a8559b71c90e",
+      "stillHasAbsolutePath": false
+    }
+  ]
+}
