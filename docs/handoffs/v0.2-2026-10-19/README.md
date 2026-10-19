@@ -187,8 +187,10 @@ node tools/experiment-command.mjs --dsh-exe '<dsh-exe>' --dsh-cli '<dsh-cli>' \
 | 目标 | `<repo>\..\workspaces\v0.2-component-reuse` |
 | 命令 | `git worktree move <源> <目标>`（git 2.56.0；`git worktree` 登记项随之改写） |
 | 受影响的登记项 | 仅此一条：`git worktree list` 中的 `…/tests/.scratch/v02-worktree` 变为新路径；分支与 HEAD 不变；其余 10 条挂在工作树（detached 临时树）不动 |
-| 迁移前状态 | 分支 `feat/v0.2-component-reuse`、HEAD `9be304c9d9a68ce9df271435df73fd2c1c9934a9`、`git status` 空、0 未跟踪、3 个忽略项（`examples/text-stats/__pycache__/`、`tests/.scratch/`、`tests/__pycache__/`）、无子模块、工作树未锁 |
+| 迁移前状态 | 2026-10-19 15:05 推送后的检查点：分支 `feat/v0.2-component-reuse`、HEAD `9be304c9d9a68ce9df271435df73fd2c1c9934a9`、`git status` 空、0 未跟踪、3 个忽略项（`examples/text-stats/__pycache__/`、`tests/.scratch/`、`tests/__pycache__/`）、无子模块、工作树未锁。move 前一刻另有 6 个待提交文件（4 改 2 新），见下方时间线 |
 | 回退 | `git worktree move <目标> <源>`；若 `<repo>\..\workspaces` 是本轮新建且为空，再一并删除。回退前先确认目标干净，不删除任何资料 |
+
+**“迁移前状态”的时间点更正（2026-10-19 15:3x）**：上表该行描述的是 15:05 推送后的检查点，不是 `git worktree move` 前一刻的状态。实际顺序是：15:11:02–15:11:20 写入 6 个文件（修改 `AGENTS.md`、`docs/V0.2-ROUND13-ENV-BLOCK-2026-10-19.md`、`docs/handoffs/v0.2-2026-10-19/MANIFEST.json`、同目录 `README.md`；新增 `docs/VERSIONING.md`、同目录 `NEXT-SESSION.txt`）；15:13:32 move 改写工作树登记；15:13:33 提交 `d1e5781d57de072bd886a0b51ef95e89854b3a72`；15:14:20 推送。6 个文件随工作树原样搬迁，未丢失；该提交之后工作区才回到干净状态。
 
 **留在原地、不随工作区搬走的东西**（都属于外部实验资料，见 §5）：
 
