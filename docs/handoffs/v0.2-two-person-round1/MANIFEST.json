@@ -16,7 +16,8 @@
     "The round13 spec generated at 9037a22 is stale at this baseline and must not be launched.",
     "No host, fake upstream, model request, ACL change or profile change was made for this handoff.",
     "All paths are repo-relative; public docs use placeholders, not local absolute paths.",
-    "DSH-REVIEW.md records the independent review of 6299924; it does not change the baseline hashes of the core files listed here."
+    "DSH-REVIEW.md records the independent review of 6299924; it does not change the baseline hashes of the core files listed here.",
+    "DSH-ROUND2-REVIEW.md records the independent review of e3f8573 against parent 6299924; it is documentation only and does not change the baseline hashes of the core files listed here. The collector interface it discusses remains unimplemented."
   ],
   "files": [
     {
@@ -138,6 +139,12 @@
       "bytes": 8559,
       "sha256": "790e8b18fffcea6105f920890f941ebd422af0e09bd3e87c0e8849a1587dc431",
       "blob": "a6f4e264106c2f6db9cfb38e3a7726a468ef9fc0"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/DSH-ROUND2-REVIEW.md",
+      "bytes": 10766,
+      "sha256": "99d0fb57b621f616944315ba68abc759d5cc8dbf5485b1a53ddc0ecc15fb0261",
+      "blob": "3623dc5ae545faee15095b0960acf7506901757d"
     }
   ]
 }
