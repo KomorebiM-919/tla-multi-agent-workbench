@@ -1,0 +1,468 @@
+{
+  "schema": "tla.core-round6-self-check/v1",
+  "codeCommit": "88c9fe527e67ee885918d253c90de4caa1eafc56",
+  "parent": "8bf26d38bf86052974c47029ae75ab7fd20545f1",
+  "environment": {
+    "platform": "Windows",
+    "node": "v24.21.0",
+    "checkoutVolume": "D:",
+    "osTempVolume": "C:",
+    "freshClone": true,
+    "autocrlf": true
+  },
+  "commands": [
+    {
+      "command": [
+        "node",
+        "tests/v02-acceptance-summary.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.08,
+      "stdoutSha256": "4177e82ce888338b72c659be99324af4835a79d13e3ccfb12b21357ea319d412",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-b1-scenarios.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.19,
+      "stdoutSha256": "9de7e700d1e6e7f1d588e90b00e27e72321234c7cb47bb8d45009d47c4bb0177",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-checkout-fidelity.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.12,
+      "stdoutSha256": "9de4a8d6c4c8b60e213a1ecfe8ef7bd186b8e4ebf0d46eb11adce93717a5ae45",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-core-acceptance.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.07,
+      "stdoutSha256": "d186e488bb2e3d74acb68ab59e83d341dbae5d2621f97047d3cf8923e725f5ea",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-effective-config.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.11,
+      "stdoutSha256": "be8d91eccbd4bd3a451b9b87f4e03a3334181a085d8a98bd24515a7f75be9893",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-evidence-collector.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.14,
+      "stdoutSha256": "99f15979d168473ee3df3a4f73d672a90b8c1b0cbdb39762ffdc6d7e6a10254c",
+      "stderrSha256": "f939c45055743e2d2f120e1d7431a285a170b971e4529cf385e0459e58fd52ca"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-evidence-lineage.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.1,
+      "stdoutSha256": "4fb18df5aefe9ec1fd8c18f1210858f2e09fb10c7ca0a3fc0ad45963f9dc855c",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-experiment-package.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.22,
+      "stdoutSha256": "2a8493f667e51082a4d05cab8865e20b066ec846a02d1f683bceed8776d73c68",
+      "stderrSha256": "7c6b793aef1faa3785c1c8ecb3bfb1544a367580e55e8a58cc3f4f0b0381cafa"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-experiment-runner.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 24.42,
+      "stdoutSha256": "c029ba2c7e0d14d7e7f36ff556b35d7e1016bfdc62a65aa70c88f80845c81a8e",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-fs-observation.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.06,
+      "stdoutSha256": "49dffa754a714f2afe1d32085d2790a6e551e132245401f31c877bc06b299739",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-gate.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 12.86,
+      "stdoutSha256": "097ed7276d39ae36eaacaa73069f027894b48f31f9afce9df3e1b373db99dd28",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-health-probe.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.3,
+      "stdoutSha256": "c9d6101c3acea1545b212ca685693f8886f9a6d33ca1866fd4569166a97c4267",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-ledger.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.1,
+      "stdoutSha256": "c12e8fa45871487432ea4019f7ae0aa1c8ca5e9d3acae5fd0f578c8d2533547b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-migration-links.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.33,
+      "stdoutSha256": "95f8c2f799b7c4b4e223a7bf06801d24e70ada13566affb2f2ffdb89dc634033",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-orchestration.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.09,
+      "stdoutSha256": "8d21a24a700189d5e49b108253bf5792a9363493f8c49643c6e3c3782c24c418",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-plugin-identity.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.18,
+      "stdoutSha256": "df964ce21f3803b0298158c627e80ef906ea5220866323eb0e20e690abceac06",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-prelaunch-budget.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.59,
+      "stdoutSha256": "300b64ab7cbf4b335a9be480843552cd5c9c2272e057e6f5f10cf86bb4c3f84b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-reactive-model.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.23,
+      "stdoutSha256": "f709d693d757115553a51b01a1ff07cd505006592f226bb9534a68c56226e94b",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-repair-loop-v3.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 1.97,
+      "stdoutSha256": "4de0c47abce9bfc9e7a377ae9d96090b533316f8cee28255673b063d493824d0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-repair-loop.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.07,
+      "stdoutSha256": "ec893edea2730f4899b4c6dfcc84d5f9f96ba9a031844261f0ea71015c067b5d",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-repair-protocol.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.07,
+      "stdoutSha256": "581ae282b5570ab4929d4d8a55fe89d3322b484992852e3daf3481669d591f30",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-repair-rehearsal.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.18,
+      "stdoutSha256": "3630e2f78256ef4e8605cba7e9ced2f2536dd6a618e9cd8cb09fdb8f451d07ff",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-static-preflight.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.29,
+      "stdoutSha256": "b790d93a50e6fec68062a067e74fac9c5cffd6eb489af1c9fa1c08d917c8e446",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/v02-write-review-diagnostics.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.1,
+      "stdoutSha256": "8c056ec07c6113aac16fb4a10a09678a6fb96cd924ee854e0353ec9fc8323002",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/workflow-logic.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.21,
+      "stdoutSha256": "7918c72fb0de4037343f354b25b5258eacce6995b1310e4926848212dbe49968",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/preflight-script.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 1.51,
+      "stdoutSha256": "60ea49ecf42171d35f500373e746e2b2bfaee404f7c9853b7c0d99eeab1426a0",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "node",
+        "tests/preflight-claim-integration.test.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.82,
+      "stdoutSha256": "f2247dbc31ab8061ca38113e9607f67c2d9be155742196f17d99a39432d11ec9",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_*.py"
+      ],
+      "exit": 0,
+      "seconds": 5.41,
+      "stdoutSha256": "85b8d0453eecd0a824c2e6c6341cab68abc83859378e19326cddb8c915924762",
+      "stderrSha256": "6715ad156c88d8dcb3ec08b277261ec06623fe8ccf53b41216167278a3c426ef"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/text-stats",
+        "-p",
+        "test_*.py"
+      ],
+      "exit": 0,
+      "seconds": 3.25,
+      "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "acdea37d865ed30072ffa4ce8e1b43b8a1f190149268d7907d8bf0c493ef302d"
+    }
+  ],
+  "mutations": {
+    "schema": "tla.mutation-audit/v1",
+    "scope": "offline-synthetic",
+    "node": "v24.21.0",
+    "sourceSha256": "ce23b5bb24bee79f213480695481cadf2d7f9b15688a48ce34a99bf2e7e2b8e7",
+    "baselineExit": 0,
+    "sourceUnchanged": true,
+    "results": [
+      {
+        "name": "remove-write-audit",
+        "patch": {
+          "file": "tools/collect-run-evidence.mjs",
+          "old": "if (observationsComplete) issues.push(...implementationWriteIssues(state))",
+          "replacement": "if (observationsComplete) void state",
+          "occurrences": 1,
+          "beforeSha256": "ce23b5bb24bee79f213480695481cadf2d7f9b15688a48ce34a99bf2e7e2b8e7",
+          "afterSha256": "81a91a6b4db42756a1745e9759aaeba880498e197ccdbc689dc4874e662e1e6d"
+        },
+        "commands": [
+          [
+            "--check",
+            "tools/collect-run-evidence.mjs"
+          ],
+          [
+            "tests/v02-write-review-diagnostics.test.mjs"
+          ]
+        ],
+        "syntaxExit": 0,
+        "testExit": 1,
+        "killed": true,
+        "logSha256": "09e93489bf19d4186dc6a5feb57b976b16267ab777859a53e98eaf0a90b99f08"
+      },
+      {
+        "name": "remove-call-locator",
+        "patch": {
+          "file": "tools/collect-run-evidence.mjs",
+          "old": "callId: state.writeCalls.get(write.index)",
+          "replacement": "callId: null",
+          "occurrences": 1,
+          "beforeSha256": "ce23b5bb24bee79f213480695481cadf2d7f9b15688a48ce34a99bf2e7e2b8e7",
+          "afterSha256": "3d2d155f70f71cb9990aa3b29e68c900f90db3833d27aa96b8fdae5e6d25dc19"
+        },
+        "commands": [
+          [
+            "--check",
+            "tools/collect-run-evidence.mjs"
+          ],
+          [
+            "tests/v02-write-review-diagnostics.test.mjs"
+          ]
+        ],
+        "syntaxExit": 0,
+        "testExit": 1,
+        "killed": true,
+        "logSha256": "f126fd34107e6aa9b02b83fdedf1a341528084c56c1aa42fa73627175a91fb7d"
+      },
+      {
+        "name": "only-latest-write",
+        "patch": {
+          "file": "tools/collect-run-evidence.mjs",
+          "old": "return state.files.filter(event => event.kind === 'write' && IMPLEMENTATION_PATH.test(event.path))",
+          "replacement": "return latestWrites(state.files.filter(event => event.kind === 'write' && IMPLEMENTATION_PATH.test(event.path)))",
+          "occurrences": 1,
+          "beforeSha256": "ce23b5bb24bee79f213480695481cadf2d7f9b15688a48ce34a99bf2e7e2b8e7",
+          "afterSha256": "c51ef0e6ace8d92195f0fc63faec0c08ae6ca2bf1954d8c5820011a582633af0"
+        },
+        "commands": [
+          [
+            "--check",
+            "tools/collect-run-evidence.mjs"
+          ],
+          [
+            "tests/v02-write-review-diagnostics.test.mjs"
+          ]
+        ],
+        "syntaxExit": 0,
+        "testExit": 1,
+        "killed": true,
+        "logSha256": "903c8bf33112a52d4ea889d3caac3c4b406eb04f10956cb5fb2588caeefeb81c"
+      }
+    ]
+  },
+  "canonicalFiles": [
+    {
+      "path": "README.md",
+      "canonicalBlobBytes": 44733,
+      "sha256": "3aa9368c869eb58c423250907522f834201de3e5e135a4b77a85aeed0747c871"
+    },
+    {
+      "path": "docs/COLLECTED-EVIDENCE-v2.md",
+      "canonicalBlobBytes": 7669,
+      "sha256": "6852dc87b2c16e11dd9907121859d4b25123735e1e0503d5af6733d873ca1781"
+    },
+    {
+      "path": "docs/ROADMAP.md",
+      "canonicalBlobBytes": 70976,
+      "sha256": "f25f3804597391b5e2aa4fbf0e448fa98ad41c66ad1b5d3ebe208779ac41b23e"
+    },
+    {
+      "path": "tests/README.md",
+      "canonicalBlobBytes": 46598,
+      "sha256": "9b5dc32f46289d5cec037dca2c61ebf97a3fd9797ceac65e0647d9e2091eff5c"
+    },
+    {
+      "path": "tests/v02-migration-links.test.mjs",
+      "canonicalBlobBytes": 9366,
+      "sha256": "e25a10123dec3ac68ae20667a1da8afa7f4eafd3d9d05adeb92e8f7099289d92"
+    },
+    {
+      "path": "tests/v02-write-review-diagnostics.test.mjs",
+      "canonicalBlobBytes": 12182,
+      "sha256": "965ec1cbfdd0a3eeefa56345b9aded22ae36ba76b59113722aa1a1a5f67e389d"
+    },
+    {
+      "path": "tools/check-migration-links.mjs",
+      "canonicalBlobBytes": 12452,
+      "sha256": "282425ba57416af1a89ba44f452c8649ee154b54c334f3ad0318c7a6d02376e1"
+    },
+    {
+      "path": "tools/self-check/write-review-mutations.mjs",
+      "canonicalBlobBytes": 3598,
+      "sha256": "843c613ddd0fe04545cbc95be00b711c4194234a638852aee173951e9dcb7b51"
+    }
+  ],
+  "externalP2": {
+    "scenarios": 6,
+    "passed": 6,
+    "positiveControls": 2
+  },
+  "linkChecks": {
+    "checkoutVolumeCases": 10,
+    "tempVolumeCases": 10,
+    "skipped": 0,
+    "oldCheckerNewTestsExit": 1,
+    "simulatedLstatDifference": true,
+    "originalDshCVolumeFailureReproduced": false
+  },
+  "scopeTest": {
+    "writeReviewScenarios": 18,
+    "reviewedFinalBytesOnly": true,
+    "hostVerified": false
+  },
+  "selfCheckCorrections": [
+    "Initial added positive fixture omitted read-before-second-write; corrected fixture ordering before committing."
+  ],
+  "limits": [
+    "No real host or fake model service launched.",
+    "Three mutations were freshly rerun from published recipes; this does not retrospectively prove the earlier unpublished executions.",
+    "C/D checks passed in this environment; original DSH environment discrepancy remains unlocated.",
+    "No change to synthetic provenance or live observer limitations."
+  ]
+}
