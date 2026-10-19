@@ -169,6 +169,8 @@ node tools/experiment-command.mjs --dsh-exe '<dsh-exe>' --dsh-cli '<dsh-cli>' \
 4. 单独申请**一次**外层放宽，只覆盖 `experiment-runner` 这一条命令；失败即停，不重试。
 5. 运行后用 `ledger-from-run` + `acceptance-summary` 出 `verdict`；只有 `closed` 且 10 条件全满足
    才能更新 V0.2 验收表述。任何 `partial` 都必须原样记录 unmet。
+6. 2026-10-19 15:4x 生成的 round13 spec 只是**离线校验产物**，pin 为 `9037a22…`；提交本文档后 HEAD 已前进，
+   该 spec 不可直接启动，必须按第 3 步基于最终固定提交重新生成，不得用新 HEAD 顶替旧 pin。
 
 ## 11. 新会话启动词
 
@@ -201,6 +203,15 @@ node tools/experiment-command.mjs --dsh-exe '<dsh-exe>' --dsh-cli '<dsh-cli>' \
 - 未合并的 V0.1 分支、主仓库工作树、归档标签 `archive/v0.1-verbatim`：一律不动；
 - 旧 spec 与预检输出里的绝对路径属于**旧运行事实**：不修改、不冒充原件；新实验的 spec 必须在新工作区重新生成。
 
+**迁移漏项：profile 内的插件链接（2026-10-19 15:4x 补记）**
+
+Git 迁移只改写 worktree 登记，不改写隔离 profile 里的依赖链接。当时 `stage1` profile 的
+`node_modules/tla-prelaunch-budget` 仍是 Junction，Target 指向已不存在的旧 `v02-worktree`；静态检查因此报
+`identity-unreadable`，生成器拒绝写 spec。修复方式是在 profile 内建立 `vendor/interceptor-plugin` 副本
+（`0.0.0-local` / 3 files / `54f1a8e3…`），把 manifest、lock 与 Junction 全部改为 profile 内链接；
+身份门禁没有放宽。证据与边界见
+[`V0.2-MIGRATION-LINK-AUDIT-2026-10-19.md`](../../V0.2-MIGRATION-LINK-AUDIT-2026-10-19.md)。
+
 **迁移后怎么核验**（新会话第一步照做，不要相信本文档的叙述）：
 
 ```powershell
@@ -210,6 +221,8 @@ git rev-parse HEAD                  # 必须等于推送后的远端值
 git status --porcelain              # 空
 git worktree list                   # 本工作区登记在新路径，分支名不变
 git ls-files -o --exclude-standard  # 空（0 未跟踪）
+node tools/check-migration-links.mjs --profile <dsh-home>\profiles\stage1 `
+  --source-dir orchestration/interceptor-plugin   # MIGRATION LINKS OK (23 checks)
 ```
 
 再补一项**常态写权限**检查：在新工作区根、`tests/`、`docs/`、`<repo>\.git\worktrees\v02-worktree`

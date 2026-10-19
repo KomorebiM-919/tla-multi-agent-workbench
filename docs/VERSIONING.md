@@ -24,6 +24,13 @@
   迁移前必须列出源/目标、受影响的 `git worktree` 登记项、以及回退步骤。
 - 换会话先核对：分支、`HEAD`、`git status`、`git worktree list`、以及新位置的**常态**写权限。
   如果新位置在常态沙箱下不可写，先报告，不要靠反复放宽外层权限来维持日常开发。
+- 迁移后必须核对**工作区之外**的活动引用：隔离 DSH profile 的 `package.json`、包管理器 lock、
+  `node_modules` 链接（Junction/符号链接）是否仍指向旧路径。Git 迁移只改写 Git 登记，不改写这些链接。
+  历史日志、旧 spec、备份目录与 `package.before-uninstall.json` 属于证据，原样保留，不参与全局替换。
+- 若身份门禁要求插件解析根位于 profile 内，采用 **profile 内副本 + profile 内链接**；副本必须与已审查源码的
+  版本、文件清单和构建指纹一致，并把修复前后证据写进迁移记录。公开文档只写占位符，profile 备份与绝对路径留本地。
+- 迁移检查必须可复跑（例如 `tools/check-migration-links.mjs`），覆盖外部链接、断链、manifest/lock 不一致与
+  副本漂移；检查失败不得进入实验审批。
 
 ## 3. 起点与兼容
 
