@@ -47,6 +47,16 @@ function material(name, value) {
   return path;
 }
 
+function assertIssueShape(issues) {
+  for (const issue of issues) {
+    assert.equal(typeof issue.code, 'string');
+    assert.ok(issue.code.length > 0);
+    assert.equal(typeof issue.detail, 'string');
+    assert.ok(issue.detail.length > 0);
+    assert.ok(issue.artifactId === null || typeof issue.artifactId === 'string');
+  }
+}
+
 function selection(extra = {}) {
   return {
     artifacts: [
@@ -196,6 +206,32 @@ const upstreamResult = assembleBundle(upstream, { out: join(root, 'out-upstream'
 assert.equal(upstreamResult.manifest.status, 'ASSEMBLED');
 assert.equal(upstreamResult.manifest.binding.status, 'consistent');
 assert.ok(upstreamResult.manifest.issues.some((item) => item.code === 'UPSTREAM_ID_SEMANTICS_UNSUPPORTED'));
+
+const sameRecord = selection();
+for (const item of sameRecord.artifacts) {
+  if (item.id === 'budget-events') {
+    item.sourcePath = material('budget-same-record-conflict.jsonl', { runId: 'tla-test', budgetRunId: 'tla-other' });
+  }
+}
+const sameRecordResult = assembleBundle(sameRecord, { out: join(root, 'out-same-record'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(sameRecordResult.manifest.status, 'INCOMPLETE');
+assert.equal(sameRecordResult.manifest.binding.status, 'unproven');
+assert.ok(sameRecordResult.manifest.issues.some((item) => item.code === 'INDEPENDENT_ID_CONFLICT'));
+assertIssueShape(sameRecordResult.manifest.issues);
+
+const invalidType = selection();
+for (const item of invalidType.artifacts) {
+  if (item.id === 'gate-summary') item.sourcePath = material('gate-invalid-type.json', { runId: 7 });
+}
+const invalidTypeResult = assembleBundle(invalidType, { out: join(root, 'out-invalid-type'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(invalidTypeResult.manifest.status, 'INCOMPLETE');
+assert.equal(invalidTypeResult.manifest.binding.status, 'unproven');
+assert.ok(invalidTypeResult.manifest.issues.some((item) => item.code === 'INDEPENDENT_ID_TYPE_INVALID'));
+assertIssueShape(invalidTypeResult.manifest.issues);
+
+for (const result of [good, missing, emptyGateResult, emptyBudgetResult, carried, conflicting, gateConflict, bad, sim, badReceipt, upstreamResult, sameRecordResult, invalidTypeResult]) {
+  assertIssueShape(result.manifest.issues);
+}
 
 console.log('launch receipt tests: ok');
 } finally {

@@ -453,12 +453,13 @@ function independentIds(artifacts, contents) {
     issues
   };
   const add = (issue) => issues.push(issue);
+  const addNote = (code, artifactId, detail) => add(note(code, artifactId, detail));
   const runnerArtifact = artifacts.find((item) => item.role === 'runner-summary');
   if (runnerArtifact === undefined) {
     add(note('INDEPENDENT_RUNNER_MISSING', null, 'runner summary is required to agree with the receipt'));
   } else {
     const value = parseJsonBytes(contents.get(runnerArtifact.id), runnerArtifact.id);
-    const picked = idFromRecord(value, ['runId', 'runnerRunId'], 'runner summary', runnerArtifact.id, add);
+    const picked = idFromRecord(value, ['runId', 'runnerRunId'], 'runner summary', runnerArtifact.id, addNote);
     result.runner = { id: picked.value, artifactId: runnerArtifact.id, conflict: picked.conflict };
     if (picked.value === null && !picked.conflict) add(note('INDEPENDENT_RUNNER_ID_MISSING', runnerArtifact.id, 'runner summary has no valid runId'));
   }
@@ -468,11 +469,11 @@ function independentIds(artifacts, contents) {
     add(note('INDEPENDENT_GATE_MISSING', null, 'gate summary is required to agree with the receipt'));
   } else {
     const value = parseJsonBytes(contents.get(gateArtifact.id), gateArtifact.id);
-    const picked = idFromRecord(value, ['runId', 'gateRunId'], 'gate summary', gateArtifact.id, add);
+    const picked = idFromRecord(value, ['runId', 'gateRunId'], 'gate summary', gateArtifact.id, addNote);
     result.gate = { id: picked.value, artifactId: gateArtifact.id, conflict: picked.conflict };
     if (picked.value === null && !picked.conflict) add(note('INDEPENDENT_GATE_ID_MISSING', gateArtifact.id, 'gate summary has no valid gate runId'));
     if (Object.hasOwn(value, 'budgetRunId')) {
-      const carried = idFromRecord(value, ['budgetRunId'], 'gate summary budget', gateArtifact.id, add);
+      const carried = idFromRecord(value, ['budgetRunId'], 'gate summary budget', gateArtifact.id, addNote);
       result.carriedBudget = carried.value;
     }
   }
@@ -494,7 +495,7 @@ function independentIds(artifacts, contents) {
     let conflict = false;
     if (values.length === 0) add(note('BUDGET_EVENTS_EMPTY', budgetArtifact.id, 'budget event stream is empty'));
     for (const value of values) {
-      const picked = idFromRecord(value, ['runId', 'budgetRunId'], 'budget event', budgetArtifact.id, add);
+      const picked = idFromRecord(value, ['runId', 'budgetRunId'], 'budget event', budgetArtifact.id, addNote);
       if (picked.conflict) conflict = true;
       if (picked.value !== null) ids.push(picked.value);
     }
