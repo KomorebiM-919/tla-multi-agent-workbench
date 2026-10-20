@@ -238,3 +238,9 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   stays false, and no business closed verdict is emitted. Observer (B1), physical
   byte truth and live closure remain unimplemented. Contract:
   `docs/V0.2-LAUNCH-RECEIPTS-B0.md`.
+
+- B0 targeted independent review is closed at `b6c9af1`, including role-specific
+  receipt joins and write-failure handling. B1 implementation is next under
+  [the passive metadata contract](V0.2-TOOL-METADATA-B1.md): strict versioned
+  trace/report, bounded passive writer, offline inspection and adversarial tests.
+  B1 remains design-only; installation and real-host trials are not authorized.

@@ -269,3 +269,7 @@ Phase B0 adds opt-in, default-off launch receipts from the supervised runner and
 the gated launcher. They correlate the launcher invocation and PID without
 claiming authentication, host truth or business closure; the bundle remains
 `hostVerified: false`. See [the B0 contract](docs/V0.2-LAUNCH-RECEIPTS-B0.md).
+
+B0 offline review is closed at `b6c9af1`. The next implementation contract is
+[B1 passive tool metadata](docs/V0.2-TOOL-METADATA-B1.md), currently design only.
+It provides no file-byte proof, capture-completeness guarantee or live closure.
