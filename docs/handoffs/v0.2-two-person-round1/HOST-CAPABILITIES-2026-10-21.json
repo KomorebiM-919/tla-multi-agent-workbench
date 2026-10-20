@@ -1,0 +1,244 @@
+{
+  "schema": "tla.capture-capabilities/v1",
+  "scope": "source-audit",
+  "hostVerified": false,
+  "sources": [
+    {
+      "id": "host-package",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "package.json",
+      "entryBytes": 797,
+      "entrySha256": "53ee01d3b1accfbd037d245fb4752fb5fa5f8e2a76b7de634a4223558ee54bb9"
+    },
+    {
+      "id": "host-tools",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-tools/lib/index.js",
+      "entryBytes": 162201,
+      "entrySha256": "1e53932e7c4213ea24a7d87f06960b7a7702cb21f8a5741c97242b4a470a442a"
+    },
+    {
+      "id": "host-scope",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-scope/lib/index.js",
+      "entryBytes": 12151,
+      "entrySha256": "2829df71d76e08941457d4dd173eac60783e55354921137c8b75e8b5c0d2ecca"
+    },
+    {
+      "id": "host-loop",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js",
+      "entryBytes": 74599,
+      "entrySha256": "cf57e3ecd487ac5c2553455aaa5cef2c6fb41e6bd61be5aa455675d1d7193033"
+    },
+    {
+      "id": "host-session",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-session/lib/index.js",
+      "entryBytes": 94982,
+      "entrySha256": "2f5dd07cb5c744a29abbb8003a8a4cefd9e582c6e2538074ca299a0ddd02a3bf"
+    },
+    {
+      "id": "host-fs-tool",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-tool-fs/lib/index.js",
+      "entryBytes": 49445,
+      "entrySha256": "b11d3fa50b9042019a91cc38a6abe35d74ed651374278f95e60b42734e079df1"
+    },
+    {
+      "id": "host-fs-local",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js",
+      "entryBytes": 41311,
+      "entrySha256": "63fbb41d2c33e07111884b798be507e68c2752acab8249c821c20ade436e894f"
+    },
+    {
+      "id": "host-pwsh",
+      "component": "host",
+      "productVersion": "0.2.1-rc.2",
+      "packageVersion": "0.2.1-rc.2",
+      "containerSha256": "47874618bf5b3011fcaac10cd4c85f69da333e70d4f99b921207c78d0999512a",
+      "entry": "dsh/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js",
+      "entryBytes": 31025,
+      "entrySha256": "94c7f68c425e62c8006907b3f4fea771935321581fd2327b7ee1f0ba8d15eec1"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "launch-binding",
+      "status": "unknown",
+      "evidence": [],
+      "limitations": [
+        "The current runner/gate mapping has no independently joined launch receipt."
+      ]
+    },
+    {
+      "id": "member-call-result",
+      "status": "source-supported",
+      "evidence": [
+        {
+          "sourceId": "host-tools",
+          "startLine": 3496,
+          "endLine": 3526,
+          "symbol": "notifyResult",
+          "finding": "Final same-process tool result notification carries exec and final result; listener errors are contained."
+        },
+        {
+          "sourceId": "host-tools",
+          "startLine": 3230,
+          "endLine": 3252,
+          "symbol": "createExecution",
+          "finding": "Execution identity includes callId, rootCallId and optional agent."
+        },
+        {
+          "sourceId": "host-scope",
+          "startLine": 327,
+          "endLine": 336,
+          "symbol": "scopeTarget",
+          "finding": "Unscoped contexts pass the scope filter; scoped contexts follow the agent chain."
+        }
+      ],
+      "limitations": [
+        "Source support is limited to registry calls in the same event system with an unscoped listener. Actual member coverage and out-of-process delegation are not runtime verified."
+      ]
+    },
+    {
+      "id": "task-attempt-lineage",
+      "status": "unknown",
+      "evidence": [],
+      "limitations": [
+        "Agent-teams task/attempt fields exist in installed source but full rejection/repair/review semantics are not yet mapped."
+      ]
+    },
+    {
+      "id": "read-bytes",
+      "status": "unknown",
+      "evidence": [
+        {
+          "sourceId": "host-fs-tool",
+          "startLine": 334,
+          "endLine": 354,
+          "symbol": "read.execute",
+          "finding": "Read returns a bounded line window and emits version observation, not exact full-file bytes."
+        }
+      ],
+      "limitations": [
+        "Do not reconstruct raw bytes from numbered text or fs/observed."
+      ]
+    },
+    {
+      "id": "write-before-after",
+      "status": "unknown",
+      "evidence": [
+        {
+          "sourceId": "host-fs-local",
+          "startLine": 864,
+          "endLine": 881,
+          "symbol": "writeText",
+          "finding": "Write outcomes include normalized diff text, not an authoritative original byte snapshot."
+        }
+      ],
+      "limitations": [
+        "CRLF normalization, diff size limits and concurrent effects prevent exact historical byte claims."
+      ]
+    },
+    {
+      "id": "path-containment",
+      "status": "unknown",
+      "evidence": [],
+      "limitations": [
+        "Version and canonical-path facts do not by themselves establish operation-time handle containment or race freedom."
+      ]
+    },
+    {
+      "id": "test-process-exit",
+      "status": "source-supported",
+      "evidence": [
+        {
+          "sourceId": "host-pwsh",
+          "startLine": 267,
+          "endLine": 293,
+          "symbol": "canonicalPwshResult",
+          "finding": "Foreground result preserves cwd, exitCode, signal, timeout/abort and stdout/stderr truncation state."
+        },
+        {
+          "sourceId": "host-tools",
+          "startLine": 3686,
+          "endLine": 3706,
+          "symbol": "materializeFinalResult",
+          "finding": "Successful final tool results retain structured value."
+        }
+      ],
+      "limitations": [
+        "Only the inspected foreground pwsh result path is supported by this finding. Background/persistent jobs, suite bytes and live delivery remain unverified."
+      ]
+    },
+    {
+      "id": "causal-order",
+      "status": "unknown",
+      "evidence": [
+        {
+          "sourceId": "host-loop",
+          "startLine": 552,
+          "endLine": 580,
+          "symbol": "executeToolCallGroup.commitReady",
+          "finding": "Parallel calls can settle before model-ordered finalization; notification order is not body completion order."
+        },
+        {
+          "sourceId": "host-loop",
+          "startLine": 581,
+          "endLine": 643,
+          "symbol": "executeToolCallGroup.fillPool",
+          "finding": "Dispatch promises populate per-index slots while a pool allows in-flight overlap; commitReady processes slots in model order."
+        }
+      ],
+      "limitations": [
+        "Never turn observer receipt sequence or session commit sequence into physical-operation total order."
+      ]
+    },
+    {
+      "id": "capture-completeness",
+      "status": "unknown",
+      "evidence": [
+        {
+          "sourceId": "host-tools",
+          "startLine": 3503,
+          "endLine": 3526,
+          "symbol": "notifyResult",
+          "finding": "Observer failures are warned and asynchronous observer work is not awaited."
+        }
+      ],
+      "limitations": [
+        "Mounting an observer and seeing a clean exit cannot establish lossless capture."
+      ]
+    }
+  ],
+  "issues": [
+    {
+      "code": "RUNTIME_CAPTURE_UNVERIFIED",
+      "capabilityId": null,
+      "detail": "Static source evidence only. No host was started and no real capture happened."
+    }
+  ]
+}

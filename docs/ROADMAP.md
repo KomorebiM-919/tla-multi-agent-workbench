@@ -229,3 +229,5 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - Next: Codex review of the Phase A audit and phase/boundary decisions in
   [the real-evidence design](V0.2-LIVE-EVIDENCE-DESIGN.md); observer integration
   and live closure remain unimplemented.
+
+- Source audit located same-process final tool-result notifications and foreground test exit DTOs. Next implement B0 launch receipts per [Phase B](V0.2-OBSERVER-B-DESIGN.md); raw-byte provenance, capture completeness and live closure remain unresolved.
