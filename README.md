@@ -264,3 +264,8 @@ path, not each intermediate version. Real-host closure remains unverified.
 Real-evidence capture is design-only: see [the phased design](docs/V0.2-LIVE-EVIDENCE-DESIGN.md). Offline source audits and artifact inventories do not certify live closure.
 
 Installed-host source inspection and the next receipt-first design are documented in [Phase B](docs/V0.2-OBSERVER-B-DESIGN.md). This adds source evidence only; real-host closure remains unverified.
+
+Phase B0 adds opt-in, default-off launch receipts from the supervised runner and
+the gated launcher. They correlate the launcher invocation and PID without
+claiming authentication, host truth or business closure; the bundle remains
+`hostVerified: false`. See [the B0 contract](docs/V0.2-LAUNCH-RECEIPTS-B0.md).

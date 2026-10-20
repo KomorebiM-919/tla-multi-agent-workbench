@@ -13,15 +13,15 @@
  * did not spawn.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { probeUpstreamHealth, describeHealth } from './health-probe.mjs';
 import { renderOverlay } from './overlay-template.mjs';
+import { newLaunchId, runnerReceipt, writeReceiptExclusive } from './lib/launch-receipts.mjs';
 
 // Every default path is resolved from this module, never from the caller's working
 // directory: the runner must launch the launcher that lives beside it even when it is
@@ -37,6 +37,7 @@ export const RUNNER_STATUSES = Object.freeze([
   'upstream-lost',
   'host-failed',
   'host-spawn-failed',
+  'receipt-write-failed',
   'timeout',
   'cancelled',
   'preflight-failed',
@@ -118,6 +119,12 @@ export function validateSpec(spec) {
   requireString('projectCwd', spec.projectCwd);
   requireString('runDir', spec.runDir);
   requireString('profile', spec.profile);
+  if (spec.evidenceReceipts !== undefined && typeof spec.evidenceReceipts !== 'boolean') {
+    problems.push('evidenceReceipts must be a boolean');
+  }
+  if (spec.evidenceReceipts === true && spec.hostCommand !== undefined) {
+    problems.push('evidenceReceipts requires the real gated launcher; custom hostCommand cannot produce a gate receipt');
+  }
   if (spec.projectCwd !== undefined && !existsSync(resolve(spec.projectCwd))) problems.push('projectCwd does not exist: ' + String(spec.projectCwd));
   if (spec.runDir !== undefined && existsSync(resolve(spec.runDir))) {
     if (readdirSync(resolve(spec.runDir)).length !== 0) problems.push('runDir must not exist or be empty: ' + String(spec.runDir));
@@ -633,10 +640,12 @@ function spawnOwned(role, command, args, options) {
   // A failed spawn emits 'error' instead of 'exit'. Without a listener the event is unhandled and
   // takes the whole runner down, leaving the other child orphaned.
   const errors = [];
+  const entry = { role, child, pid: child.pid === undefined ? null : child.pid, spawned: false, command, args, logPath, startedAt: nowIso(), errors };
   child.on('error', (error) => {
     errors.push(error instanceof Error ? error.message : String(error));
   });
-  return { role, child, pid: child.pid === undefined ? null : child.pid, command, args, logPath, startedAt: nowIso(), errors };
+  child.once('spawn', () => { entry.spawned = true; });
+  return entry;
 }
 
 /**
@@ -649,12 +658,12 @@ export async function waitSpawnOutcome(entry, timeoutMs = 500) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (entry.errors.length > 0) return { ok: false, detail: entry.errors.join('; ') };
-    if (entry.pid !== null) return { ok: true, detail: '' };
+    if (entry.spawned === true) return { ok: true, detail: '' };
     await sleep(10);
   }
   return entry.errors.length > 0
     ? { ok: false, detail: entry.errors.join('; ') }
-    : { ok: entry.pid !== null, detail: entry.pid === null ? 'no pid was assigned' : '' };
+    : { ok: entry.spawned === true, detail: entry.spawned === true ? '' : 'spawn event was not observed' };
 }
 
 /** Wait until the upstream answers as this run, classifying every failure. */
@@ -706,6 +715,16 @@ export async function runExperiment(spec, options = {}) {
   mkdirSync(logDir, { recursive: true });
   const overlayPath = join(workDir, 'overlay-' + endpoints.runId + '.patch.yml');
   const effective = resolveEffective(spec);
+  const receiptPlan = spec.evidenceReceipts === true
+    ? (() => {
+        const launchId = newLaunchId();
+        return {
+          launchId,
+          runnerPath: join(runDir, `runner-launch-${launchId}.json`),
+          gatePath: join(runDir, `gate-launch-${launchId}.json`)
+        };
+      })()
+    : null;
   const overlayText = renderOverlay({
     gateUrl: endpoints.gateUrl,
     runDir,
@@ -734,6 +753,12 @@ export async function runExperiment(spec, options = {}) {
     derived: endpoints,
     overlayPath,
     logDir,
+    receipts: receiptPlan === null ? null : {
+      launchId: receiptPlan.launchId,
+      runnerPath: receiptPlan.runnerPath,
+      gatePath: receiptPlan.gatePath,
+      runnerState: null
+    },
     pinned: spec.pinned === undefined ? null : spec.pinned,
     pinnedEvidence: null,
     hostArgs: null,
@@ -742,6 +767,7 @@ export async function runExperiment(spec, options = {}) {
     owned: [],
     health: [],
     teardown: [],
+    primaryFailure: null,
     reason: null
   };
   const phase = (name, detail) => {
@@ -765,11 +791,15 @@ export async function runExperiment(spec, options = {}) {
         survivors: result.survivors
       });
       if (result.how === 'still-alive' || result.how === 'descendants-survived' || result.survivors.length > 0) {
-        summary.status = 'cleanup-anomaly';
         const detail = result.survivors.length > 0
           ? 'descendants still alive: ' + result.survivors.join(', ')
           : 'pid ' + String(result.pid) + ' still alive';
-        summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + role + ' teardown: ' + detail;
+        if (summary.primaryFailure !== null && summary.primaryFailure.status === 'receipt-write-failed') {
+          summary.reason = summary.primaryFailure.reason + '; cleanup also failed: ' + role + ' teardown: ' + detail;
+        } else {
+          summary.status = 'cleanup-anomaly';
+          summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + role + ' teardown: ' + detail;
+        }
       }
       // The host is the tree; the upstream is a single process. Record the host's proof, and
       // never let the upstream's clean stop overwrite it.
@@ -788,9 +818,13 @@ export async function runExperiment(spec, options = {}) {
     // Only our own spawns can leak. A run that never started anything cannot be blamed for a
     // port that somebody else holds (for example the port-conflict scenario).
     if (summary.owned.length > 0 && (!gateFree || !upstreamFree)) {
-      summary.status = 'cleanup-anomaly';
       const stuck = [!gateFree ? 'gate ' + String(endpoints.gatePort) : null, !upstreamFree ? 'upstream ' + String(endpoints.upstreamPort) : null].filter(Boolean).join(' and ');
-      summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + 'a port owned by this experiment is still accepting connections after cleanup: ' + stuck;
+      if (summary.primaryFailure !== null && summary.primaryFailure.status === 'receipt-write-failed') {
+        summary.reason = summary.primaryFailure.reason + '; cleanup also left a port held: ' + stuck;
+      } else {
+        summary.status = 'cleanup-anomaly';
+        summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + 'a port owned by this experiment is still accepting connections after cleanup: ' + stuck;
+      }
     }
     if (spec.requireTreeProof === true && summary.treeProof === 'exited-before-teardown' && summary.status === 'completed') {
       summary.status = 'cleanup-anomaly';
@@ -802,6 +836,7 @@ export async function runExperiment(spec, options = {}) {
   };
 
   const fail = async (status, reason) => {
+    summary.primaryFailure = { status, reason };
     summary.status = status;
     summary.reason = reason;
     phase('stop', { status, reason });
@@ -880,7 +915,7 @@ export async function runExperiment(spec, options = {}) {
   }
 
   const hostCommand = spec.hostCommand === undefined ? process.execPath : spec.hostCommand;
-  const hostArgv = spec.hostCommand === undefined ? buildHostArgs(spec, endpoints, runDir, overlayPath, effective) : spec.hostArgs.slice();
+  const hostArgv = spec.hostCommand === undefined ? buildHostArgs(spec, endpoints, runDir, overlayPath, effective, receiptPlan) : spec.hostArgs.slice();
   summary.hostArgs = hostArgv;
   // The summary must describe the argv the host really received, not the intent behind it.
   if (spec.hostCommand === undefined) {
@@ -900,6 +935,11 @@ export async function runExperiment(spec, options = {}) {
     for (const [flag, value] of [['--dsh-exe', spec.dshExe], ['--dsh-cli', spec.dshCli], ['--dsh-home', spec.dshHome], ['--prompt', spec.prompt]]) {
       if (value !== undefined) expectedArgs[flag] = value;
     }
+    if (receiptPlan !== null) {
+      expectedArgs['--receipt-runner-id'] = endpoints.runId;
+      expectedArgs['--receipt-launch-id'] = receiptPlan.launchId;
+      expectedArgs['--receipt-file'] = receiptPlan.gatePath;
+    }
     const agreement = verifyInvocationArgs(hostArgv, expectedArgs);
     // A spec field that never reaches the launcher is the same bug as a knob that is
     // recorded but not passed on, so the required files are checked one by one.
@@ -917,7 +957,30 @@ export async function runExperiment(spec, options = {}) {
   summary.hostPid = host.pid;
   phase('host-spawned', { pid: host.pid });
   const hostSpawn = await waitSpawnOutcome(host);
-  if (!hostSpawn.ok) return fail('host-spawn-failed', 'host did not start: ' + hostSpawn.detail);
+  let receiptError = null;
+  if (receiptPlan !== null) {
+    const state = hostSpawn.ok ? 'spawned' : 'spawn-failed';
+    try {
+      const receipt = runnerReceipt({
+        runnerRunId: endpoints.runId,
+        launchId: receiptPlan.launchId,
+        state,
+        launcherPid: state === 'spawned' ? host.pid : null,
+        command: hostCommand,
+        args: hostArgv
+      });
+      writeReceiptExclusive(receiptPlan.runnerPath, receipt);
+      summary.receipts.runnerState = state;
+      phase('runner-receipt-written', { state });
+    } catch (error) {
+      receiptError = String(error instanceof Error ? error.message : error);
+    }
+  }
+  if (!hostSpawn.ok) {
+    return fail('host-spawn-failed', 'host did not start: ' + hostSpawn.detail
+      + (receiptError === null ? '' : '; required runner receipt was not written: ' + receiptError));
+  }
+  if (receiptError !== null) return fail('receipt-write-failed', 'required runner receipt was not written: ' + receiptError);
 
   const timeoutMs = effective.timeoutMs;
   const deadline = Date.now() + timeoutMs;
@@ -958,7 +1021,7 @@ function buildHostEnv(spec) {
   return env;
 }
 
-export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective) {
+export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective, receiptPlan = null) {
   const args = [
     spec.launcherPath === undefined ? join(TOOLS_DIR, 'gated-run.mjs') : resolve(spec.launcherPath),
     '--profile', spec.profile,
@@ -981,6 +1044,11 @@ export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective) {
   if (spec.dshExe !== undefined) args.push('--dsh-exe', spec.dshExe);
   if (spec.dshCli !== undefined) args.push('--dsh-cli', spec.dshCli);
   if (spec.dshHome !== undefined) args.push('--dsh-home', spec.dshHome);
+  if (receiptPlan !== null) {
+    args.push('--receipt-runner-id', endpoints.runId);
+    args.push('--receipt-launch-id', receiptPlan.launchId);
+    args.push('--receipt-file', receiptPlan.gatePath);
+  }
   args.push('--prompt', spec.prompt === undefined ? 'supervised experiment' : spec.prompt);
   return args;
 }

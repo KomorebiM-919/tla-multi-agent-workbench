@@ -231,3 +231,10 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   and live closure remain unimplemented.
 
 - Source audit located same-process final tool-result notifications and foreground test exit DTOs. Next implement B0 launch receipts per [Phase B](V0.2-OBSERVER-B-DESIGN.md); raw-byte provenance, capture completeness and live closure remain unresolved.
+
+- B0 launch receipts are implemented as an opt-in, default-off runner/gate pair.
+  The bundle joins them only with independent runner summary, gate summary and
+  budget identities; receipts remain local correlation evidence, `hostVerified`
+  stays false, and no business closed verdict is emitted. Observer (B1), physical
+  byte truth and live closure remain unimplemented. Contract:
+  `docs/V0.2-LAUNCH-RECEIPTS-B0.md`.

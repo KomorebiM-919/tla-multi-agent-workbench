@@ -452,3 +452,15 @@ Both tools use exit `0` for valid/assembled, `2` for invalid/incomplete data or 
 unverifiable path probe, and `1` for CLI/I/O/cleanup failure. They do not start
 DSH, inspect profiles or publish private paths; `ASSEMBLED` is not a business
 closure. See `docs/V0.2-LIVE-EVIDENCE-PHASE-A-CORRECTIONS.md`.
+
+### Phase B0 launch receipts
+
+`node tests/v02-launch-receipts.test.mjs` exercises strict runner/gate receipt
+schemas, PID/state, digest stability, simulated-runtime separation and the
+bundle join. `node tests/v02-launch-receipts-producers.test.mjs` uses a real
+local gated-run child and an independent upstream stand-in; the deliberately
+absent DSH path makes the gate refuse during config probing, so no DSH host is
+launched. These are invented validation records, not measured provenance.
+Receipts remain opt-in (`evidenceReceipts: true` on the spec, or
+`--evidence-receipts` for a supervised generated spec). See
+`docs/V0.2-LAUNCH-RECEIPTS-B0.md`.

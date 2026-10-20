@@ -29,6 +29,7 @@ import {
   relativePathValue,
   validateArrayLimit
 } from './lib/evidence-contracts.mjs';
+import { parseReceipt, joinReceipts } from './lib/launch-receipts.mjs';
 
 export const BUNDLE_SCHEMA = 'tla.run-evidence-bundle/v1';
 export const ROLES = Object.freeze([
@@ -203,7 +204,9 @@ const ROLE_ID_SPECS = {
   'gate-summary': { run: ['runId', 'gateRunId', 'budgetRunId'], gate: ['runId', 'gateRunId'], budget: ['budgetRunId'] },
   'gate-events': { run: ['runId', 'gateRunId', 'budgetRunId'], gate: ['runId', 'gateRunId'], budget: ['budgetRunId'] },
   'budget-events': { run: ['runId', 'budgetRunId', 'gateRunId'], gate: ['gateRunId'], budget: ['runId', 'budgetRunId'] },
-  'upstream-events': { run: ['runId', 'gateRunId', 'budgetRunId'], gate: ['runId', 'gateRunId'], budget: ['budgetRunId'] }
+  // The upstream service run ID is not a gate/request run ID. Its actual
+  // semantics are not frozen here, so no runId field may be promoted.
+  'upstream-events': {}
 };
 
 function parseJsonBytes(bytes, label) {
@@ -232,6 +235,7 @@ function observeRunIds(artifacts, contents) {
   const observed = { runner: new Set(), run: new Set(), gate: new Set(), budget: new Set() };
   const evidence = new Map();
   const issues = [];
+  const receipts = [];
   const issueKeys = new Set();
   const note = (code, artifactId, detail) => {
     const key = `${code}|${artifactId}|${detail}`;
@@ -255,6 +259,10 @@ function observeRunIds(artifacts, contents) {
     const record = new Map();
     for (const key of Object.keys(value)) {
       if (!ID_FIELDS.has(key)) continue;
+      if (role === 'upstream-events') {
+        note('UPSTREAM_ID_SEMANTICS_UNSUPPORTED', artifactId, 'the upstream service runId is not assumed to be a gate/request run ID');
+        continue;
+      }
       if (!allowed.has(key)) {
         note('RUN_ID_FIELD_UNSUPPORTED', artifactId, `${role} does not define ${key}`);
         continue;
@@ -292,7 +300,12 @@ function observeRunIds(artifacts, contents) {
       const values = artifact.role === 'gate-summary' ? [parseJsonBytes(bytes, artifact.id)] : parseJsonLines(bytes, artifact.id);
       for (const value of values) collectRecord(value, artifact.role, artifact.id);
     } else if (artifact.role === 'launch-receipt') {
-      note('LAUNCH_RECEIPT_FORMAT_UNSUPPORTED', artifact.id, 'Phase A has no receipt parser; it cannot establish a parent-child mapping');
+      try {
+        const parsed = parseReceipt(parseJsonBytes(bytes, artifact.id));
+        receipts.push({ artifactId: artifact.id, kind: parsed.kind, value: parsed.value });
+      } catch (error) {
+        note('LAUNCH_RECEIPT_INVALID', artifact.id, String(error instanceof Error ? error.message : error));
+      }
     } else if (artifact.role === 'observer-events') {
       note('OBSERVER_SCHEMA_UNSPECIFIED', artifact.id, 'observer event schema is not defined in Phase A');
     }
@@ -322,10 +335,81 @@ function observeRunIds(artifacts, contents) {
     observed,
     evidenceRefs: [...new Set([...evidence.values()].flat())],
     issues,
+    receipts,
     runnerRunId: single(observed.runner),
     gateRunId: gateId !== null && budgetId !== null && gateId !== budgetId ? null : gateId,
     budgetRunId: gateId !== null && budgetId !== null && gateId !== budgetId ? null : budgetId
   };
+}
+
+function evaluateReceiptJoin(observation, artifacts, note) {
+  const receipts = observation.receipts;
+  const runners = receipts.filter((item) => item.kind === 'runner');
+  const gates = receipts.filter((item) => item.kind === 'gate');
+  const hasRunnerSummary = artifacts.some((item) => item.role === 'runner-summary');
+  const hasGateSummary = artifacts.some((item) => item.role === 'gate-summary');
+  const hasBudgetEvents = artifacts.some((item) => item.role === 'budget-events');
+  if (runners.length === 0 && gates.length === 0) {
+    note('LAUNCH_RECEIPT_MISSING', null, 'no launch receipt was selected');
+    return { status: 'unproven', issues: [] };
+  }
+  if (runners.length > 1 || gates.length > 1) {
+    note('RECEIPT_DUPLICATE', null, `runner receipts=${runners.length}, gate receipts=${gates.length}`);
+    return { status: 'inconsistent', issues: [] };
+  }
+  if (runners.length !== 1 || gates.length !== 1) {
+    note('RECEIPT_INCOMPLETE', null, `runner receipts=${runners.length}, gate receipts=${gates.length}`);
+    return { status: 'unproven', issues: [] };
+  }
+  const runner = runners[0].value;
+  const gate = gates[0].value;
+  const joined = joinReceipts(runner, gate);
+  for (const problem of joined.problems) {
+    if (problem === 'RECEIPT_SIMULATED') {
+      note(problem, null, 'simulated receipts exercise the validator but cannot establish a runtime binding');
+    } else {
+      note(problem, null, 'receipt fields or origin do not join');
+    }
+  }
+  if (!joined.ok && !joined.problems.every((problem) => problem === 'RECEIPT_SIMULATED' || problem === 'RUNNER_RECEIPT_NOT_SPAWNED')) {
+    return { status: 'inconsistent', issues: [] };
+  }
+  if (joined.problems.includes('RECEIPT_SIMULATED')) return { status: 'unproven', issues: [] };
+  if (runner.state !== 'spawned') {
+    note('RUNNER_RECEIPT_NOT_SPAWNED', null, 'the selected runner receipt did not observe a spawn');
+    return { status: 'unproven', issues: [] };
+  }
+  if (!hasRunnerSummary) note('INDEPENDENT_RUNNER_MISSING', null, 'runner summary is required to agree with the receipt');
+  if (!hasGateSummary) note('INDEPENDENT_GATE_MISSING', null, 'gate summary is required to agree with the receipt');
+  if (!hasBudgetEvents) note('INDEPENDENT_BUDGET_MISSING', null, 'budget events are required to agree with the receipt');
+  if (!hasRunnerSummary || !hasGateSummary || !hasBudgetEvents) {
+    return { status: 'unproven', issues: [] };
+  }
+  const one = (set) => (set.size === 1 ? [...set][0] : null);
+  const observedRunner = one(observation.observed.runner);
+  const observedGate = one(observation.observed.gate);
+  const observedBudget = one(observation.observed.budget);
+  if (observedRunner === null || observedGate === null || observedBudget === null) {
+    note('RECEIPT_INDEPENDENT_ID_UNPROVEN', null, 'an independent identity is missing or conflicting');
+    return { status: 'unproven', issues: [] };
+  }
+  if (observedRunner !== runner.runnerRunId) {
+    note('RECEIPT_RUNNER_ID_MISMATCH', null, 'independent runner summary does not match the receipt');
+    return { status: 'inconsistent', issues: [] };
+  }
+  if (observedGate !== gate.gateRunId) {
+    note('RECEIPT_GATE_ID_MISMATCH', null, 'independent gate summary does not match the receipt');
+    return { status: 'inconsistent', issues: [] };
+  }
+  if (observedBudget !== gate.budgetRunId) {
+    note('RECEIPT_BUDGET_ID_MISMATCH', null, 'independent budget events do not match the receipt');
+    return { status: 'inconsistent', issues: [] };
+  }
+  if (gate.gateRunId !== gate.budgetRunId) {
+    note('GATE_BUDGET_ID_CONFLICT', null, 'gate and budget receipt identities differ');
+    return { status: 'inconsistent', issues: [] };
+  }
+  return { status: 'consistent', issues: [] };
 }
 
 function fatalIssue(code, artifactId, detail) {
@@ -391,15 +475,21 @@ export function assembleBundle(selection, options = {}) {
 
     const observation = observeRunIds(artifacts, contents);
     const issues = [...observation.issues];
+    const noteIssue = (code, artifactId, detail) => issues.push({ code, artifactId, detail });
     verifyExpected(expected, observation.observed, issues);
     if (!artifacts.some((item) => item.role === 'runner-summary')) {
       issues.push(fatalIssue('RUNNER_SUMMARY_MISSING', null, 'a runner summary is required for an assembled inventory'));
     }
-    issues.push({ code: 'RUN_BINDING_UNPROVEN', artifactId: null, detail: 'Phase A cannot prove the runner-child mapping without an explicit launch receipt' });
+    const receiptJoin = evaluateReceiptJoin(observation, artifacts, noteIssue);
+    if (receiptJoin.status === 'inconsistent') {
+      issues.push(fatalIssue('RECEIPT_JOIN_INCONSISTENT', null, 'the selected receipts or independent run identities conflict'));
+    } else if (receiptJoin.status === 'unproven') {
+      issues.push({ code: 'RUN_BINDING_UNPROVEN', artifactId: null, detail: 'the selected receipts do not establish a consistent runtime binding' });
+    }
     const fatal = issues.some((issue) => ['RUNNER_SUMMARY_MISSING', 'RUNNER_ID_CONFLICT', 'GATE_ID_CONFLICT',
       'BUDGET_ID_CONFLICT', 'RUN_ID_CONFLICT', 'RUN_ID_FIELD_UNSUPPORTED', 'RUN_ID_TYPE_INVALID',
       'GATE_BUDGET_ID_CONFLICT', 'EXPECTED_ID_MISMATCH', 'RUN_BEARER_JSON_INVALID',
-      'RUN_BEARER_EMPTY'].includes(issue.code));
+      'RUN_BEARER_EMPTY', 'LAUNCH_RECEIPT_INVALID', 'RECEIPT_JOIN_INCONSISTENT'].includes(issue.code));
     const manifest = {
       schema: BUNDLE_SCHEMA,
       scope: 'local-artifact-inventory',
@@ -409,8 +499,8 @@ export function assembleBundle(selection, options = {}) {
         runnerRunId: observation.runnerRunId,
         gateRunId: observation.gateRunId,
         budgetRunId: observation.budgetRunId,
-        status: 'unproven',
-        evidenceRefs: observation.evidenceRefs
+        status: receiptJoin.status,
+        evidenceRefs: [...new Set([...observation.evidenceRefs, ...observation.receipts.map((item) => item.artifactId)])]
       },
       artifacts: artifacts.map((artifact) => ({
         id: artifact.id,

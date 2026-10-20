@@ -53,6 +53,7 @@ import {
   readGateStatus,
 } from '../orchestration/gate/preflight.mjs';
 import { HEALTH_BLOCKER_CODES, describeHealth, probeUpstreamHealth } from './health-probe.mjs';
+import { gateReceipt, isId, isUuid, receiptPathInside, writeReceiptExclusive } from './lib/launch-receipts.mjs';
 
 export const EXIT_OK = 0;
 export const EXIT_HOST_FAILED = 1;
@@ -138,8 +139,20 @@ export function parseArgs(argv) {
       case '--upstream-health-url': options.upstreamHealthUrl = next('upstream-health-url'); break;
       case '--upstream-run-id': options.upstreamRunId = next('upstream-run-id'); break;
       case '--summary': options.summary = next('summary'); break;
+      case '--receipt-runner-id': options.receiptRunnerId = next('receipt-runner-id'); break;
+      case '--receipt-launch-id': options.receiptLaunchId = next('receipt-launch-id'); break;
+      case '--receipt-file': options.receiptFile = next('receipt-file'); break;
       default: throw new UsageError('unknown argument: ' + arg);
     }
+  }
+  const receiptValues = [options.receiptRunnerId, options.receiptLaunchId, options.receiptFile];
+  const present = receiptValues.filter((value) => value !== undefined).length;
+  if (present !== 0 && present !== receiptValues.length) {
+    throw new UsageError('--receipt-runner-id, --receipt-launch-id and --receipt-file must be supplied together');
+  }
+  if (present === receiptValues.length) {
+    if (!isId(options.receiptRunnerId)) throw new UsageError('receipt runner id is invalid');
+    if (!isUuid(options.receiptLaunchId)) throw new UsageError('receipt launch id is not a canonical UUID');
   }
   return options;
 }
@@ -543,6 +556,27 @@ async function main() {
   mkdirSync(runDir, { recursive: true });
   options.scratchDir = runDir;
   options.runId = options.runId || buildRunId();
+
+  if (options.receiptFile !== undefined) {
+    if (!receiptPathInside(options.receiptFile, runDir)) {
+      fail('receipt file must be inside the fresh run directory');
+      return;
+    }
+    try {
+      const receipt = gateReceipt({
+        runnerRunId: options.receiptRunnerId,
+        launchId: options.receiptLaunchId,
+        gateRunId: options.runId,
+        budgetRunId: options.runId,
+        command: process.execPath,
+        args: process.argv.slice(1)
+      });
+      writeReceiptExclusive(resolve(options.receiptFile), receipt);
+    } catch (error) {
+      fail('gate receipt could not be written before host start: ' + String(error instanceof Error ? error.message : error));
+      return;
+    }
+  }
 
   const gateLog = options.gateLog || join(runDir, 'gate-events.jsonl');
   const summaryPath = options.summary || join(runDir, 'gate-summary.json');
