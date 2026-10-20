@@ -464,3 +464,10 @@ launched. These are invented validation records, not measured provenance.
 Receipts remain opt-in (`evidenceReceipts: true` on the spec, or
 `--evidence-receipts` for a supervised generated spec). See
 `docs/V0.2-LAUNCH-RECEIPTS-B0.md`.
+
+The unit suite also proves that an empty `gate-summary` cannot borrow an ID from
+`gate-events`, an empty `budget-events` cannot borrow one from `gate-summary`,
+and conflicts stay `unproven` + `INCOMPLETE` rather than inventing a binding
+enum. The producer suite injects a post-spawn runner receipt write failure
+(partial file, bounded teardown, primary error preserved) and a pre-existing gate
+receipt file (exclusive write refused before host start).

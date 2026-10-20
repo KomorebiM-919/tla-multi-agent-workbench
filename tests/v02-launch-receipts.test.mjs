@@ -108,6 +108,50 @@ assert.equal(missing.manifest.status, 'ASSEMBLED');
 assert.equal(missing.manifest.binding.status, 'unproven');
 assert.ok(missing.manifest.issues.some((item) => item.code === 'INDEPENDENT_GATE_MISSING'));
 
+const emptyGate = selection();
+for (const item of emptyGate.artifacts) {
+  if (item.id === 'gate-summary') item.sourcePath = material('gate-empty.json', {});
+}
+const emptyGateResult = assembleBundle(emptyGate, { out: join(root, 'out-empty-gate'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(emptyGateResult.manifest.status, 'ASSEMBLED');
+assert.equal(emptyGateResult.manifest.binding.status, 'unproven');
+assert.ok(emptyGateResult.manifest.issues.some((item) => item.code === 'INDEPENDENT_GATE_ID_MISSING'));
+
+const emptyBudget = selection();
+for (const item of emptyBudget.artifacts) {
+  if (item.id === 'budget-events') item.sourcePath = material('budget-empty.json', '');
+}
+const emptyBudgetResult = assembleBundle(emptyBudget, { out: join(root, 'out-empty-budget'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(emptyBudgetResult.manifest.status, 'ASSEMBLED');
+assert.equal(emptyBudgetResult.manifest.binding.status, 'unproven');
+assert.ok(emptyBudgetResult.manifest.issues.some((item) => item.code === 'BUDGET_EVENTS_EMPTY'));
+
+const carriedBudget = selection();
+for (const item of carriedBudget.artifacts) {
+  if (item.id === 'gate-summary') item.sourcePath = material('gate-carried-budget.json', { runId: 'tla-test', budgetRunId: 'tla-other' });
+}
+const carried = assembleBundle(carriedBudget, { out: join(root, 'out-carried'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(carried.manifest.status, 'INCOMPLETE');
+assert.equal(carried.manifest.binding.status, 'unproven');
+
+const conflictingBudget = selection();
+for (const item of conflictingBudget.artifacts) {
+  if (item.id === 'budget-events') {
+    item.sourcePath = material('budget-conflict.jsonl', `${JSON.stringify({ runId: 'tla-test' })}\n${JSON.stringify({ budgetRunId: 'tla-other' })}\n`);
+  }
+}
+const conflicting = assembleBundle(conflictingBudget, { out: join(root, 'out-conflicting'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(conflicting.manifest.status, 'INCOMPLETE');
+assert.equal(conflicting.manifest.binding.status, 'unproven');
+
+const conflictingGate = selection();
+for (const item of conflictingGate.artifacts) {
+  if (item.id === 'gate-summary') item.sourcePath = material('gate-conflict.json', { runId: 'tla-test', gateRunId: 'tla-other' });
+}
+const gateConflict = assembleBundle(conflictingGate, { out: join(root, 'out-gate-conflict'), pathSafetyProbe: () => ({ reparse: false }) });
+assert.equal(gateConflict.manifest.status, 'INCOMPLETE');
+assert.equal(gateConflict.manifest.binding.status, 'unproven');
+
 const mismatch = selection();
 const wrongGate = material('gate-wrong.json', { runId: 'tla-other' });
 for (const item of mismatch.artifacts) if (item.id === 'gate-summary') item.sourcePath = wrongGate;

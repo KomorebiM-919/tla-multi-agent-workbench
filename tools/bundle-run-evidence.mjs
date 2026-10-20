@@ -297,7 +297,17 @@ function observeRunIds(artifacts, contents) {
       }
     } else if (artifact.role === 'gate-summary' || artifact.role === 'gate-events' ||
         artifact.role === 'budget-events' || artifact.role === 'upstream-events') {
-      const values = artifact.role === 'gate-summary' ? [parseJsonBytes(bytes, artifact.id)] : parseJsonLines(bytes, artifact.id);
+      let values;
+      if (artifact.role === 'gate-summary') {
+        values = [parseJsonBytes(bytes, artifact.id)];
+      } else {
+        try {
+          values = parseJsonLines(bytes, artifact.id);
+        } catch (error) {
+          if (error !== null && typeof error === 'object' && error.code === 'RUN_BEARER_EMPTY') values = [];
+          else throw error;
+        }
+      }
       for (const value of values) collectRecord(value, artifact.role, artifact.id);
     } else if (artifact.role === 'launch-receipt') {
       try {
@@ -342,24 +352,21 @@ function observeRunIds(artifacts, contents) {
   };
 }
 
-function evaluateReceiptJoin(observation, artifacts, note) {
+function evaluateReceiptJoin(observation, artifacts, independent, note) {
   const receipts = observation.receipts;
   const runners = receipts.filter((item) => item.kind === 'runner');
   const gates = receipts.filter((item) => item.kind === 'gate');
-  const hasRunnerSummary = artifacts.some((item) => item.role === 'runner-summary');
-  const hasGateSummary = artifacts.some((item) => item.role === 'gate-summary');
-  const hasBudgetEvents = artifacts.some((item) => item.role === 'budget-events');
   if (runners.length === 0 && gates.length === 0) {
     note('LAUNCH_RECEIPT_MISSING', null, 'no launch receipt was selected');
-    return { status: 'unproven', issues: [] };
+    return { status: 'unproven', conflict: false };
   }
   if (runners.length > 1 || gates.length > 1) {
     note('RECEIPT_DUPLICATE', null, `runner receipts=${runners.length}, gate receipts=${gates.length}`);
-    return { status: 'inconsistent', issues: [] };
+    return { status: 'unproven', conflict: true };
   }
   if (runners.length !== 1 || gates.length !== 1) {
     note('RECEIPT_INCOMPLETE', null, `runner receipts=${runners.length}, gate receipts=${gates.length}`);
-    return { status: 'unproven', issues: [] };
+    return { status: 'unproven', conflict: false };
   }
   const runner = runners[0].value;
   const gate = gates[0].value;
@@ -372,44 +379,135 @@ function evaluateReceiptJoin(observation, artifacts, note) {
     }
   }
   if (!joined.ok && !joined.problems.every((problem) => problem === 'RECEIPT_SIMULATED' || problem === 'RUNNER_RECEIPT_NOT_SPAWNED')) {
-    return { status: 'inconsistent', issues: [] };
+    return { status: 'unproven', conflict: true };
   }
-  if (joined.problems.includes('RECEIPT_SIMULATED')) return { status: 'unproven', issues: [] };
+  if (joined.problems.includes('RECEIPT_SIMULATED')) return { status: 'unproven', conflict: false };
   if (runner.state !== 'spawned') {
     note('RUNNER_RECEIPT_NOT_SPAWNED', null, 'the selected runner receipt did not observe a spawn');
-    return { status: 'unproven', issues: [] };
+    return { status: 'unproven', conflict: false };
   }
-  if (!hasRunnerSummary) note('INDEPENDENT_RUNNER_MISSING', null, 'runner summary is required to agree with the receipt');
-  if (!hasGateSummary) note('INDEPENDENT_GATE_MISSING', null, 'gate summary is required to agree with the receipt');
-  if (!hasBudgetEvents) note('INDEPENDENT_BUDGET_MISSING', null, 'budget events are required to agree with the receipt');
-  if (!hasRunnerSummary || !hasGateSummary || !hasBudgetEvents) {
-    return { status: 'unproven', issues: [] };
+  for (const issue of independent.issues) note(issue.code, issue.artifactId, issue.detail);
+  const conflict = independent.runner.conflict || independent.gate.conflict || independent.budget.conflict;
+  if (conflict) return { status: 'unproven', conflict: true };
+  if (independent.runner.id === null || independent.gate.id === null || independent.budget.id === null) {
+    return { status: 'unproven', conflict: false };
   }
-  const one = (set) => (set.size === 1 ? [...set][0] : null);
-  const observedRunner = one(observation.observed.runner);
-  const observedGate = one(observation.observed.gate);
-  const observedBudget = one(observation.observed.budget);
-  if (observedRunner === null || observedGate === null || observedBudget === null) {
-    note('RECEIPT_INDEPENDENT_ID_UNPROVEN', null, 'an independent identity is missing or conflicting');
-    return { status: 'unproven', issues: [] };
+  if (independent.runner.id !== runner.runnerRunId) {
+    note('RECEIPT_RUNNER_ID_MISMATCH', independent.runner.artifactId, 'runner summary does not match the receipt');
+    return { status: 'unproven', conflict: true };
   }
-  if (observedRunner !== runner.runnerRunId) {
-    note('RECEIPT_RUNNER_ID_MISMATCH', null, 'independent runner summary does not match the receipt');
-    return { status: 'inconsistent', issues: [] };
+  if (independent.gate.id !== gate.gateRunId) {
+    note('RECEIPT_GATE_ID_MISMATCH', independent.gate.artifactId, 'gate summary does not match the receipt');
+    return { status: 'unproven', conflict: true };
   }
-  if (observedGate !== gate.gateRunId) {
-    note('RECEIPT_GATE_ID_MISMATCH', null, 'independent gate summary does not match the receipt');
-    return { status: 'inconsistent', issues: [] };
-  }
-  if (observedBudget !== gate.budgetRunId) {
-    note('RECEIPT_BUDGET_ID_MISMATCH', null, 'independent budget events do not match the receipt');
-    return { status: 'inconsistent', issues: [] };
+  if (independent.budget.id !== gate.budgetRunId) {
+    note('RECEIPT_BUDGET_ID_MISMATCH', independent.budget.artifactId, 'budget events do not match the receipt');
+    return { status: 'unproven', conflict: true };
   }
   if (gate.gateRunId !== gate.budgetRunId) {
     note('GATE_BUDGET_ID_CONFLICT', null, 'gate and budget receipt identities differ');
-    return { status: 'inconsistent', issues: [] };
+    return { status: 'unproven', conflict: true };
   }
-  return { status: 'consistent', issues: [] };
+  if (independent.carriedBudget !== null && independent.carriedBudget !== independent.budget.id) {
+    note('GATE_BUDGET_ID_CONFLICT', independent.gate.artifactId, 'gate summary budgetRunId differs from budget events');
+    return { status: 'unproven', conflict: true };
+  }
+  return { status: 'consistent', conflict: false };
+}
+
+function idFromRecord(value, keys, label, artifactId, note) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    note('INDEPENDENT_ID_TYPE_INVALID', artifactId, `${label} must be an object`);
+    return { value: null, conflict: false };
+  }
+  const present = [];
+  for (const key of keys) {
+    if (!Object.hasOwn(value, key)) continue;
+    if (typeof value[key] !== 'string' || value[key].trim() === '') {
+      note('INDEPENDENT_ID_TYPE_INVALID', artifactId, `${label}.${key} must be a non-empty string`);
+      continue;
+    }
+    present.push(value[key]);
+  }
+  const unique = [...new Set(present)];
+  if (unique.length > 1) {
+    note('INDEPENDENT_ID_CONFLICT', artifactId, `${label} has conflicting values: ${unique.join(',')}`);
+    return { value: null, conflict: true };
+  }
+  return { value: unique.length === 0 ? null : unique[0], conflict: false };
+}
+
+/**
+ * Read an identity from the role that is supposed to carry it. A global set is
+ * not enough: an empty gate summary must not borrow a gate ID from gate-events,
+ * and an empty budget log must not borrow one from the gate summary.
+ */
+function independentIds(artifacts, contents) {
+  const note = (code, artifactId, detail) => ({ code, artifactId, detail });
+  const issues = [];
+  const result = {
+    runner: { id: null, artifactId: null, conflict: false },
+    gate: { id: null, artifactId: null, conflict: false },
+    budget: { id: null, artifactId: null, conflict: false },
+    carriedBudget: null,
+    issues
+  };
+  const add = (issue) => issues.push(issue);
+  const runnerArtifact = artifacts.find((item) => item.role === 'runner-summary');
+  if (runnerArtifact === undefined) {
+    add(note('INDEPENDENT_RUNNER_MISSING', null, 'runner summary is required to agree with the receipt'));
+  } else {
+    const value = parseJsonBytes(contents.get(runnerArtifact.id), runnerArtifact.id);
+    const picked = idFromRecord(value, ['runId', 'runnerRunId'], 'runner summary', runnerArtifact.id, add);
+    result.runner = { id: picked.value, artifactId: runnerArtifact.id, conflict: picked.conflict };
+    if (picked.value === null && !picked.conflict) add(note('INDEPENDENT_RUNNER_ID_MISSING', runnerArtifact.id, 'runner summary has no valid runId'));
+  }
+
+  const gateArtifact = artifacts.find((item) => item.role === 'gate-summary');
+  if (gateArtifact === undefined) {
+    add(note('INDEPENDENT_GATE_MISSING', null, 'gate summary is required to agree with the receipt'));
+  } else {
+    const value = parseJsonBytes(contents.get(gateArtifact.id), gateArtifact.id);
+    const picked = idFromRecord(value, ['runId', 'gateRunId'], 'gate summary', gateArtifact.id, add);
+    result.gate = { id: picked.value, artifactId: gateArtifact.id, conflict: picked.conflict };
+    if (picked.value === null && !picked.conflict) add(note('INDEPENDENT_GATE_ID_MISSING', gateArtifact.id, 'gate summary has no valid gate runId'));
+    if (Object.hasOwn(value, 'budgetRunId')) {
+      const carried = idFromRecord(value, ['budgetRunId'], 'gate summary budget', gateArtifact.id, add);
+      result.carriedBudget = carried.value;
+    }
+  }
+
+  const budgetArtifact = artifacts.find((item) => item.role === 'budget-events');
+  if (budgetArtifact === undefined) {
+    add(note('INDEPENDENT_BUDGET_MISSING', null, 'budget events are required to agree with the receipt'));
+  } else {
+    const values = [];
+    for (const line of contents.get(budgetArtifact.id).toString('utf8').split(/\r?\n/u)) {
+      if (line.trim() === '') continue;
+      try {
+        values.push(JSON.parse(line));
+      } catch {
+        fail('RUN_BEARER_JSON_INVALID', budgetArtifact.id);
+      }
+    }
+    const ids = [];
+    let conflict = false;
+    if (values.length === 0) add(note('BUDGET_EVENTS_EMPTY', budgetArtifact.id, 'budget event stream is empty'));
+    for (const value of values) {
+      const picked = idFromRecord(value, ['runId', 'budgetRunId'], 'budget event', budgetArtifact.id, add);
+      if (picked.conflict) conflict = true;
+      if (picked.value !== null) ids.push(picked.value);
+    }
+    const unique = [...new Set(ids)];
+    if (unique.length > 1) {
+      conflict = true;
+      add(note('INDEPENDENT_ID_CONFLICT', budgetArtifact.id, `budget events disagree: ${unique.join(',')}`));
+    }
+    result.budget = { id: unique.length === 1 ? unique[0] : null, artifactId: budgetArtifact.id, conflict };
+    if (unique.length === 0 && !conflict) add(note('INDEPENDENT_BUDGET_ID_MISSING', budgetArtifact.id, 'budget events have no valid runId'));
+  }
+
+  return result;
 }
 
 function fatalIssue(code, artifactId, detail) {
@@ -480,9 +578,10 @@ export function assembleBundle(selection, options = {}) {
     if (!artifacts.some((item) => item.role === 'runner-summary')) {
       issues.push(fatalIssue('RUNNER_SUMMARY_MISSING', null, 'a runner summary is required for an assembled inventory'));
     }
-    const receiptJoin = evaluateReceiptJoin(observation, artifacts, noteIssue);
-    if (receiptJoin.status === 'inconsistent') {
-      issues.push(fatalIssue('RECEIPT_JOIN_INCONSISTENT', null, 'the selected receipts or independent run identities conflict'));
+    const independent = independentIds(artifacts, contents);
+    const receiptJoin = evaluateReceiptJoin(observation, artifacts, independent, noteIssue);
+    if (receiptJoin.conflict) {
+      issues.push(fatalIssue('RECEIPT_JOIN_INCONSISTENT', null, 'the selected receipts or role-specific independent identities conflict'));
     } else if (receiptJoin.status === 'unproven') {
       issues.push({ code: 'RUN_BINDING_UNPROVEN', artifactId: null, detail: 'the selected receipts do not establish a consistent runtime binding' });
     }
@@ -496,9 +595,9 @@ export function assembleBundle(selection, options = {}) {
       hostVerified: false,
       status: fatal ? 'INCOMPLETE' : 'ASSEMBLED',
       binding: {
-        runnerRunId: observation.runnerRunId,
-        gateRunId: observation.gateRunId,
-        budgetRunId: observation.budgetRunId,
+        runnerRunId: independent.runner.id,
+        gateRunId: independent.gate.id,
+        budgetRunId: independent.budget.id ?? independent.carriedBudget,
         status: receiptJoin.status,
         evidenceRefs: [...new Set([...observation.evidenceRefs, ...observation.receipts.map((item) => item.artifactId)])]
       },

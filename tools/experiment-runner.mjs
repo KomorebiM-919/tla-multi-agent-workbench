@@ -957,6 +957,7 @@ export async function runExperiment(spec, options = {}) {
   summary.hostPid = host.pid;
   phase('host-spawned', { pid: host.pid });
   const hostSpawn = await waitSpawnOutcome(host);
+  const writeRunnerReceipt = options.receiptWriter ?? writeReceiptExclusive;
   let receiptError = null;
   if (receiptPlan !== null) {
     const state = hostSpawn.ok ? 'spawned' : 'spawn-failed';
@@ -969,7 +970,7 @@ export async function runExperiment(spec, options = {}) {
         command: hostCommand,
         args: hostArgv
       });
-      writeReceiptExclusive(receiptPlan.runnerPath, receipt);
+      writeRunnerReceipt(receiptPlan.runnerPath, receipt);
       summary.receipts.runnerState = state;
       phase('runner-receipt-written', { state });
     } catch (error) {
