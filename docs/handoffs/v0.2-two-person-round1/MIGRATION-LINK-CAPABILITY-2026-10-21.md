@@ -129,3 +129,49 @@ node tests/v02-migration-link-classification.test.mjs
 For the normal C/D comparison, set `TLA_LINK_TEST_ROOT` to a writable root in
 each location. The full comparison requires the separately approved outer
 execution; it is not available to the ordinary test runner.
+
+## Correction appended later: cleanup is not part of the assertion verdict
+
+The first classified implementation at `304c4b3` still replaced an existing
+result whenever `context.residual` was non-empty. That was wrong in two ways:
+
+1. a real `FAIL` became `ENVIRONMENT_BLOCKED`, changing exit 1 into exit 2 and
+   losing the failing assertion detail;
+2. the residual list was suite-global, so a cleanup leftover from one case
+   could turn a later independent parser case into a block.
+
+The old behavior was reproduced against the actual `304c4b3` executor in a
+temporary, uncommitted copy (the copy only added an export; the executor body was
+unchanged): both a `FAIL` and a `PASS` returned `ENVIRONMENT_BLOCKED` with the
+single detail `temporary container cleanup left: ...`. The temporary copy was
+removed after the probe.
+
+The corrected executor now:
+
+- keeps the original assertion result and detail in `assertion`;
+- records cleanup as a separate `ENVIRONMENT_BLOCKED` diagnostic with
+  `errorCode: CLEANUP_RESIDUAL` and the offending paths;
+- keeps `FAIL` as the final verdict and exit 1 when a cleanup block coexists, so
+  the original failure is never swallowed;
+- makes `PASS + cleanup` non-successful (`ENVIRONMENT_BLOCKED`, exit 2);
+- keeps `BLOCK + cleanup` as two independently readable reasons;
+- scopes `cleanupResiduals` per case, so a residual from a previous case cannot
+  contaminate a later case; the global list exists only for the report.
+
+`counts` remains one final verdict per case. `diagnosticCounts` separately counts
+`assertionFail`, `assertionBlocked`, `cleanupBlocked` (cases with any cleanup
+residual) and `cleanupResiduals` (total residual entries). A `FAIL + cleanup`
+case is therefore one `counts.fail`, one `diagnosticCounts.assertionFail`, one
+`diagnosticCounts.cleanupBlocked`, and one residual.
+
+The formal counterexamples in
+`tests/v02-migration-link-classification.test.mjs` now drive the real
+`executeCase`/`runMigrationLinkSuite` path with an injected cleanup failure. They
+cover FAIL+cleanup (exit 1, both details), PASS+cleanup (exit 2, located path),
+BLOCK+cleanup (both diagnostics), and previous-residual isolation (second case
+still PASS). Subprocess EPERM is a simulated child failure; timeout, nonzero exit
+and non-JSON are exercised with real/short controlled child processes or the
+real parser, and are not all classified as environment blocks. The suite's
+normal runs still return 2 when links are unobservable; full runs are separate
+approved evidence. No core checker, collector, acceptance, profile or MANIFEST
+entry was changed.

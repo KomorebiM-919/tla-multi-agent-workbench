@@ -410,9 +410,18 @@ real-environment compatibility evidence. Set `TLA_LINK_TEST_ROOT` to a writable
 root to relocate fixture containers; the OS-temp case always uses `tmpdir()`.
 The default remains `tests/.scratch/migration-links`.
 
+Cleanup is tracked per case. A cleanup residual adds an independent
+`ENVIRONMENT_BLOCKED`/`CLEANUP_RESIDUAL` diagnostic; it never overwrites a
+`FAIL` and never propagates into a later case. A case with `FAIL` plus cleanup
+stays `FAIL` (exit 1, original assertion detail kept); `PASS` plus cleanup becomes
+`ENVIRONMENT_BLOCKED` (exit 2); `BLOCK` plus cleanup keeps both reasons.
+`counts` is one verdict per case; `diagnosticCounts` separately counts assertion
+fails, assertion blocks, cases with cleanup, and total cleanup residuals.
+
 `node tests/v02-migration-link-classification.test.mjs` is the controlled
-classification counterexample set (exit priority, blocked-only summaries,
-ordinary-directory rejection, capability field checks).
+counterexample set: it drives the real suite executor with an injected cleanup
+failure and real/nonzero/timeout child processes, plus blocked-only summaries,
+ordinary-directory rejection and capability field checks.
 
 `node tools/self-check/write-review-mutations.mjs [empty-output-directory]`
 first requires a green baseline, copies only local dependencies, applies three

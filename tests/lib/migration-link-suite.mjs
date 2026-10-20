@@ -70,6 +70,16 @@ export function summarizeCases(cases) {
     environmentBlocked: cases.filter((item) => item.status === STATUS.ENVIRONMENT_BLOCKED).length,
     syntheticPass: cases.filter((item) => item.status === STATUS.PASS && item.synthetic === true).length
   };
+  // counts are case verdicts: each case contributes exactly once. A case can
+  // also carry independent diagnostics (assertion failure/block plus cleanup);
+  // diagnosticCounts is separate so a FAIL with a cleanup block is still one
+  // case and one FAIL in counts.
+  const diagnosticCounts = {
+    assertionFail: cases.filter((item) => (item.assertion ?? item).status === STATUS.FAIL).length,
+    assertionBlocked: cases.filter((item) => (item.assertion ?? item).status === STATUS.ENVIRONMENT_BLOCKED).length,
+    cleanupBlocked: cases.filter((item) => Array.isArray(item.cleanupResiduals) && item.cleanupResiduals.length > 0).length,
+    cleanupResiduals: cases.reduce((total, item) => total + (item.cleanupResiduals?.length ?? 0), 0)
+  };
   // A real assertion failure outranks an environment block: the caller must not
   // lose a product regression behind an unavailable fixture.
   const status = counts.fail > 0
@@ -78,7 +88,7 @@ export function summarizeCases(cases) {
       ? STATUS.ENVIRONMENT_BLOCKED
       : STATUS.PASS;
   const exitCode = counts.fail > 0 ? 1 : counts.environmentBlocked > 0 ? 2 : 0;
-  return { status, exitCode, counts, cases };
+  return { status, exitCode, counts, diagnosticCounts, cases };
 }
 
 function normalizeTarget(value) {
@@ -212,7 +222,69 @@ function fail(id, stage, detail, extra = {}) {
   return statusCase(id, STATUS.FAIL, stage, detail, extra);
 }
 
-async function executeCase(def, context) {
+export function subprocessFailure(id, child) {
+  if (child.error) {
+    return blocked(id, 'capability', `fixture subprocess unavailable: ${child.error.message}`, null, {
+      errorCode: child.error.code ?? null
+    });
+  }
+  if (child.signal) {
+    return blocked(id, 'capability', `fixture subprocess terminated by ${child.signal}`, null, {
+      errorCode: child.signal
+    });
+  }
+  if (child.status === null) {
+    return blocked(id, 'capability', 'fixture subprocess did not complete', null, {
+      errorCode: 'ETIMEDOUT'
+    });
+  }
+  if (child.status !== 0) {
+    return fail(id, 'product', `fixture subprocess exited ${child.status}`);
+  }
+  return null;
+}
+
+export function parseChildReport(stdout) {
+  try {
+    return { ok: true, value: JSON.parse(stdout) };
+  } catch (error) {
+    return { ok: false, detail: `fixture child returned non-JSON: ${error.message}` };
+  }
+}
+
+function addCleanup(result, residuals) {
+  const assertion = { status: result.status, stage: result.stage, detail: result.detail };
+  const cleanupDiagnostic = {
+    status: STATUS.ENVIRONMENT_BLOCKED,
+    stage: 'cleanup',
+    detail: `temporary container cleanup left: ${residuals.map((item) => item.path).join(', ')}`,
+    errorCode: 'CLEANUP_RESIDUAL',
+    residuals
+  };
+  const cleanupDetail = cleanupDiagnostic.detail;
+  if (result.status === STATUS.FAIL) {
+    return {
+      ...result,
+      status: STATUS.FAIL,
+      detail: `${result.detail}; ${cleanupDetail}`,
+      assertion,
+      diagnostics: [assertion, cleanupDiagnostic],
+      cleanupResiduals: residuals
+    };
+  }
+  return {
+    ...result,
+    status: STATUS.ENVIRONMENT_BLOCKED,
+    stage: 'cleanup',
+    detail: result.status === STATUS.PASS ? cleanupDetail : `${result.detail}; ${cleanupDetail}`,
+    assertion,
+    diagnostics: [assertion, cleanupDiagnostic],
+    cleanupResiduals: residuals
+  };
+}
+
+export async function executeCase(def, context) {
+  context.beginCase(def.id);
   let result;
   try {
     result = await def.run(context);
@@ -225,15 +297,8 @@ async function executeCase(def, context) {
       result = fail(def.id, 'product', `unexpected exception: ${error.message}`, errorInfo(error));
     }
   }
-  if (context.residual.length > 0) {
-    result = blocked(
-      def.id,
-      'cleanup',
-      `temporary container cleanup left: ${context.residual.join(', ')}`,
-      result.capability ?? null,
-      { errorCode: 'CLEANUP_RESIDUAL' }
-    );
-  }
+  const residuals = context.takeResiduals();
+  if (residuals.length > 0) result = addCleanup(result, residuals);
   if (def.synthetic) result = { ...result, synthetic: true };
   return result;
 }
@@ -479,21 +544,11 @@ const cases = [
           encoding: 'utf8',
           timeout: 10000
         });
-        if (child.error) {
-          return blocked('synthetic-lstat', 'capability', `synthetic child unavailable: ${child.error.code ?? child.error.message}`, capability, { errorCode: child.error.code ?? null, synthetic: true });
-        }
-        if (child.status === null) {
-          return blocked('synthetic-lstat', 'capability', 'synthetic child timed out', capability, { errorCode: 'ETIMEDOUT', synthetic: true });
-        }
-        if (child.status !== 0) {
-          return fail('synthetic-lstat', 'product', `synthetic child exited ${child.status}: ${child.stderr}`, { capability });
-        }
-        let report;
-        try {
-          report = JSON.parse(child.stdout);
-        } catch (error) {
-          return fail('synthetic-lstat', 'product', `synthetic child returned non-JSON: ${error.message}`, { capability });
-        }
+        const childUnavailable = subprocessFailure('synthetic-lstat', child);
+        if (childUnavailable) return { ...childUnavailable, capability, synthetic: true };
+        const parsed = parseChildReport(child.stdout);
+        if (!parsed.ok) return fail('synthetic-lstat', 'product', parsed.detail, { capability });
+        const report = parsed.value;
         if (report.ok !== true) return fail('synthetic-lstat', 'product', JSON.stringify(report.problems), { capability });
         const detail = report.checks.find((item) => item.id === 'link:junction')?.detail ?? '';
         if (!/lstat-link=false; readlink=/.test(detail)) {
@@ -505,12 +560,33 @@ const cases = [
   }
 ];
 
-// The checkout and OS-temp cases both create a container; this wrapper lets the
-// caller choose a different root for the OS-temp case without editing the case.
-function createContext(scratchRoot) {
+// Each case gets its own cleanup bucket. The global residual list is for the
+// report only; a residual from one case must never turn a later case into BLOCK.
+export function createContext(scratchRoot, options = {}) {
   const residual = [];
+  let currentCaseId = null;
+  let currentResiduals = [];
+  function addResidual(dir, error) {
+    const entry = {
+      caseId: currentCaseId,
+      path: dir,
+      errorCode: error?.code ?? null,
+      message: error?.message ?? 'cleanup left the path behind'
+    };
+    currentResiduals.push(entry);
+    residual.push(entry);
+  }
   return {
     residual,
+    beginCase(id) {
+      currentCaseId = id;
+      currentResiduals = [];
+    },
+    takeResiduals() {
+      const items = currentResiduals;
+      currentResiduals = [];
+      return items;
+    },
     scratch(base = scratchRoot) {
       mkdirSync(base, { recursive: true });
       return mkdtempSync(join(base, 'case-'));
@@ -520,12 +596,13 @@ function createContext(scratchRoot) {
     },
     cleanup(dir) {
       try {
-        rmSync(dir, { recursive: true, force: true });
+        if (options.cleanupFailure) options.cleanupFailure(dir);
+        else rmSync(dir, { recursive: true, force: true });
       } catch (error) {
-        residual.push(`${dir}:${error.code ?? error.message}`);
+        addResidual(dir, error);
         return;
       }
-      if (existsSync(dir)) residual.push(dir);
+      if (existsSync(dir)) addResidual(dir, null);
     }
   };
 }
@@ -534,16 +611,11 @@ export async function runMigrationLinkSuite(options = {}) {
   const scratchRoot = options.scratchRoot
     ?? process.env.TLA_LINK_TEST_ROOT
     ?? DEFAULT_CHECKOUT_ROOT;
-  const context = createContext(scratchRoot);
+  const context = createContext(scratchRoot, { cleanupFailure: options.cleanupFailure });
+  const definitions = options.cases ?? cases;
   const results = [];
-  for (const definition of cases) {
-    if (definition.id === 'volume-os-temp') {
-      // Run this case only after the checkout case so one bad volume does not
-      // hide the other volume's result.
-      results.push(await executeCase(definition, context));
-    } else {
-      results.push(await executeCase(definition, context));
-    }
+  for (const definition of definitions) {
+    results.push(await executeCase(definition, context));
   }
   const summary = summarizeCases(results);
   return {
@@ -557,6 +629,7 @@ export async function runMigrationLinkSuite(options = {}) {
     },
     scratchRoot,
     sourceDir: SOURCE,
+    cleanupResiduals: context.residual,
     ...summary
   };
 }
@@ -566,10 +639,17 @@ export function formatReport(report) {
   for (const item of report.cases) {
     const suffix = item.synthetic ? ' [synthetic]' : '';
     const code = item.errorCode ? ` code=${item.errorCode}` : '';
-    lines.push(`${item.status} ${item.id}${suffix} stage=${item.stage}${code}`);
+    const assertion = item.assertion && item.assertion.status !== item.status
+      ? ` assertion=${item.assertion.status}`
+      : '';
+    const cleanup = item.cleanupResiduals?.length
+      ? ` cleanup=${item.cleanupResiduals.length}`
+      : '';
+    lines.push(`${item.status} ${item.id}${suffix} stage=${item.stage}${code}${assertion}${cleanup}`);
     lines.push(`  ${item.detail}`);
   }
   lines.push(`SUMMARY ${report.status} pass=${report.counts.pass} fail=${report.counts.fail} environmentBlocked=${report.counts.environmentBlocked} syntheticPass=${report.counts.syntheticPass}`);
+  lines.push(`DIAGNOSTICS assertionFail=${report.diagnosticCounts.assertionFail} assertionBlocked=${report.diagnosticCounts.assertionBlocked} cleanupBlocked=${report.diagnosticCounts.cleanupBlocked} cleanupResiduals=${report.diagnosticCounts.cleanupResiduals}`);
   lines.push(`EXIT ${report.exitCode}`);
   return lines.join('\n');
 }
