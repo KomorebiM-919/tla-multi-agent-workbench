@@ -99,3 +99,15 @@ the new readlink trust boundary, ordinary-directory rejection, intermediate-writ
 scope and evidence reproducibility. Perform a complete self-check before handing
 back; report environmental blockers separately, preserve frozen MANIFEST entries,
 and do not promote the synthetic milestone to real-host acceptance.
+
+## Correction appended 2026-10-21
+
+See `MIGRATION-LINK-CAPABILITY-2026-10-21.md` in this directory. The original
+Codex `10/10` and DSH `5/10` observations above are preserved, not overwritten.
+DSH's follow-up classification shows the normal environment blocks link-dependent
+cases (`lstat=false`, `readlink=EINVAL`) rather than silently passing them; the
+approved full environment passes the 11-case suite. The test entry now returns
+0/1/2 for PASS/FAIL/ENVIRONMENT_BLOCKED and no longer treats a blocked capability
+as a pass. The migration checker itself is unchanged, ordinary directories and
+external/broken targets are still rejected, and the synthetic lstat case remains
+labelled synthetic. This correction does not change the real-host authorization.
