@@ -23,7 +23,9 @@
     "Round 5 appends SKILLS.md, P2-REGRESSION.md, COMPATIBILITY.md and the regressions/ package. The original core-file hashes remain frozen; they were not refreshed from c71dbc9 or from the current workspace.",
     "Round 6 appends DSH-ROUND5-REVIEW.md and updates only the SKILLS.md entry to the current skill re-read hashes; the original core-file hashes remain frozen and were not refreshed from a0b4450 or from the current workspace.",
     "Round 7 appends DSH-ROUND6-REVIEW.md only; the original core-file hashes remain frozen and were not refreshed from 88c9fe5 or from the current workspace.",
-    "Current workspace HEAD at round 5 is b6e1a47; codeBaseline above remains the original handoff baseline 943901e, and remote above records its original verification."
+    "This diagnostic round appends MIGRATION-LINK-PROBE.md, tools/probe-migration-links.mjs and tests/v02-migration-probe.test.mjs. Only these diagnostic entries are added; the original core-file hashes remain frozen and were not refreshed from 2c4d63c or from the reviewed branch.",
+    "The diagnostic raw JSON reports are local evidence and are not committed; the public document records their hashes and a redacted mapping.",
+    "Current workspace HEAD at this diagnostic round is 2c4d63c; codeBaseline above remains the original handoff baseline 943901e, and remote above records its original verification."
   ],
   "files": [
     {
@@ -211,6 +213,24 @@
       "bytes": 8568,
       "sha256": "5753018e3508e864b547e2d37da1c7fcc7504f8829e140307070923a19f0a98b",
       "blob": "5291f3a893b84a15cfc8356353db0fc7354c17c7"
+    },
+    {
+      "path": "docs/handoffs/v0.2-two-person-round1/MIGRATION-LINK-PROBE.md",
+      "bytes": 9301,
+      "sha256": "15b0bf1f43c014976b241a87d324a20b0cdcdf2b25291a43642cdf360793b510",
+      "blob": "0658470a266b2ea623cc680641a55d290f476016"
+    },
+    {
+      "path": "tools/probe-migration-links.mjs",
+      "bytes": 12241,
+      "sha256": "865fac10022993667a73a95d96ce8163dda776b6c972a872763f6c74811d1225",
+      "blob": "5cdf584eb0d4565b63b93b23d0b7a44f3754c0ff"
+    },
+    {
+      "path": "tests/v02-migration-probe.test.mjs",
+      "bytes": 2434,
+      "sha256": "378e543ff78ccef6dbf4efb55a7d926c36559e3f442d7cf5822b23096b77f0ba",
+      "blob": "610dadc9304a6326c4a2a47529266acd40254930"
     }
   ]
 }
