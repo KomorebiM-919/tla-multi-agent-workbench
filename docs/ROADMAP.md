@@ -211,4 +211,14 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - Round6: cross-volume migration regression and reproducible mutation evidence;
   this does not establish a live observer or real-host closure.
 
-- Next: implement the offline capability-audit/artifact-bundle phase in [the real-evidence design](V0.2-LIVE-EVIDENCE-DESIGN.md); observer integration and live closure remain unimplemented.
+- Phase A offline capability audit and run-artifact bundle are implemented
+  (`tools/audit-capture-capabilities.mjs`, `tools/bundle-run-evidence.mjs`).
+  They validate explicit source/report and selection inputs, preserve exact bytes
+  and hashes, keep run binding unproven without a real launch receipt, and never
+  emit business closure. Host archive reading, observer hooks, physical reparse
+  safety and live capture remain unimplemented and require separate decisions.
+  Contract: `docs/V0.2-LIVE-EVIDENCE-PHASE-A.md`.
+
+- Next: Codex review of the Phase A audit and phase/boundary decisions in
+  [the real-evidence design](V0.2-LIVE-EVIDENCE-DESIGN.md); observer integration
+  and live closure remain unimplemented.

@@ -429,3 +429,21 @@ exact one-occurrence substitutions and requires syntax success plus an assertion
 failure (module-load errors do not qualify). Each mutant gets patch.json, test.log
 and hashes in report.json. The source checkout is never mutated. Keep generated
 logs outside tracked files. `v02-write-review-diagnostics` now has 18 scenarios.
+
+### Phase A live-evidence tools
+
+`node tests/v02-capture-capabilities.test.mjs` validates invented capability
+reports against explicit source mappings. It checks exact bytes/hashes, line
+locators, all nine required capability IDs, unknown fields and the rule that an
+`unknown` capability is never promoted. The CLI is
+`node tools/audit-capture-capabilities.mjs --report <json> --source <id>=<file>`.
+
+`node tests/v02-run-evidence-bundle.test.mjs` assembles invented, explicitly
+selected artifacts into a fresh directory. It checks duplicate IDs/paths,
+traversal/reserved paths, limits, exact copied hashes, CRLF/LF, source changes,
+copied-byte mismatches, conflicting run identities, missing runner summaries,
+expected-ID comparisons and cleanup preserving the original failure. The CLI is
+`node tools/bundle-run-evidence.mjs --selection <private-json> --out <new-dir>`.
+Both tools use exit `0` for valid/assembled, `2` for invalid/incomplete data and
+`1` for CLI/I/O/cleanup failure. They do not start DSH, inspect profiles or
+publish private paths; `ASSEMBLED` is not a business closure.
