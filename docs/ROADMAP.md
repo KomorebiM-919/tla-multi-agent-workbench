@@ -219,6 +219,13 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   safety and live capture remain unimplemented and require separate decisions.
   Contract: `docs/V0.2-LIVE-EVIDENCE-PHASE-A.md`.
 
+- Phase A corrections: manifest-name and file/directory prefix collisions are
+  rejected before output; identity fields are checked per role/namespace instead
+  of first-match; source/output ancestors are checked for links, reparse points
+  and `fsutil` availability before copying. Normal sandboxes without an
+  executable reparse probe are explicitly blocked, not treated as verified.
+  See `docs/V0.2-LIVE-EVIDENCE-PHASE-A-CORRECTIONS.md`.
+
 - Next: Codex review of the Phase A audit and phase/boundary decisions in
   [the real-evidence design](V0.2-LIVE-EVIDENCE-DESIGN.md); observer integration
   and live closure remain unimplemented.

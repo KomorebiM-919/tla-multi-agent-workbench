@@ -6,17 +6,23 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  rmdirSync,
   rmSync,
   symlinkSync,
   writeFileSync
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   BUNDLE_SCHEMA,
   LIMITS,
-  assembleBundle,
+  assembleBundle as realAssemble,
   main
 } from '../tools/bundle-run-evidence.mjs';
+
+function assembleBundle(selection, options = {}) {
+  return realAssemble(selection, { ...options, pathSafetyProbe: () => ({ reparse: false }) });
+}
 
 const ROOT = join(process.cwd(), 'tests', '.scratch', `phase-a-bundle-${process.pid}`);
 let serial = 0;
@@ -59,6 +65,153 @@ function io() {
   };
 }
 
+test('manifest names and file/directory prefixes collide before output', () => {
+  const dir = workdir();
+  try {
+    const file = write(dir, 'a.txt', 'a');
+    for (const value of ['MANIFEST.JSON', 'Manifest.json', 'manifest.json/child']) {
+      assert.throws(() => assembleBundle(selection([['a', 'capture-capabilities', file, value]]), { out: join(dir, `o-${value.replaceAll(/[^a-z0-9]/giu, '')}`) }), /RELATIVE_PATH_INVALID|ARTIFACT_PATH_PREFIX_CONFLICT|MANIFEST/);
+    }
+    assert.throws(() => assembleBundle(selection([
+      ['a', 'capture-capabilities', file, 'a'],
+      ['b', 'capture-capabilities', file, 'a/b']
+    ]), { out: join(dir, 'o-prefix') }), /ARTIFACT_PATH_PREFIX_CONFLICT/);
+    assert.equal(existsSync(join(dir, 'o-prefix')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a source junction ancestor is rejected before copying', (t) => {
+  const dir = workdir();
+  const target = join(dir, 'target');
+  const link = join(dir, 'link');
+  mkdirSync(target);
+  const source = write(target, 'runner.json', '{"runId":"run-a"}\n');
+  try {
+    execFileSync('cmd.exe', ['/d', '/c', 'mklink', '/J', link, target], { stdio: 'ignore' });
+  } catch (error) {
+    t.skip(`junction unavailable: ${error.code ?? error.message}`);
+    rmSync(dir, { recursive: true, force: true });
+    return;
+  }
+  try {
+    let thrown = null;
+    try {
+      realAssemble(selection([
+        ['runner', 'runner-summary', join(link, 'runner.json'), 'runner.json']
+      ]), { out: join(dir, 'bundle') });
+    } catch (error) {
+      thrown = error;
+    }
+    if (thrown === null) assert.fail('junction ancestor was accepted');
+    if (/PATH_SAFETY_PROBE_UNAVAILABLE/.test(thrown.message)) {
+      t.skip(`reparse probe unavailable: ${thrown.message}`);
+      return;
+    }
+    assert.match(thrown.message, /PATH_ANCESTOR_(REPARSE|LINK)/);
+    assert.equal(existsSync(join(dir, 'bundle')), false);
+  } finally {
+    rmdirSync(link);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an output junction ancestor is rejected before writing', (t) => {
+  const dir = workdir();
+  const target = join(dir, 'target');
+  const link = join(dir, 'link');
+  mkdirSync(target);
+  const source = write(dir, 'runner.json', '{"runId":"run-a"}\n');
+  try {
+    execFileSync('cmd.exe', ['/d', '/c', 'mklink', '/J', link, target], { stdio: 'ignore' });
+  } catch (error) {
+    t.skip(`junction unavailable: ${error.code ?? error.message}`);
+    rmSync(dir, { recursive: true, force: true });
+    return;
+  }
+  try {
+    let thrown = null;
+    try {
+      realAssemble(selection([
+        ['runner', 'runner-summary', source, 'runner.json']
+      ]), { out: join(link, 'bundle') });
+    } catch (error) {
+      thrown = error;
+    }
+    if (thrown === null) assert.fail('junction output ancestor was accepted');
+    if (/PATH_SAFETY_PROBE_UNAVAILABLE/.test(thrown.message)) {
+      t.skip(`reparse probe unavailable: ${thrown.message}`);
+      return;
+    }
+    assert.match(thrown.message, /PATH_ANCESTOR_(REPARSE|LINK)/);
+    assert.equal(existsSync(join(target, 'bundle')), false);
+  } finally {
+    rmdirSync(link);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('final verification catches a changed artifact and unexpected output', () => {
+  const dir = workdir();
+  try {
+    const a = write(dir, 'a.txt', 'a');
+    const b = write(dir, 'b.txt', 'b');
+    const out = join(dir, 'bundle');
+    assert.throws(() => assembleBundle(selection([
+      ['a', 'capture-capabilities', a, 'a.txt'],
+      ['b', 'capture-capabilities', b, 'b.txt']
+    ]), {
+      out,
+      hooks: {
+        afterCopy: (artifact, target) => {
+          if (artifact.id === 'b') writeFileSync(join(out, 'a.txt'), 'tampered');
+        }
+      }
+    }), /FINAL_ARTIFACT_MISMATCH/);
+    assert.equal(existsSync(out), false);
+
+    const out2 = join(dir, 'bundle2');
+    assert.throws(() => assembleBundle(selection([
+      ['a', 'capture-capabilities', a, 'a.txt']
+    ]), {
+      out: out2,
+      hooks: { afterCopy: () => writeFileSync(join(out2, 'extra.txt'), 'extra') }
+    }), /FINAL_UNEXPECTED_OUTPUT/);
+    assert.equal(existsSync(out2), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runner identity fields are not priority-selected', () => {
+  const dir = workdir();
+  try {
+    const conflict = write(dir, 'conflict.json', '{"runId":"run-a","runnerRunId":"run-b"}\n');
+    const conflictResult = assembleBundle(selection([
+      ['runner', 'runner-summary', conflict, 'runner.json']
+    ]), { out: join(dir, 'bundle-conflict') });
+    assert.equal(conflictResult.exitCode, 2);
+    assert.equal(conflictResult.manifest.issues.some((item) => item.code === 'RUNNER_ID_CONFLICT'), true);
+
+    const badType = write(dir, 'bad-type.json', '{"runId":42}\n');
+    const typeResult = assembleBundle(selection([
+      ['runner', 'runner-summary', badType, 'runner.json']
+    ]), { out: join(dir, 'bundle-type') });
+    assert.equal(typeResult.exitCode, 2);
+    assert.equal(typeResult.manifest.issues.some((item) => item.code === 'RUN_ID_TYPE_INVALID'), true);
+
+    const unsupported = write(dir, 'unsupported.json', '{"runId":"run-a","gateRunId":"gate-a"}\n');
+    const unsupportedResult = assembleBundle(selection([
+      ['runner', 'runner-summary', unsupported, 'runner.json']
+    ]), { out: join(dir, 'bundle-unsupported') });
+    assert.equal(unsupportedResult.exitCode, 2);
+    assert.equal(unsupportedResult.manifest.issues.some((item) => item.code === 'RUN_ID_FIELD_UNSUPPORTED'), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a valid inventory is assembled, hashed and remains binding-unproven', () => {
   const dir = workdir();
   const out = join(dir, 'bundle');
@@ -83,6 +236,7 @@ test('a valid inventory is assembled, hashed and remains binding-unproven', () =
     const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'));
     assert.deepEqual(manifest, result.manifest);
     assert.equal(lstatSync(join(out, 'runner.json')).isFile(), true);
+    assert.equal(readFileSync(files.runner, 'utf8'), '{"runId":"run-a"}\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -278,7 +432,7 @@ test('existing output is refused and CLI returns assembled/invalid codes', () =>
       ['runner', 'runner-summary', files.runner, 'runner.json']
     ])));
     const good = io();
-    assert.equal(main(['--selection', selectionPath, '--out', out], good), 0);
+    assert.equal(main(['--selection', selectionPath, '--out', out], good, { pathSafetyProbe: () => ({ reparse: false }) }), 0);
     assert.match(good.out.join(''), /bundle ASSEMBLED/);
 
     rmSync(out, { recursive: true, force: true });

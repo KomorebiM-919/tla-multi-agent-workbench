@@ -2,12 +2,17 @@
 // hash inventory, not an observer and not an acceptance verdict.
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  realpathSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, parse } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import {
   ContractError,
@@ -17,6 +22,7 @@ import {
   fail,
   hashBytes,
   idValue,
+  pathKey,
   plainObject,
   readJsonFile,
   readStableSource,
@@ -48,7 +54,7 @@ function validateSelection(selection) {
   fields(selection, ['artifacts'], 'selection');
   const artifacts = validateArrayLimit(selection.artifacts, LIMITS.artifacts, 'ARTIFACT_LIMIT');
   const ids = new Set();
-  const paths = new Set();
+  const paths = new Map();
   const normalized = [];
   for (const artifact of artifacts) {
     fields(artifact, ['id', 'role', 'sourcePath', 'path'], 'selection artifact');
@@ -56,23 +62,149 @@ function validateSelection(selection) {
     if (!ROLES.includes(artifact.role)) fail('ROLE_INVALID', artifact.role);
     checkLocalPath(artifact.sourcePath);
     const bundlePath = relativePathValue(artifact.path, { reservedManifest: true });
-    const pathKey = bundlePath.toLowerCase();
+    const key = pathKey(bundlePath);
     if (ids.has(artifact.id)) fail('ARTIFACT_ID_DUPLICATE', artifact.id);
-    if (paths.has(pathKey)) fail('ARTIFACT_PATH_DUPLICATE', bundlePath);
+    if (paths.has(key)) fail('ARTIFACT_PATH_DUPLICATE', bundlePath);
     ids.add(artifact.id);
-    paths.add(pathKey);
+    paths.set(key, bundlePath);
     normalized.push({ ...artifact, path: bundlePath, sourcePath: resolve(artifact.sourcePath) });
+  }
+  const keys = [...paths.keys()];
+  for (let left = 0; left < keys.length; left += 1) {
+    for (let right = left + 1; right < keys.length; right += 1) {
+      const a = keys[left];
+      const b = keys[right];
+      if (a.startsWith(`${b}/`) || b.startsWith(`${a}/`)) {
+        fail('ARTIFACT_PATH_PREFIX_CONFLICT', `${paths.get(a)} <-> ${paths.get(b)}`);
+      }
+    }
   }
   return normalized;
 }
 
-function readRunId(value, label) {
-  if (!plainObject(value)) fail('RUN_BEARER_JSON_INVALID', label);
-  for (const key of ['runId', 'runnerRunId', 'gateRunId', 'budgetRunId']) {
-    if (Object.hasOwn(value, key) && typeof value[key] === 'string' && value[key] !== '') return value[key];
+function defaultPathSafetyProbe(path) {
+  const result = spawnSync('fsutil', ['reparsepoint', 'query', path], { windowsHide: true });
+  if (result.error || result.status === null) {
+    fail('PATH_SAFETY_PROBE_UNAVAILABLE', `${path}: fsutil unavailable`);
   }
-  return null;
+  const decode = (buffer) => {
+    if (!buffer) return '';
+    const utf8 = buffer.toString('utf8');
+    if (!utf8.includes('\uFFFD')) return utf8;
+    try {
+      return new TextDecoder('gbk').decode(buffer);
+    } catch {
+      return utf8;
+    }
+  };
+  const output = `${decode(result.stdout)}\n${decode(result.stderr)}`;
+  if (/0x[0-9a-f]{8}/iu.test(output)) return { reparse: true };
+  if (/not a reparse point|4390|重分析点|重解析点/iu.test(output)) return { reparse: false };
+  fail('PATH_SAFETY_PROBE_UNAVAILABLE', `${path}: fsutil result was not interpretable`);
 }
+
+function checkExistingPath(path, label, probe) {
+  let info;
+  let followed;
+  try {
+    info = lstatSync(path);
+    followed = statSync(path);
+  } catch (error) {
+    throw new IoError('PATH_UNREADABLE', `${label}: ${path}: ${error.code ?? error.message}`);
+  }
+  if (info.isSymbolicLink()) fail('PATH_ANCESTOR_LINK', `${label}: ${path}`);
+  let real;
+  try {
+    real = realpathSync(path);
+  } catch (error) {
+    throw new IoError('PATH_UNREADABLE', `${label}: ${path}: ${error.code ?? error.message}`);
+  }
+  if (pathKey(resolve(real)) !== pathKey(resolve(path))) {
+    fail('PATH_ANCESTOR_REPARSE', `${label}: ${path} (realpath differs)`);
+  }
+  if (pathKey(resolve(path)) === pathKey(parse(path).root)) return;
+  const observed = probe(path);
+  if (observed.reparse) fail('PATH_ANCESTOR_REPARSE', `${label}: ${path} (reparse point)`);
+}
+
+function checkPathAncestors(target, label, probe) {
+  const absolute = resolve(target);
+  const root = parse(absolute).root;
+  let current = dirname(absolute);
+  const seen = [];
+  while (true) {
+    if (existsSync(current)) seen.push(current);
+    if (current === root) break;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  for (const path of seen.reverse()) checkExistingPath(path, label, probe);
+}
+
+function assertSourcePathsSafe(artifacts, probe) {
+  for (const artifact of artifacts) {
+    checkPathAncestors(artifact.sourcePath, `source ${artifact.id}`, probe);
+    if (!existsSync(artifact.sourcePath)) fail('SOURCE_MISSING', artifact.id);
+    checkExistingPath(artifact.sourcePath, `source ${artifact.id}`, probe);
+  }
+}
+
+function assertOutputPathSafe(out, probe) {
+  let info;
+  try {
+    info = lstatSync(out);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw new IoError('OUTPUT_UNREADABLE', `${out}: ${error.code ?? error.message}`);
+    info = null;
+  }
+  if (info !== null) fail('OUTPUT_EXISTS', out);
+  const parent = dirname(out);
+  if (!existsSync(parent)) fail('OUTPUT_PARENT_MISSING', parent);
+  checkPathAncestors(parent, 'output parent', probe);
+  checkExistingPath(parent, 'output parent', probe);
+}
+
+function verifyArtifactFiles(out, artifacts, contents, includeManifest = false) {
+  const expected = new Map();
+  for (const artifact of artifacts) {
+    const bytes = contents.get(artifact.id);
+    const target = join(out, ...artifact.path.split('/'));
+    let actual;
+    try {
+      actual = readFileSync(target);
+    } catch (error) {
+      throw new IoError('FINAL_ARTIFACT_UNREADABLE', `${artifact.id}: ${error.code ?? error.message}`);
+    }
+    const expectedHash = hashBytes(bytes);
+    if (actual.length !== bytes.length || hashBytes(actual) !== expectedHash) {
+      fail('FINAL_ARTIFACT_MISMATCH', artifact.id);
+    }
+    expected.set(pathKey(artifact.path), true);
+  }
+  if (includeManifest) expected.set(pathKey(MANIFEST_NAME), true);
+  const extras = [];
+  const walk = (directory, prefix = '') => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) walk(join(directory, entry.name), relative);
+      else if (!entry.isFile()) fail('FINAL_OUTPUT_NOT_REGULAR', relative);
+      else if (!expected.has(pathKey(relative))) extras.push(relative);
+    }
+  };
+  walk(out);
+  if (extras.length !== 0) fail('FINAL_UNEXPECTED_OUTPUT', extras.join(','));
+}
+
+
+const ID_FIELDS = new Set(['runId', 'runnerRunId', 'gateRunId', 'budgetRunId']);
+const ROLE_ID_SPECS = {
+  'runner-summary': { runner: ['runId', 'runnerRunId'] },
+  'gate-summary': { run: ['runId', 'gateRunId', 'budgetRunId'], gate: ['runId', 'gateRunId'], budget: ['budgetRunId'] },
+  'gate-events': { run: ['runId', 'gateRunId', 'budgetRunId'], gate: ['runId', 'gateRunId'], budget: ['budgetRunId'] },
+  'budget-events': { run: ['runId', 'budgetRunId', 'gateRunId'], gate: ['gateRunId'], budget: ['runId', 'budgetRunId'] },
+  'upstream-events': { run: ['runId', 'gateRunId', 'budgetRunId'], gate: ['runId', 'gateRunId'], budget: ['budgetRunId'] }
+};
 
 function parseJsonBytes(bytes, label) {
   try {
@@ -97,10 +229,16 @@ function parseJsonLines(bytes, label) {
 }
 
 function observeRunIds(artifacts, contents) {
-  const observed = { runner: new Set(), gate: new Set(), budget: new Set() };
+  const observed = { runner: new Set(), run: new Set(), gate: new Set(), budget: new Set() };
   const evidence = new Map();
   const issues = [];
-  const note = (code, artifactId, detail) => issues.push({ code, artifactId, detail });
+  const issueKeys = new Set();
+  const note = (code, artifactId, detail) => {
+    const key = `${code}|${artifactId}|${detail}`;
+    if (issueKeys.has(key)) return;
+    issueKeys.add(key);
+    issues.push({ code, artifactId, detail });
+  };
   const add = (kind, id, artifactId) => {
     if (id !== null) {
       observed[kind].add(id);
@@ -109,27 +247,50 @@ function observeRunIds(artifacts, contents) {
     }
   };
 
+  const collectRecord = (value, role, artifactId) => {
+    if (!plainObject(value)) fail('RUN_BEARER_JSON_INVALID', artifactId);
+    const spec = ROLE_ID_SPECS[role];
+    if (!spec) return;
+    const allowed = new Set(Object.values(spec).flat());
+    const record = new Map();
+    for (const key of Object.keys(value)) {
+      if (!ID_FIELDS.has(key)) continue;
+      if (!allowed.has(key)) {
+        note('RUN_ID_FIELD_UNSUPPORTED', artifactId, `${role} does not define ${key}`);
+        continue;
+      }
+      if (typeof value[key] !== 'string' || value[key].trim() === '') {
+        note('RUN_ID_TYPE_INVALID', artifactId, `${key} must be a non-empty string`);
+        continue;
+      }
+      for (const [kind, keys] of Object.entries(spec)) {
+        if (!keys.includes(key)) continue;
+        if (!record.has(kind)) record.set(kind, new Set());
+        record.get(kind).add(value[key]);
+      }
+    }
+    for (const [kind, values] of record) {
+      if (values.size > 1) {
+        note(kind === 'runner' ? 'RUNNER_ID_CONFLICT' : 'RUN_ID_CONFLICT', artifactId, `${kind} values: ${[...values].join(',')}`);
+      }
+      for (const id of values) add(kind, id, artifactId);
+    }
+    const runnerId = record.get('runner');
+    if (runnerId && runnerId.size === 1) add('runner', [...runnerId][0], artifactId);
+  };
+
   for (const artifact of artifacts) {
     const bytes = contents.get(artifact.id);
     if (artifact.role === 'runner-summary') {
       const value = parseJsonBytes(bytes, artifact.id);
-      const runId = readRunId(value, artifact.id);
-      if (runId === null) note('RUNNER_ID_UNKNOWN', artifact.id, 'runner summary has no explicit runId');
-      add('runner', runId, artifact.id);
-    } else if (artifact.role === 'gate-summary') {
-      const value = parseJsonBytes(bytes, artifact.id);
-      const runId = readRunId(value, artifact.id);
-      if (runId === null) note('GATE_ID_UNKNOWN', artifact.id, 'gate summary has no explicit runId');
-      add('gate', runId, artifact.id);
-      const budgetId = plainObject(value) && typeof value.budgetRunId === 'string' ? value.budgetRunId : null;
-      add('budget', budgetId, artifact.id);
-    } else if (artifact.role === 'budget-events' || artifact.role === 'gate-events' || artifact.role === 'upstream-events') {
-      for (const value of parseJsonLines(bytes, artifact.id)) {
-        const runId = readRunId(value, artifact.id);
-        if (runId !== null) {
-          add(artifact.role === 'budget-events' ? 'budget' : 'gate', runId, artifact.id);
-        }
+      collectRecord(value, artifact.role, artifact.id);
+      if (![...ROLE_ID_SPECS[artifact.role].runner].some((key) => Object.hasOwn(value, key))) {
+        note('RUNNER_ID_UNKNOWN', artifact.id, 'runner summary has no explicit runId');
       }
+    } else if (artifact.role === 'gate-summary' || artifact.role === 'gate-events' ||
+        artifact.role === 'budget-events' || artifact.role === 'upstream-events') {
+      const values = artifact.role === 'gate-summary' ? [parseJsonBytes(bytes, artifact.id)] : parseJsonLines(bytes, artifact.id);
+      for (const value of values) collectRecord(value, artifact.role, artifact.id);
     } else if (artifact.role === 'launch-receipt') {
       note('LAUNCH_RECEIPT_FORMAT_UNSUPPORTED', artifact.id, 'Phase A has no receipt parser; it cannot establish a parent-child mapping');
     } else if (artifact.role === 'observer-events') {
@@ -139,7 +300,9 @@ function observeRunIds(artifacts, contents) {
 
   for (const [kind, values] of Object.entries(observed)) {
     if (values.size > 1) {
-      note(`${kind.toUpperCase()}_ID_CONFLICT`, null, [...values].join(','));
+      const code = kind === 'runner' ? 'RUNNER_ID_CONFLICT' : kind === 'run' ? 'RUN_ID_CONFLICT' :
+        `${kind.toUpperCase()}_ID_CONFLICT`;
+      note(code, null, [...values].join(','));
     }
   }
   if (observed.gate.size > 0 && observed.budget.size > 0 &&
@@ -193,7 +356,9 @@ function cleanupOutput(out) {
 export function assembleBundle(selection, options = {}) {
   const artifacts = validateSelection(selection);
   const out = resolve(options.out);
-  if (existsSync(out)) fail('OUTPUT_EXISTS', out);
+  const pathSafetyProbe = options.pathSafetyProbe ?? defaultPathSafetyProbe;
+  assertSourcePathsSafe(artifacts, pathSafetyProbe);
+  assertOutputPathSafe(out, pathSafetyProbe);
   const removeOutput = options.removeOutput ?? cleanupOutput;
   const expected = {
     runner: options.expected?.runner ?? null,
@@ -222,6 +387,7 @@ export function assembleBundle(selection, options = {}) {
       if (after.sha256 !== source.sha256) fail('SOURCE_CHANGED_DURING_CAPTURE', artifact.id);
       contents.set(artifact.id, source.bytes);
     }
+    verifyArtifactFiles(out, artifacts, contents, false);
 
     const observation = observeRunIds(artifacts, contents);
     const issues = [...observation.issues];
@@ -231,7 +397,8 @@ export function assembleBundle(selection, options = {}) {
     }
     issues.push({ code: 'RUN_BINDING_UNPROVEN', artifactId: null, detail: 'Phase A cannot prove the runner-child mapping without an explicit launch receipt' });
     const fatal = issues.some((issue) => ['RUNNER_SUMMARY_MISSING', 'RUNNER_ID_CONFLICT', 'GATE_ID_CONFLICT',
-      'BUDGET_ID_CONFLICT', 'GATE_BUDGET_ID_CONFLICT', 'EXPECTED_ID_MISMATCH', 'RUN_BEARER_JSON_INVALID',
+      'BUDGET_ID_CONFLICT', 'RUN_ID_CONFLICT', 'RUN_ID_FIELD_UNSUPPORTED', 'RUN_ID_TYPE_INVALID',
+      'GATE_BUDGET_ID_CONFLICT', 'EXPECTED_ID_MISMATCH', 'RUN_BEARER_JSON_INVALID',
       'RUN_BEARER_EMPTY'].includes(issue.code));
     const manifest = {
       schema: BUNDLE_SCHEMA,
@@ -258,7 +425,11 @@ export function assembleBundle(selection, options = {}) {
     if (Buffer.byteLength(serialized, 'utf8') > LIMITS.manifestBytes) {
       fail('MANIFEST_TOO_LARGE', `${Buffer.byteLength(serialized, 'utf8')} > ${LIMITS.manifestBytes}`);
     }
-    writeFileSync(join(out, MANIFEST_NAME), serialized);
+    const manifestPath = join(out, MANIFEST_NAME);
+    writeFileSync(manifestPath, serialized);
+    const writtenManifest = readFileSync(manifestPath, 'utf8');
+    if (writtenManifest !== serialized) fail('FINAL_MANIFEST_MISMATCH');
+    verifyArtifactFiles(out, artifacts, contents, true);
     return { manifest, exitCode: manifest.status === 'ASSEMBLED' ? 0 : 2 };
   } catch (error) {
     const cleanup = removeOutput(out);
@@ -305,7 +476,7 @@ function publicSummary(manifest) {
   };
 }
 
-export function main(argv = process.argv.slice(2), io = process) {
+export function main(argv = process.argv.slice(2), io = process, runtimeOptions = {}) {
   let options;
   try {
     options = parseArgs(argv);
@@ -315,7 +486,11 @@ export function main(argv = process.argv.slice(2), io = process) {
   }
   try {
     const { value: selection } = readJsonFile(options.selection);
-    const result = assembleBundle(selection, { out: options.out, expected: options.expected });
+    const result = assembleBundle(selection, {
+      out: options.out,
+      expected: options.expected,
+      pathSafetyProbe: runtimeOptions.pathSafetyProbe
+    });
     if (options.json) io.stdout.write(`${JSON.stringify(publicSummary(result.manifest))}\n`);
     else io.stdout.write(`bundle ${result.manifest.status}: artifacts=${result.manifest.artifacts.length} issues=${result.manifest.issues.length} binding=${result.manifest.binding.status}\n`);
     return result.exitCode;

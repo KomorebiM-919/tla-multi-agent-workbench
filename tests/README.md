@@ -440,10 +440,15 @@ locators, all nine required capability IDs, unknown fields and the rule that an
 
 `node tests/v02-run-evidence-bundle.test.mjs` assembles invented, explicitly
 selected artifacts into a fresh directory. It checks duplicate IDs/paths,
+case-insensitive manifest collisions, file/directory prefix conflicts,
 traversal/reserved paths, limits, exact copied hashes, CRLF/LF, source changes,
-copied-byte mismatches, conflicting run identities, missing runner summaries,
-expected-ID comparisons and cleanup preserving the original failure. The CLI is
-`node tools/bundle-run-evidence.mjs --selection <private-json> --out <new-dir>`.
-Both tools use exit `0` for valid/assembled, `2` for invalid/incomplete data and
-`1` for CLI/I/O/cleanup failure. They do not start DSH, inspect profiles or
-publish private paths; `ASSEMBLED` is not a business closure.
+copied-byte mismatches, runner/gate identity namespaces, missing runner summaries,
+expected-ID comparisons, final artifact/manifest verification, unexpected output
+and cleanup preserving the original failure. Source and output ancestors are
+checked for links/reparse points; the real junction cases require an executable
+`fsutil` probe, while unit tests inject an explicit `pathSafetyProbe` and say so.
+The CLI is `node tools/bundle-run-evidence.mjs --selection <private-json> --out <new-dir>`.
+Both tools use exit `0` for valid/assembled, `2` for invalid/incomplete data or an
+unverifiable path probe, and `1` for CLI/I/O/cleanup failure. They do not start
+DSH, inspect profiles or publish private paths; `ASSEMBLED` is not a business
+closure. See `docs/V0.2-LIVE-EVIDENCE-PHASE-A-CORRECTIONS.md`.

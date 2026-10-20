@@ -168,7 +168,9 @@ export function relativePathValue(value, { reservedManifest = false } = {}) {
       /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/iu.test(part))) {
     fail('RELATIVE_PATH_INVALID', 'dot, empty, alternate-stream or reserved component');
   }
-  if (reservedManifest && value === 'manifest.json') fail('RELATIVE_PATH_INVALID', 'manifest.json is reserved');
+  if (reservedManifest && components.some((part) => pathKey(part) === 'manifest.json')) {
+    fail('RELATIVE_PATH_INVALID', 'manifest.json is reserved in any case and at any prefix');
+  }
   return components.join('/');
 }
 
