@@ -79,6 +79,11 @@ full C/D 的 ordinary directory 均为 `ordinary-directory`，missing 为
 `fsutil`/子进程被阻断而只能记为 `reparse-probe-unavailable` 或 `missing`，
 工具不会把它们误判为 link。
 
+第 2、3 行由 normal host shell 执行；normal Node 子进程的 `spawnSync` 被
+`EPERM` 阻断，因此工具 JSON 里的 cmd 用例只能是 `missing`，不能拿它反证
+cmd 创建结果。第 1 行和 full 的第 4、5 行由 Node 创建；full 的 cmd 用例由
+full 子进程创建。
+
 ## 交叉矩阵
 
 | 创建环境 | normal 观察 | full 观察 |

@@ -216,9 +216,9 @@
     },
     {
       "path": "docs/handoffs/v0.2-two-person-round1/MIGRATION-LINK-PROBE.md",
-      "bytes": 9301,
-      "sha256": "15b0bf1f43c014976b241a87d324a20b0cdcdf2b25291a43642cdf360793b510",
-      "blob": "0658470a266b2ea623cc680641a55d290f476016"
+      "bytes": 9598,
+      "sha256": "d03ddf7954da247ef65084b482bf1ff784b11484decb98b18b31a066453c9095",
+      "blob": "8ec8faf7c502f7601396752f8a4ea1a1e6c55110"
     },
     {
       "path": "tools/probe-migration-links.mjs",
