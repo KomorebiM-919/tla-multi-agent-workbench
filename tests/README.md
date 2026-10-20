@@ -390,10 +390,29 @@ regression package remains separately maintained and is not copied into this tes
 
 ### Round6 maintenance checks
 
-`node tests/v02-migration-links.test.mjs` exercises real checkout/OS-temp links,
-ordinary-directory rejection and an isolated directory-like lstat simulation.
-Set `TLA_LINK_TEST_ROOT` to an existing writable volume directory to relocate
-fixture creation; tests never skip failed link capabilities.
+`node tests/v02-migration-links.test.mjs [--json]` is a classified migration
+check. It creates a real link and observes create, `lstat`, `readlink`,
+`realpath` and target agreement before running any link-dependent assertion.
+The outcome is three-valued:
+
+- `0 PASS`: every prerequisite and assertion held;
+- `1 FAIL`: a prerequisite held but an assertion failed (a simultaneous
+  environment block is also counted and does not hide the failure);
+- `2 ENVIRONMENT_BLOCKED`: no assertion failed, but at least one required
+  fixture capability (writable root, link creation, `lstat`, `readlink`,
+  `realpath`, target agreement) was unavailable.
+
+A blocked case is printed with its stage, original error code and capability
+observation; it is neither skipped nor converted to a pass. `lock-parser` and
+`ordinary-directory` continue to run when the real-link cases are blocked. The
+directory-like `lstat` simulation is marked `[synthetic]` and is never counted as
+real-environment compatibility evidence. Set `TLA_LINK_TEST_ROOT` to a writable
+root to relocate fixture containers; the OS-temp case always uses `tmpdir()`.
+The default remains `tests/.scratch/migration-links`.
+
+`node tests/v02-migration-link-classification.test.mjs` is the controlled
+classification counterexample set (exit priority, blocked-only summaries,
+ordinary-directory rejection, capability field checks).
 
 `node tools/self-check/write-review-mutations.mjs [empty-output-directory]`
 first requires a green baseline, copies only local dependencies, applies three
