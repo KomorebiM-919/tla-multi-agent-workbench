@@ -210,3 +210,5 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 
 - Round6: cross-volume migration regression and reproducible mutation evidence;
   this does not establish a live observer or real-host closure.
+
+- Next: implement the offline capability-audit/artifact-bundle phase in [the real-evidence design](V0.2-LIVE-EVIDENCE-DESIGN.md); observer integration and live closure remain unimplemented.
