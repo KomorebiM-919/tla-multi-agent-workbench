@@ -99,7 +99,6 @@ export function createTraceWriter({
       assertPath(outputFile);
     } catch (error) {
       recordPrimary('header', 'WRITE_FAILED');
-      if (error instanceof TraceError) throw error;
       throw new TraceError('WRITE_FAILED', 'path assertion failed');
     }
     try {
@@ -116,9 +115,8 @@ export function createTraceWriter({
     } catch (error) {
       writeFailed = true;
       degraded = true;
-      recordPrimary('header', error instanceof TraceError ? error.code : 'WRITE_FAILED');
+      recordPrimary('header', 'WRITE_FAILED');
       closeHandle();
-      if (error instanceof TraceError) throw error;
       throw new TraceError('WRITE_FAILED', 'header write failed');
     }
     return true;
@@ -138,7 +136,13 @@ export function createTraceWriter({
       addDiagnostic(error?.code === 'FIELD_INVALID' ? 'FIELD_INVALID' : 'NORMALIZATION_FAILED', null);
       return { accepted: false, receiptSeq: null };
     }
-    const line = serialize(record);
+    let line;
+    try {
+      line = serialize(record);
+    } catch (error) {
+      addDiagnostic('WRITE_FAILED');
+      return { accepted: false, receiptSeq: null };
+    }
     if (bytes + bytesOf(line) + TRACE_LIMITS.footerReserveBytes > byteLimit) {
       addDiagnostic('LIMIT_REACHED');
       return { accepted: false, receiptSeq: null };
@@ -212,7 +216,7 @@ export function createTraceWriter({
     } catch (error) {
       writeFailed = true;
       degraded = true;
-      recordPrimary('footer', error instanceof TraceError ? error.code : 'WRITE_FAILED');
+      recordPrimary('footer', 'WRITE_FAILED');
       footerOk = false;
     }
     closeHandle();

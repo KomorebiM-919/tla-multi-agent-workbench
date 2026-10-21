@@ -264,6 +264,9 @@ export function inspectTraceBytes(bytes, { maxPending = TRACE_LIMITS.maxPending 
   const keys = new Set([...calls.keys(), ...results.keys()]);
   const known = (items, field) => [...new Set(items.map((item) => item[field])
     .filter((value) => value !== null && !((field === 'outcome' || field === 'valueState') && value === 'unknown')))];
+  const knownProcess = (items, field) => [...new Set(items
+    .map((item) => item.process?.[field])
+    .filter((value) => value !== null && value !== undefined))];
   for (const key of keys) {
     const callList = calls.get(key) ?? [];
     const resultList = results.get(key) ?? [];
@@ -280,6 +283,12 @@ export function inspectTraceBytes(bytes, { maxPending = TRACE_LIMITS.maxPending 
     }
     for (const field of ['outcome', 'valueState']) {
       if (known(resultList, field).length > 1) addDiag(diagnostics, 'RESULT_CONFLICT', resultList[resultList.length - 1].receiptSeq);
+    }
+    for (const field of PROCESS_KEYS) {
+      if (knownProcess(resultList, field).length > 1) {
+        addDiag(diagnostics, 'RESULT_CONFLICT', resultList[resultList.length - 1].receiptSeq);
+        break;
+      }
     }
     if (callList.length > 0 && resultList.length === 0) addDiag(diagnostics, 'CALL_UNPAIRED', callList[callList.length - 1].receiptSeq);
     if (resultList.length > 0 && callList.length === 0) addDiag(diagnostics, 'RESULT_UNPAIRED', resultList[resultList.length - 1].receiptSeq);

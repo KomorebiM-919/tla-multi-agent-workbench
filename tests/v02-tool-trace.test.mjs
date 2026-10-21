@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
-  inspectTraceBytes, TRACE_LIMITS, TRACE_SCHEMA, validateFooter, validateHeader,
+  inspectTraceBytes, TRACE_LIMITS, TRACE_SCHEMA, TraceError, validateFooter, validateHeader,
   validateObservation
 } from '../tools/lib/tool-trace-contracts.mjs';
 import { assertFreshOutputPath } from '../tools/lib/trace-output.mjs';
@@ -104,6 +104,73 @@ try {
   ));
   assert.equal(directOutcomeConflict.status, 'INCOMPLETE');
   assert.ok(directOutcomeConflict.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'));
+
+  const processFacts = (patch = {}) => ({
+    exitCode: 0, signal: null, timedOut: null, aborted: null,
+    stdoutTruncated: null, stderrTruncated: null, ...patch
+  });
+  const crossProcessResult = (seq, process, extra = {}) => result(seq, 's1', 'c1', {
+    source: 'session/event', process, ...extra
+  });
+
+  const processConflict = inspectTraceBytes(jsonl(
+    header(id), call(1),
+    result(2, 's1', 'c1', { process: processFacts({ exitCode: 0 }) }),
+    crossProcessResult(3, processFacts({ exitCode: 1 })),
+    footer(id, 3)
+  ));
+  assert.equal(processConflict.status, 'INCOMPLETE');
+  const processConflictDiagnostic = processConflict.diagnostics.find((item) => item.code === 'RESULT_CONFLICT');
+  assert.ok(processConflictDiagnostic);
+  assert.equal(processConflictDiagnostic.receiptSeq, 3);
+
+  for (const [field, value] of [
+    ['exitCode', 1], ['signal', 'SIGKILL'], ['timedOut', true], ['aborted', true],
+    ['stdoutTruncated', true], ['stderrTruncated', true]
+  ]) {
+    const baseline = field === 'exitCode' ? 0 : field === 'signal' ? 'SIGTERM' : false;
+    const byField = inspectTraceBytes(jsonl(
+      header(id), call(1),
+      result(2, 's1', 'c1', { process: processFacts({ [field]: baseline }) }),
+      crossProcessResult(3, processFacts({ [field]: value })),
+      footer(id, 3)
+    ));
+    assert.equal(byField.status, 'INCOMPLETE', field);
+    assert.ok(byField.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'), field);
+  }
+
+  const processNullVsKnown = inspectTraceBytes(jsonl(
+    header(id), call(1),
+    result(2, 's1', 'c1', { process: processFacts({ exitCode: 0 }) }),
+    crossProcessResult(3, processFacts({ exitCode: null })),
+    footer(id, 3)
+  ));
+  assert.equal(processNullVsKnown.status, 'VALID_METADATA');
+  assert.equal(processNullVsKnown.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'), false);
+
+  const processBothNull = inspectTraceBytes(jsonl(
+    header(id), call(1),
+    result(2, 's1', 'c1', { process: processFacts({ exitCode: null, signal: null }) }),
+    crossProcessResult(3, processFacts({ exitCode: null, signal: null })),
+    footer(id, 3)
+  ));
+  assert.equal(processBothNull.status, 'VALID_METADATA');
+
+  const processSame = inspectTraceBytes(jsonl(
+    header(id), call(1),
+    result(2, 's1', 'c1', { process: processFacts({ exitCode: 0, stdoutTruncated: false }) }),
+    crossProcessResult(3, processFacts({ exitCode: 0, stdoutTruncated: false })),
+    footer(id, 3)
+  ));
+  assert.equal(processSame.status, 'VALID_METADATA');
+
+  const processComplementary = inspectTraceBytes(jsonl(
+    header(id), call(1),
+    result(2, 's1', 'c1', { process: processFacts({ exitCode: 0 }) }),
+    crossProcessResult(3, processFacts({ exitCode: null, signal: 'SIGTERM' })),
+    footer(id, 3)
+  ));
+  assert.equal(processComplementary.status, 'VALID_METADATA');
 
   const literalUnknownIdentity = inspectTraceBytes(jsonl(
     header(id), call(1, 's1', 'c1', { toolName: 'unknown' }),
@@ -298,6 +365,128 @@ try {
   assert.equal(headerCloseWriter.stop().code, 'STOPPED');
   assert.equal(headerCloseCalls, 1);
 
+  const CANARY = 'CANARY_PRIVATE_EXCEPTION';
+  const assertSafeWriteError = (error) => {
+    assert.ok(error instanceof TraceError);
+    assert.equal(error.code, 'WRITE_FAILED');
+    assert.doesNotMatch(String(error.message), /CANARY_PRIVATE_EXCEPTION/u);
+  };
+
+  const pathFaultFile = join(root, 'path-trace-fault.jsonl');
+  const pathFaultWriter = createTraceWriter({
+    outputFile: pathFaultFile,
+    assertPath: () => { throw new TraceError('CANARY_PATH', CANARY); }
+  });
+  let pathFaultError = null;
+  try { pathFaultWriter.open(); } catch (error) { pathFaultError = error; }
+  assertSafeWriteError(pathFaultError);
+  const pathFaultHealth = pathFaultWriter.stop();
+  assert.equal(pathFaultHealth.stage, 'header');
+  assert.equal(pathFaultHealth.code, 'WRITE_FAILED');
+  assert.doesNotMatch(JSON.stringify(pathFaultHealth), /CANARY_PRIVATE_EXCEPTION/u);
+
+  const openFaultFile = join(root, 'open-trace-fault.jsonl');
+  const openFaultWriter = createTraceWriter({
+    outputFile: openFaultFile,
+    assertPath: () => {},
+    io: { openSync: () => { throw new TraceError('CANARY_OPEN', CANARY); }, writeSync: fs.writeSync, closeSync: fs.closeSync }
+  });
+  let openFaultError = null;
+  try { openFaultWriter.open(); } catch (error) { openFaultError = error; }
+  assertSafeWriteError(openFaultError);
+  const openFaultHealth = openFaultWriter.stop();
+  assert.equal(openFaultHealth.stage, 'header');
+  assert.equal(openFaultHealth.code, 'WRITE_FAILED');
+  assert.doesNotMatch(JSON.stringify(openFaultHealth), /CANARY_PRIVATE_EXCEPTION/u);
+
+  const traceHeaderFile = join(root, 'trace-header-fault.jsonl');
+  const traceHeaderWriter = createTraceWriter({
+    outputFile: traceHeaderFile,
+    assertPath: () => {},
+    io: { openSync: fs.openSync, writeSync: () => { throw new TraceError('CANARY_HEADER', CANARY); }, closeSync: fs.closeSync }
+  });
+  let traceHeaderError = null;
+  try { traceHeaderWriter.open(); } catch (error) { traceHeaderError = error; }
+  assertSafeWriteError(traceHeaderError);
+  const traceHeaderHealth = traceHeaderWriter.stop();
+  assert.equal(traceHeaderHealth.stage, 'header');
+  assert.equal(traceHeaderHealth.code, 'WRITE_FAILED');
+  assert.doesNotMatch(JSON.stringify(traceHeaderHealth), /CANARY_PRIVATE_EXCEPTION/u);
+
+  let traceObservationWrites = 0;
+  const traceObservationFile = join(root, 'trace-observation-fault.jsonl');
+  const traceObservationWriter = createTraceWriter({
+    outputFile: traceObservationFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: (fd, buffer, offset, length) => {
+        traceObservationWrites += 1;
+        if (traceObservationWrites >= 2) throw new TraceError('CANARY_OBSERVATION', CANARY);
+        return fs.writeSync(fd, buffer, offset, length);
+      },
+      closeSync: fs.closeSync
+    }
+  });
+  assert.equal(traceObservationWriter.open(), true);
+  assert.equal(traceObservationWriter.accept(call(1)).accepted, false);
+  const traceObservationHealth = traceObservationWriter.stop();
+  assert.equal(traceObservationHealth.stage, 'observation');
+  assert.equal(traceObservationHealth.code, 'WRITE_FAILED');
+  assert.doesNotMatch(readFileSync(traceObservationFile, 'utf8'), /CANARY_PRIVATE_EXCEPTION/u);
+  assert.doesNotMatch(JSON.stringify(traceObservationHealth), /CANARY_PRIVATE_EXCEPTION/u);
+
+  const traceFooterFile = join(root, 'trace-footer-fault.jsonl');
+  const traceFooterWriter = createTraceWriter({
+    outputFile: traceFooterFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: (fd, buffer, offset, length) => {
+        if (buffer.toString('utf8').includes('"kind":"footer"')) throw new TraceError('CANARY_FOOTER', CANARY);
+        return fs.writeSync(fd, buffer, offset, length);
+      },
+      closeSync: fs.closeSync
+    }
+  });
+  traceFooterWriter.open();
+  traceFooterWriter.accept(call(1));
+  const traceFooterHealth = traceFooterWriter.stop();
+  assert.equal(traceFooterHealth.stage, 'footer');
+  assert.equal(traceFooterHealth.code, 'WRITE_FAILED');
+  assert.equal(traceFooterHealth.footerWritten, false);
+  assert.doesNotMatch(JSON.stringify(traceFooterHealth), /CANARY_PRIVATE_EXCEPTION/u);
+
+  const traceCloseFile = join(root, 'trace-close-fault.jsonl');
+  const traceCloseWriter = createTraceWriter({
+    outputFile: traceCloseFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: fs.writeSync,
+      closeSync: () => { throw new TraceError('CANARY_CLOSE', CANARY); }
+    }
+  });
+  traceCloseWriter.open();
+  traceCloseWriter.accept(call(1));
+  const traceCloseHealth = traceCloseWriter.stop();
+  assert.equal(traceCloseHealth.code, 'CLOSE_FAILED');
+  assert.equal(traceCloseHealth.closeFailed, 'CLOSE_FAILED');
+  assert.doesNotMatch(JSON.stringify(traceCloseHealth), /CANARY_PRIVATE_EXCEPTION/u);
+
+  for (const thrown of [CANARY, { message: CANARY }, 42]) {
+    const nonstandardFile = join(root, `trace-nonstandard-${Math.random().toString(16).slice(2)}.jsonl`);
+    const nonstandardWriter = createTraceWriter({
+      outputFile: nonstandardFile,
+      assertPath: () => {},
+      io: { openSync: fs.openSync, writeSync: () => { throw thrown; }, closeSync: fs.closeSync }
+    });
+    let nonstandardError = null;
+    try { nonstandardWriter.open(); } catch (error) { nonstandardError = error; }
+    assertSafeWriteError(nonstandardError);
+    assert.doesNotMatch(JSON.stringify(nonstandardWriter.stop()), /CANARY_PRIVATE_EXCEPTION/u);
+  }
+
   const footerFile = join(root, 'footer-fault.jsonl');
   const footerWriter = createTraceWriter({
     outputFile: footerFile,
@@ -435,7 +624,7 @@ try {
     let calls = 0;
     return {
       handlers,
-      on(name, fn) { calls += 1; if (calls === 2) throw new Error('subscribe failed sk-secret'); handlers.set(name, fn); },
+      on(name, fn) { calls += 1; if (calls === 2) throw new TraceError('SUBSCRIBE_FAILED', 'subscribe failed sk-secret'); handlers.set(name, fn); },
       off(name) { handlers.delete(name); }
     };
   })();
