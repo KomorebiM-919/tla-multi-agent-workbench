@@ -22,6 +22,43 @@ function fixedCode(value, fallback) {
 export function createLoaderPlugin({ factory = createToolObserver } = {}) {
   if (typeof factory !== 'function') throw new TraceError('CONFIG_INVALID', 'factory is invalid');
 
+  // The host loader only observes the synchronous setup call. A cleanup that
+  // never settles must not turn apply() or the returned disposer into an
+  // unbounded wait. The timeout is a fixed M0 config value; the wrapper never
+  // derives source identity or a cleanup deadline from the context.
+  function boundedStop(controller, timeoutMs) {
+    let timer;
+    const stop = Promise.resolve()
+      .then(() => {
+        if (!controller || typeof controller.stop !== 'function') return { status: 'missing' };
+        return controller.stop();
+      })
+      .then(
+        (value) => ({ status: 'resolved', value }),
+        (error) => ({ status: 'rejected', error })
+      );
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ status: 'timeout' }), timeoutMs);
+    });
+    return Promise.race([stop, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  function cleanupState(result) {
+    if (result.status === 'resolved' && result.value?.ok === true) {
+      return { status: 'settled', ok: true, ownershipUncertain: false };
+    }
+    if (result.status === 'timeout') {
+      return { status: 'timeout', ok: false, ownershipUncertain: true };
+    }
+    return { status: 'failed', ok: false, ownershipUncertain: true };
+  }
+
+  function setupError(code, result) {
+    const error = new TraceError(code, 'observer setup failed');
+    error.cleanup = cleanupState(result);
+    return error;
+  }
+
   async function apply(ctx, config) {
     let normalized;
     try {
@@ -40,22 +77,30 @@ export function createLoaderPlugin({ factory = createToolObserver } = {}) {
     if (!controller || controller.enabled !== true || controller.ok !== true ||
         typeof controller.stop !== 'function') {
       const code = fixedCode(controller?.code, 'SETUP_FAILED');
-      try { await controller?.stop?.(); } catch { /* rollback is secondary */ }
-      throw new TraceError(code, 'observer setup failed');
+      const rollback = await boundedStop(controller, normalized.cleanupTimeoutMs);
+      throw setupError(code, rollback);
     }
 
     let cleanup = null;
     return function dispose() {
       if (cleanup === null) {
         cleanup = (async () => {
-          let result;
-          try {
-            result = await controller.stop();
-          } catch {
-            throw new TraceError('STOP_FAILED', 'observer stop failed');
+          const stopped = await boundedStop(controller, normalized.cleanupTimeoutMs);
+          if (stopped.status === 'timeout') {
+            const error = new TraceError('CLEANUP_TIMEOUT', 'observer cleanup timed out');
+            error.cleanup = cleanupState(stopped);
+            throw error;
           }
+          if (stopped.status === 'rejected') {
+            const error = new TraceError('STOP_FAILED', 'observer stop failed');
+            error.cleanup = cleanupState(stopped);
+            throw error;
+          }
+          const result = stopped.value;
           if (!result || result.ok !== true) {
-            throw new TraceError(fixedCode(result?.code, 'STOP_FAILED'), 'observer stop failed');
+            const error = new TraceError(fixedCode(result?.code, 'STOP_FAILED'), 'observer stop failed');
+            error.cleanup = cleanupState(stopped);
+            throw error;
           }
         })();
       }

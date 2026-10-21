@@ -527,9 +527,18 @@ collection, double unload, the old M0 controller rejection, setup rollback,
 fixed async failures, cleanup rejection and privacy canaries. It does not import
 Cordis/DSH and is not a live loader test.
 
+Tests that write trace/journal files inject a simulated composition factory and
+assert `origin=simulated-dispatcher`. Production origin wiring is tested through
+a non-writing stub factory, so no fabricated `host-notification` record is
+created. Setup rollback and disposer cleanup use the validated
+`cleanupTimeoutMs`; a never-settling stop yields `CLEANUP_TIMEOUT` with
+`ownershipUncertain=true`, not a hang or a success. Late resolution/rejection
+cannot change the returned result and does not produce an unhandled rejection.
+
 `node tools/check-observer-m1-package.mjs --repo <repo> --commit <sha>
 --checkout <fresh-autocrlf-checkout> --manifest
 docs/V0.2-OBSERVER-M1-PACKAGE-MANIFEST.json` compares the M1A 11-file closure
 across Git blob, fresh checkout, archive and manifest, then fake-loads/unloads
-only the assembled package. It does not install anything. The M0 and historical
-seven-file manifests remain frozen.
+only the assembled package. The fake load writes simulated records and checks
+production origin with a non-writing stub. It does not install anything. The M0
+and historical seven-file manifests remain frozen.

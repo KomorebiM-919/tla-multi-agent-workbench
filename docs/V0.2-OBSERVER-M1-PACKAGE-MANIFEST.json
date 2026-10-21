@@ -7,9 +7,9 @@
   "files": [
     {
       "path": "orchestration/tool-observer/host-plugin/index.js",
-      "bytes": 2493,
-      "sha256": "968e8e7bdd70d977a75ee43575804d717acbc2d93f227325f0d5ca387230c785",
-      "blob": "0d31d1dcac4a2dc9957b8df2a2ea74171e914fb0"
+      "bytes": 4376,
+      "sha256": "9b186726983d4b7a6ab1c57930ed51770f27573369242a2875d8624953a15550",
+      "blob": "902aa0a118817a1c33566816cbf10aadf385b570"
     },
     {
       "path": "orchestration/tool-observer/host-plugin/package.json",

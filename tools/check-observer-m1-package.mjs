@@ -81,6 +81,8 @@ function attributes(repo, paths) {
 function fakeLoad(packageDir) {
   const code = `
 import * as mod from './orchestration/tool-observer/host-plugin/index.js';
+import { createLoaderPlugin } from './orchestration/tool-observer/host-plugin/index.js';
+import { createToolObserver } from './orchestration/tool-observer/plugin/index.js';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 const plugin = mod.default ?? mod;
@@ -94,7 +96,10 @@ const config = {
   gateRunId: 'gate-1', budgetRunId: 'gate-1',
   maxBytes: 131072, maxObservations: 10, maxPending: 10, cleanupTimeoutMs: 50
 };
-const effect = await plugin.apply(ctx, config);
+const simulated = createLoaderPlugin({
+  factory: (args) => createToolObserver({ ...args, origin: 'simulated-dispatcher' })
+});
+const effect = await simulated.apply(ctx, config);
 if (typeof effect !== 'function') throw new Error('apply did not return a disposer');
 const result = await effect();
 if (result !== undefined) throw new Error('disposer returned a value');
@@ -103,7 +108,22 @@ for (const phase of ['preparing', 'attached', 'stopping', 'stopped']) {
   if (!journal.includes('"phase":"' + phase + '"')) throw new Error('missing ' + phase);
 }
 const header = JSON.parse(readFileSync(join(runDir, 'trace.jsonl'), 'utf8').split('\\n')[0]);
-if (header.origin !== 'host-notification') throw new Error('origin mismatch');
+if (header.origin !== 'simulated-dispatcher') throw new Error('simulated origin mismatch');
+
+let seenOrigin = null;
+const productionStub = createLoaderPlugin({
+  factory: async (args) => {
+    seenOrigin = args.origin;
+    return { enabled: true, ok: true, stop: async () => ({ ok: true }) };
+  }
+});
+const stubDir = join(process.cwd(), 'fake-production-stub');
+mkdirSync(stubDir, { recursive: true });
+const stubEffect = await productionStub.apply(ctx, { ...config, runDir: stubDir,
+  traceFile: join(stubDir, 'trace.jsonl'), lifecycleFile: join(stubDir, 'lifecycle.jsonl') });
+if (seenOrigin !== 'host-notification') throw new Error('production origin mismatch');
+if (typeof stubEffect !== 'function') throw new Error('production stub did not return a disposer');
+await stubEffect();
 `;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: packageDir, encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`isolated fake load failed: ${result.stderr || result.stdout}`);

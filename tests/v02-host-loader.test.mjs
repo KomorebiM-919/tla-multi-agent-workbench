@@ -6,11 +6,21 @@ import { randomUUID } from 'node:crypto';
 import * as loaderPlugin from '../orchestration/tool-observer/host-plugin/index.js';
 import { createLoaderPlugin } from '../orchestration/tool-observer/host-plugin/index.js';
 import * as m0Plugin from '../orchestration/tool-observer/plugin/index.js';
+import { createToolObserver } from '../orchestration/tool-observer/plugin/index.js';
 import { readLifecycle } from '../orchestration/tool-observer/lifecycle.mjs';
 import { inspectTraceBytes } from '../tools/lib/tool-trace-contracts.mjs';
 
 const UUID = randomUUID();
 const UUID2 = randomUUID();
+
+function simulatedLoader() {
+  // The wrapper fixes the production origin internally. Tests that actually
+  // write trace/journal records inject an explicit simulated factory instead
+  // of adding an origin switch to production config.
+  return createLoaderPlugin({
+    factory: (args) => createToolObserver({ ...args, origin: 'simulated-dispatcher' })
+  });
+}
 
 function scratch() {
   const parent = join(process.cwd(), 'tests', '.scratch');
@@ -93,17 +103,36 @@ test('enabled apply returns a disposer and unload stops through the controller',
   const runDir = join(root, 'run');
   mkdirSync(runDir);
   const ctx = fakeContext();
-  const effect = await fakeLoaderLoad(loaderPlugin, ctx, config(runDir));
+  const plugin = simulatedLoader();
+  const effect = await fakeLoaderLoad(plugin, ctx, config(runDir));
   assert.equal(typeof effect, 'function');
   assert.equal(Object.hasOwn(effect, 'stop'), false);
   const result = await effect();
   assert.equal(result, undefined);
   const lifecycle = readLifecycle(readFileSync(join(runDir, 'lifecycle.jsonl')));
   assert.deepEqual(lifecycle.records.map((record) => record.phase), ['preparing', 'attached', 'stopping', 'stopped']);
-  assert.equal(lifecycle.records.at(1).origin, 'host-notification');
+  assert.equal(lifecycle.records.at(1).origin, 'simulated-dispatcher');
   const trace = inspectTraceBytes(readFileSync(join(runDir, 'trace.jsonl')));
   assert.equal(trace.status, 'VALID_METADATA');
-  assert.equal(trace.origin, 'host-notification');
+  assert.equal(trace.origin, 'simulated-dispatcher');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('the production entry selects host-notification only through a non-writing stub', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  let seenOrigin = null;
+  const plugin = createLoaderPlugin({
+    factory: async (args) => {
+      seenOrigin = args.origin;
+      return { enabled: true, ok: true, stop: async () => ({ ok: true }) };
+    }
+  });
+  const effect = await plugin.apply(fakeContext(), config(runDir));
+  assert.equal(seenOrigin, 'host-notification');
+  assert.deepEqual(readdirSync(runDir), []);
+  await effect();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -224,8 +253,9 @@ test('a real subscription rollback is a fixed setup failure with no attached jou
       return () => {};
     }
   };
+  const plugin = simulatedLoader();
   await assert.rejects(
-    () => loaderPlugin.apply(ctx, config(runDir)),
+    () => plugin.apply(ctx, config(runDir)),
     (error) => error.code === 'SETUP_FAILED' &&
       !String(error).includes('CANARY_ATTACH') &&
       !JSON.stringify(error).includes('CANARY_ATTACH')
@@ -240,7 +270,7 @@ test('double unload shares one cleanup promise and one final result', async () =
   const root = scratch();
   const runDir = join(root, 'run');
   mkdirSync(runDir);
-  const effect = await loaderPlugin.apply(fakeContext(), config(runDir));
+  const effect = await simulatedLoader().apply(fakeContext(), config(runDir));
   const first = effect();
   const second = effect();
   assert.equal(first, second);
@@ -248,5 +278,136 @@ test('double unload shares one cleanup promise and one final result', async () =
   assert.equal(await second, undefined);
   const text = readFileSync(join(runDir, 'lifecycle.jsonl'), 'utf8');
   assert.equal((text.match(/"phase":"stopped"/gu) ?? []).length, 1);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('setup rollback does not await a stop that never settles', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  let stops = 0;
+  const plugin = createLoaderPlugin({
+    factory: async () => ({
+      enabled: true,
+      ok: false,
+      code: 'PATH_BLOCKED',
+      stop: () => {
+        stops += 1;
+        return new Promise(() => {});
+      }
+    })
+  });
+  const started = Date.now();
+  await assert.rejects(
+    () => plugin.apply(fakeContext(), config(runDir, { cleanupTimeoutMs: 5 })),
+    (error) => error.code === 'PATH_BLOCKED' &&
+      error.cleanup?.status === 'timeout' &&
+      error.cleanup?.ownershipUncertain === true
+  );
+  assert.equal(stops, 1);
+  assert.ok(Date.now() - started < 1000, 'setup rollback exceeded its deadline');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('a disposer cleanup that never settles returns a fixed timeout', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const plugin = createLoaderPlugin({
+    factory: async () => ({ enabled: true, ok: true, stop: () => new Promise(() => {}) })
+  });
+  const effect = await plugin.apply(fakeContext(), config(runDir, { cleanupTimeoutMs: 5 }));
+  const started = Date.now();
+  await assert.rejects(
+    () => effect(),
+    (error) => error.code === 'CLEANUP_TIMEOUT' &&
+      error.cleanup?.status === 'timeout' &&
+      error.cleanup?.ownershipUncertain === true
+  );
+  assert.ok(Date.now() - started < 1000, 'disposer exceeded its deadline');
+  const second = effect();
+  assert.equal(second, effect());
+  await assert.rejects(() => second, (error) => error.code === 'CLEANUP_TIMEOUT');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('immediate and asynchronous cleanup remain successful', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  const secondDir = join(root, 'second');
+  mkdirSync(runDir);
+  mkdirSync(secondDir);
+  const immediate = createLoaderPlugin({
+    factory: async () => ({ enabled: true, ok: true, stop: () => ({ ok: true }) })
+  });
+  const asyncPlugin = createLoaderPlugin({
+    factory: async () => ({
+      enabled: true,
+      ok: true,
+      stop: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return { ok: true };
+      }
+    })
+  });
+  assert.equal(await (await immediate.apply(fakeContext(), config(runDir)))(), undefined);
+  assert.equal(await (await asyncPlugin.apply(fakeContext(), config(secondDir)))(), undefined);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('rejected and late-settling cleanup never leak the raw error', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  const lateDir = join(root, 'late');
+  mkdirSync(runDir);
+  mkdirSync(lateDir);
+  const rejected = createLoaderPlugin({
+    factory: async () => ({ enabled: true, ok: true, stop: async () => { throw new Error('CANARY_REJECT'); } })
+  });
+  const rejectedEffect = await rejected.apply(fakeContext(), config(runDir));
+  await assert.rejects(
+    () => rejectedEffect(),
+    (error) => error.code === 'STOP_FAILED' && !String(error).includes('CANARY_REJECT')
+  );
+
+  let rejectLate;
+  const late = createLoaderPlugin({
+    factory: async () => ({
+      enabled: true,
+      ok: true,
+      stop: () => new Promise((resolve, reject) => { rejectLate = reject; })
+    })
+  });
+  const effect = await late.apply(fakeContext(), config(lateDir, { cleanupTimeoutMs: 5 }));
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  await assert.rejects(() => effect(), (error) => error.code === 'CLEANUP_TIMEOUT');
+  rejectLate(new Error('CANARY_LATE_REJECT'));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  process.off('unhandledRejection', onUnhandled);
+  assert.deepEqual(unhandled, []);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('late resolution after a cleanup timeout cannot change the result', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  let resolveLate;
+  const plugin = createLoaderPlugin({
+    factory: async () => ({
+      enabled: true,
+      ok: true,
+      stop: () => new Promise((resolve) => { resolveLate = resolve; })
+    })
+  });
+  const effect = await plugin.apply(fakeContext(), config(runDir, { cleanupTimeoutMs: 5 }));
+  const first = effect();
+  await assert.rejects(() => first, (error) => error.code === 'CLEANUP_TIMEOUT');
+  resolveLate({ ok: true });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await assert.rejects(() => first, (error) => error.code === 'CLEANUP_TIMEOUT');
+  assert.equal(effect(), first);
   rmSync(root, { recursive: true, force: true });
 });
