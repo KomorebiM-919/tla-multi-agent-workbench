@@ -5,7 +5,7 @@
 // fictional trace. A deliberate CRLF rewrite is expected to fail the check.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
@@ -22,10 +22,10 @@ const CANDIDATES = [
 const HELP = `Usage: node tools/check-observer-package-fidelity.mjs \\
   --repo <git-worktree> --commit <sha> --checkout <fresh-checkout> \\
   --manifest <docs/V0.2-TOOL-OBSERVER-PACKAGE-MANIFEST.json> \\
-  [--archive-dir <dir>] [--package-dir <dir>] [--mutate-crlf <relative-path>] [--keep]
+  [--mutate-crlf <exact-candidate-path>] [--keep]
 
 Exit 0 all four byte sources and the isolated closure agree; 1 mismatch or I/O
-failure; 2 usage.`;
+failure; 2 usage or an unsafe mutation path.`;
 
 function usage(message) {
   if (message) process.stderr.write(`fidelity: ${message}\n`);
@@ -38,13 +38,16 @@ function parse(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--keep') { out.keep = true; continue; }
-    if (!['--repo', '--commit', '--checkout', '--manifest', '--archive-dir', '--package-dir', '--mutate-crlf'].includes(flag)) usage(`unknown argument: ${flag}`);
+    if (!['--repo', '--commit', '--checkout', '--manifest', '--mutate-crlf'].includes(flag)) usage(`unknown argument: ${flag}`);
     const value = argv[index + 1];
     if (value === undefined || value.startsWith('--')) usage(`${flag} requires a value`);
     out[flag.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
     index += 1;
   }
   if (!out.repo || !out.commit || !out.checkout || !out.manifest) usage('--repo, --commit, --checkout and --manifest are required');
+  if (out.mutateCrlf !== undefined && !CANDIDATES.includes(out.mutateCrlf)) {
+    usage('--mutate-crlf must be exactly one of the seven candidate relative paths');
+  }
   return out;
 }
 
@@ -102,9 +105,16 @@ function verify(repo, commit, checkout, manifest, archiveDir, packageDir, mutate
   if (tar.status !== 0) throw new Error(`tar extraction failed: ${tar.stderr || 'unknown error'}`);
 
   if (mutate) {
-    const target = join(extracted, mutate);
+    const target = resolve(extracted, mutate);
+    const root = resolve(extracted) + sep;
+    if (!target.startsWith(root) || !CANDIDATES.includes(mutate)) {
+      throw new Error(`unsafe mutation target: ${mutate}`);
+    }
     if (!existsSync(target)) throw new Error(`mutation target not exported: ${mutate}`);
-    writeFileSync(target, readFileSync(target).toString('utf8').replace(/\n/g, '\r\n'), 'utf8');
+    const before = readFileSync(target);
+    const after = Buffer.from(before.toString('utf8').replace(/\n/g, '\r\n'), 'utf8');
+    if (after.equals(before)) throw new Error(`mutation did not change candidate bytes: ${mutate}`);
+    writeFileSync(target, after);
     process.stderr.write(`MUTATED ${mutate}: CRLF rewrite is expected to make this check fail\n`);
   }
 
@@ -163,8 +173,8 @@ function readdirSafe(path) {
 let options;
 try { options = parse(process.argv.slice(2)); } catch (error) { usage(error.message); }
 const temporary = mkdtempSync(join(tmpdir(), 'tla-observer-fidelity-'));
-const archiveDir = options.archiveDir ? resolve(options.archiveDir) : join(temporary, 'archive');
-const packageDir = options.packageDir ? resolve(options.packageDir) : join(temporary, 'package');
+const archiveDir = join(temporary, 'archive');
+const packageDir = join(temporary, 'package');
 try {
   mkdirSync(archiveDir, { recursive: true });
   const ok = verify(
