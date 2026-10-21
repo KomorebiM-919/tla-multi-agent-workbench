@@ -191,6 +191,51 @@ test('a cleanup failure rejects with a fixed code and is idempotent', async () =
   rmSync(root, { recursive: true, force: true });
 });
 
+test('a rejected stop becomes a fixed error without raw text', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const plugin = createLoaderPlugin({
+    factory: async () => ({
+      enabled: true,
+      ok: true,
+      stop: async () => { throw new Error('CANARY_STOP_REJECTION'); }
+    })
+  });
+  const effect = await plugin.apply(fakeContext(), config(runDir));
+  await assert.rejects(
+    () => effect(),
+    (error) => error.code === 'STOP_FAILED' &&
+      !String(error).includes('CANARY_STOP_REJECTION') &&
+      !JSON.stringify(error).includes('CANARY_STOP_REJECTION')
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('a real subscription rollback is a fixed setup failure with no attached journal', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  let count = 0;
+  const ctx = {
+    on() {
+      count += 1;
+      if (count === 2) throw new Error('CANARY_ATTACH');
+      return () => {};
+    }
+  };
+  await assert.rejects(
+    () => loaderPlugin.apply(ctx, config(runDir)),
+    (error) => error.code === 'SETUP_FAILED' &&
+      !String(error).includes('CANARY_ATTACH') &&
+      !JSON.stringify(error).includes('CANARY_ATTACH')
+  );
+  const journal = readFileSync(join(runDir, 'lifecycle.jsonl'), 'utf8');
+  assert.equal(journal.includes('"phase":"attached"'), false);
+  assert.equal(journal.includes('CANARY_ATTACH'), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('double unload shares one cleanup promise and one final result', async () => {
   const root = scratch();
   const runDir = join(root, 'run');
