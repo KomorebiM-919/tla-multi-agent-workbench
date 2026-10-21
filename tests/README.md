@@ -480,6 +480,12 @@ framing/UTF-8/sequence/pairing rules, replay/conflict diagnostics, writer
 short/partial writes, limits, close fault, primary `{code, stage}` health,
 adapter rollback/exception containment, and the CLI exit codes. It imports no
 DSH module and starts no host.
+`node tests/v02-host-adapter.test.mjs` exercises the separate host-shaped
+projection/bridge with invented positional `(exec, result)` and
+`(session, event)` callbacks, an injected `subscribe -> dispose`, strict IDs,
+foreground-pwsh process leaves, prohibited getters, partial rollback and inert
+callbacks. It is not a live host observation and does not change the
+`hostVerified`, coverage or binding claims.
 `node tools/b1-offline-check.mjs` also creates only its own temporary
 `tests/.scratch/b1-e2e-*` directory when the parent is absent, so it runs from a
 clean checkout. The trace/report always keeps `hostVerified=false`,

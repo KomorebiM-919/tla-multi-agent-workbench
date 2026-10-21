@@ -286,6 +286,7 @@ B1 is now closed as an offline package: cross-source metadata is accepted only
 when both records describe the same session/call and known fields agree; changed
 replays and known conflicts remain diagnostic. The writer/validator fixes and
 the offline dispatcher-to-bundle check are recorded in
-[the B1 corrections](docs/V0.2-TOOL-METADATA-B1-CORRECTIONS.md). `session/event`
-is statically mapped; `tools/result` remains unknown, so live host support is
-still unverified.
+[the B1 corrections](docs/V0.2-TOOL-METADATA-B1-CORRECTIONS.md). A separate
+host-shaped adapter now has static source mappings for `session/event` and the
+audited `tools/result` fields, plus invented positional and process tests. It is
+not installed or subscribed, and live delivery/host support is still unverified.

@@ -250,8 +250,10 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
 - B1 offline close-out is complete at `f3420d1`: cross-source agreement,
   changed-replay conflicts, writer failure handling, dropped-diagnostics
   incompleteness and an invented dispatcher-to-bundle smoke entry are covered.
-  The static map now identifies `session/event` and `exec` IDs, but
-  `tools/result`, normal tool-name/outcome/value mapping and live member
-  coverage remain unknown. No host install or launch is authorized.
+  The static map now identifies `session/event`, `exec` IDs, `exec.name`,
+  `result.isError`, own `value` presence and foreground-pwsh process leaves. A
+  separate host-shaped adapter projects those fields from invented positional
+  callbacks; it is not installed or subscribed and does not prove live delivery,
+  member coverage or host support. No host install or launch is authorized.
   Materials: `docs/V0.2-TOOL-METADATA-B1-CORRECTIONS.md`,
   `docs/V0.2-TOOL-OBSERVER-SOURCE-MAP.md`.
