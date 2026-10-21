@@ -1,0 +1,50 @@
+{
+  "schema": "tla.observer-package-manifest/v1",
+  "candidateSet": "b1-observer-seven",
+  "packagingRule": ".gitattributes: text eol=lf for every candidate; whitespace checks remain enabled",
+  "note": "This manifest pins candidate bytes, not its own hash or a self-referential commit. The exact source commit is recorded in docs/V0.2-TOOL-OBSERVER-INSTALL-REVIEW.md; recompute with tools/check-observer-package-fidelity.mjs.",
+  "files": [
+    {
+      "path": "orchestration/tool-observer/context-subscription.mjs",
+      "bytes": 950,
+      "sha256": "ede4016a1d78635c63d81dc1fa402f7adb0e2b8c28b3b6dad1397be16ab67fe8",
+      "blob": "c2dec8538393c1ea60d0ae060e4186205735c699"
+    },
+    {
+      "path": "orchestration/tool-observer/host-bridge.mjs",
+      "bytes": 12845,
+      "sha256": "cb9ccbfa601b02ad38c064216a700bdf0b2c450ade7fa95a12065aedbbbd2240",
+      "blob": "01b01ae5c13f6f1b784213ac1c66b65350894537"
+    },
+    {
+      "path": "orchestration/tool-observer/writer.mjs",
+      "bytes": 8207,
+      "sha256": "eea83363fa20dc3df5c5f69b2d30c8293b3950227c24dfe4dad20a7e89f1c970",
+      "blob": "3ddae37f8caf848bcd427521f4f192b811d59e2e"
+    },
+    {
+      "path": "tools/lib/tool-trace-contracts.mjs",
+      "bytes": 16788,
+      "sha256": "e8785c7ce151eb5c6f23aa4c196566ac0d443bcf5ac06a8aff3d3616a8888c92",
+      "blob": "a05ad131b7dd91c5f140f8d33dca9eb524d51219"
+    },
+    {
+      "path": "tools/lib/launch-receipts.mjs",
+      "bytes": 6579,
+      "sha256": "1356eb6d82f0b93b254c2ad459f554a077bf88459ad80933d8e54f089771d768",
+      "blob": "1bcaf66122d927964bee500dfd7cd85e600bbbea"
+    },
+    {
+      "path": "tools/lib/trace-output.mjs",
+      "bytes": 3253,
+      "sha256": "33256452c01667bfe7b6d8dd7b68aaf91e3489b004dbeffb7e5f2fd83f3073b4",
+      "blob": "31162b1864f1fc51633d628b58ded7506dd0317d"
+    },
+    {
+      "path": "tools/inspect-tool-trace.mjs",
+      "bytes": 3151,
+      "sha256": "f1a1c23b4704f8c10e360675954a03403e0b8d24381959e62cdc021741419ddc",
+      "blob": "c53d9d5c892642218cc60e2b93bb7af726adb32d"
+    }
+  ]
+}

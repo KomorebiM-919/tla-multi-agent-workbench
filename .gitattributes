@@ -43,3 +43,14 @@ tests/fixtures/repair-protocol/** -text -whitespace
 # 54f1a8e3… 变成 4de4b80e…，启动器按设计拒绝启动（2026-10-18 受控实验预检实测）。
 # 这里只关闭行尾转换，**保留空白检查**：这些文件没有需要豁免的空白问题。
 orchestration/interceptor-plugin/** -text
+
+# B1 observer candidate bytes are the packaging evidence: Git blob, fresh
+# checkout and `git archive` export must agree byte-for-byte. Force LF without
+# disabling text/whitespace checks; those checks remain active.
+/orchestration/tool-observer/context-subscription.mjs text eol=lf
+/orchestration/tool-observer/host-bridge.mjs text eol=lf
+/orchestration/tool-observer/writer.mjs text eol=lf
+/tools/lib/tool-trace-contracts.mjs text eol=lf
+/tools/lib/launch-receipts.mjs text eol=lf
+/tools/lib/trace-output.mjs text eol=lf
+/tools/inspect-tool-trace.mjs text eol=lf
