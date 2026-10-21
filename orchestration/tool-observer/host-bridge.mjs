@@ -185,6 +185,57 @@ function safeDiagnostic(writer, code) {
   try { writer.addDiagnostic(code); } catch { /* diagnostics must not escape a callback */ }
 }
 
+function isThenable(value) {
+  return value !== null
+    && (typeof value === 'object' || typeof value === 'function')
+    && typeof value.then === 'function';
+}
+
+// A disposer may return a promise (Cordis fibers can unwind asynchronously).
+// stop() must stay synchronous, so it records the pending transition instead of
+// claiming cleanup. A rejection is observed here to avoid an unhandled promise;
+// health is updated when the transition settles.
+function settleDisposer(dispose, state) {
+  let result;
+  try {
+    result = dispose();
+  } catch {
+    state.failed = true;
+    return;
+  }
+  let thenable;
+  try { thenable = isThenable(result); } catch { state.failed = true; return; }
+  if (!thenable) return;
+  state.asyncPending = true;
+  try {
+    Promise.resolve(result).then(
+      () => {
+        state.asyncPending = false;
+        state.asyncSettled = true;
+        if (state.health !== null) {
+          state.health.asyncCleanupPending = false;
+          state.health.asyncCleanupSettled = true;
+        }
+      },
+      () => {
+        state.asyncPending = false;
+        state.asyncSettled = true;
+        state.asyncFailed = true;
+        if (state.health !== null) {
+          state.health.asyncCleanupPending = false;
+          state.health.asyncCleanupSettled = true;
+          state.health.asyncCleanupFailure = true;
+          state.health.ok = false;
+        }
+      }
+    );
+  } catch {
+    state.asyncPending = false;
+    state.asyncSettled = true;
+    state.asyncFailed = true;
+  }
+}
+
 function safeStop(writer) {
   try { return writer.stop(); } catch { return { ok: false }; }
 }
@@ -230,16 +281,20 @@ export function createHostToolObserver({
     };
   }
 
-  function rollback() {
-    let failed = false;
-    for (const dispose of disposers.values()) {
-      try { dispose(); } catch { failed = true; }
-    }
+  function disposeAll() {
+    const state = {
+      failed: false,
+      asyncPending: false,
+      asyncSettled: false,
+      asyncFailed: false,
+      health: null
+    };
+    for (const dispose of disposers.values()) settleDisposer(dispose, state);
     disposers.clear();
-    return failed;
+    return state;
   }
 
-  function attachFailure({ ownershipUncertain = false, rollbackFailed = false } = {}) {
+  function attachFailure({ ownershipUncertain = false, rollbackFailed = false, asyncCleanupPending = false } = {}) {
     stopped = true;
     attached = false;
     safeDiagnostic(writer, 'SUBSCRIBE_FAILED');
@@ -250,6 +305,7 @@ export function createHostToolObserver({
       stopped: true,
       ownershipUncertain,
       rollbackFailed,
+      asyncCleanupPending,
       writer: result
     };
     return health;
@@ -270,12 +326,20 @@ export function createHostToolObserver({
       try {
         dispose = subscribe(eventName, handlerFor(eventName));
       } catch {
-        const rollbackFailed = rollback();
-        return attachFailure({ ownershipUncertain: true, rollbackFailed });
+        const rolled = disposeAll();
+        return attachFailure({
+          ownershipUncertain: true,
+          rollbackFailed: rolled.failed,
+          asyncCleanupPending: rolled.asyncPending
+        });
       }
       if (typeof dispose !== 'function') {
-        const rollbackFailed = rollback();
-        return attachFailure({ ownershipUncertain: true, rollbackFailed });
+        const rolled = disposeAll();
+        return attachFailure({
+          ownershipUncertain: true,
+          rollbackFailed: rolled.failed,
+          asyncCleanupPending: rolled.asyncPending
+        });
       }
       disposers.set(eventName, dispose);
     }
@@ -287,20 +351,23 @@ export function createHostToolObserver({
   function stop() {
     if (stopped) return health ?? { ok: true, stopped: true };
     stopped = true;
-    let unsubscribeFailed = false;
-    for (const dispose of disposers.values()) {
-      try { dispose(); } catch { unsubscribeFailed = true; }
-    }
-    disposers.clear();
-    if (unsubscribeFailed) safeDiagnostic(writer, 'UNSUBSCRIBE_FAILED');
+    const drained = disposeAll();
+    if (drained.failed) safeDiagnostic(writer, 'UNSUBSCRIBE_FAILED');
     const result = safeStop(writer);
     attached = false;
     health = {
-      ok: !unsubscribeFailed && result.ok === true,
+      ok: !drained.failed && !drained.asyncPending && result.ok === true,
       stopped: true,
-      unsubscribeFailed,
+      unsubscribeFailed: drained.failed,
+      ownershipUncertain: drained.failed || drained.asyncPending || drained.asyncFailed,
+      asyncCleanupPending: drained.asyncPending,
+      asyncCleanupSettled: drained.asyncSettled,
+      asyncCleanupFailure: drained.asyncFailed,
       writer: result
     };
+    // A late rejection/resolution of a disposer must update the same health
+    // object; it never changes the already-returned ok:false into success.
+    drained.health = health;
     return health;
   }
 

@@ -257,3 +257,12 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   member coverage or host support. No host install or launch is authorized.
   Materials: `docs/V0.2-TOOL-METADATA-B1-CORRECTIONS.md`,
   `docs/V0.2-TOOL-OBSERVER-SOURCE-MAP.md`.
+
+- B1 now has an explicit Cordis-shaped `ctx.on` registration boundary, checked
+  against the archived `cordis/lib/index.js` by read-only source inspection
+  (60361 B, SHA256 `6a9394c0…`; lines 335-344, 371, 745-753 and 1169-1184).
+  Registration is opt-in only; `ctx.off`, `global` and `prepend` are not used.
+  Async disposal is reported as pending/ownership-uncertain rather than a
+  completed cleanup. This is still a project boundary, not a public host API or
+  live member-coverage proof; installation and host launch remain unauthorized.
+  Materials: `docs/V0.2-TOOL-OBSERVER-INSTALL-REVIEW.md`.

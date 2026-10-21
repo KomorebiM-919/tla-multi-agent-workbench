@@ -290,3 +290,12 @@ the offline dispatcher-to-bundle check are recorded in
 host-shaped adapter now has static source mappings for `session/event` and the
 audited `tools/result` fields, plus invented positional and process tests. It is
 not installed or subscribed, and live delivery/host support is still unverified.
+
+A thin explicit `ctx.on` boundary now sits in front of that adapter. It was
+checked against the archived Cordis entry by read-only source inspection, calls
+`ctx.on` as a method, requires a function disposer, and never uses `ctx.off` or
+an unrequested `global`/`prepend` option. Async fiber disposal is observed but
+not awaited: the synchronous `stop()` reports ownership uncertainty instead of
+claiming cleanup. This is still an offline project boundary, not proof of a
+public host API, member coverage or live capture. Host installation remains
+unauthorized.

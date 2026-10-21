@@ -12,6 +12,7 @@ import {
   projectHostToolsResult,
   projectHostToolsResultDetailed
 } from '../orchestration/tool-observer/host-bridge.mjs';
+import { createContextSubscriber } from '../orchestration/tool-observer/context-subscription.mjs';
 
 mkdirSync('tests/.scratch', { recursive: true });
 const root = mkdtempSync(join(process.cwd(), 'tests/.scratch/b1-host-'));
@@ -249,6 +250,95 @@ assert.throws(() => createHostToolObserver({
   writer: writer('origin'),
   origin: 'host-notification'
 }), /SUBSCRIBE_FAILED/u);
+
+// Cordis-shaped context registration: method receiver, exactly two arguments,
+// no ctx.off, and a function disposer are required.
+let contextDisposed = 0;
+const contextCalls = [];
+const context = {
+  marker: 'ctx',
+  on(name, callback, ...rest) {
+    assert.equal(this, context);
+    contextCalls.push({ name, rest: rest.length, callback });
+    return () => { contextDisposed += 1; };
+  },
+  get off() { throw new Error('CANARY_OFF'); }
+};
+const contextSubscribe = createContextSubscriber(context);
+const contextDisposer = contextSubscribe('tools/result', () => {});
+assert.equal(typeof contextDisposer, 'function');
+assert.equal(contextCalls.length, 1);
+assert.equal(contextCalls[0].name, 'tools/result');
+assert.equal(contextCalls[0].rest, 0);
+
+assert.throws(() => createContextSubscriber({}), /SUBSCRIBE_FAILED/u);
+assert.throws(() => createContextSubscriber({ on() { return true; } })('e', () => {}), /SUBSCRIBE_FAILED/u);
+assert.throws(() => createContextSubscriber({ on() { throw new Error('CANARY_ON'); } })('e', () => {}), /CANARY_ON/u);
+
+const contextWriter = writer('context');
+const contextBridge = createHostToolObserver({
+  subscribe: contextSubscribe,
+  writer: contextWriter
+});
+assert.equal(contextBridge.attach().ok, true);
+const contextStop = contextBridge.stop();
+assert.equal(contextStop.ok, true);
+assert.equal(contextDisposed, 2);
+
+// Async disposer: stop stays synchronous, returns a non-success and records the
+// pending transition; a later rejection is observed and never unhandled.
+let resolveDispose;
+const asyncDispose = new Promise((resolve) => { resolveDispose = resolve; });
+const asyncContext = {
+  on() { return () => { contextDisposed += 1; return asyncDispose; }; }
+};
+const asyncBridge = createHostToolObserver({
+  subscribe: createContextSubscriber(asyncContext),
+  writer: writer('async-resolve')
+});
+assert.equal(asyncBridge.attach().ok, true);
+const asyncStop = asyncBridge.stop();
+assert.equal(asyncStop.ok, false);
+assert.equal(asyncStop.asyncCleanupPending, true);
+assert.equal(asyncStop.ownershipUncertain, true);
+resolveDispose();
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(asyncStop.asyncCleanupSettled, true);
+assert.equal(asyncStop.asyncCleanupFailure, false);
+assert.equal(asyncStop.ok, false);
+
+let rejectDispose;
+const rejectedDispose = new Promise((_resolve, reject) => { rejectDispose = reject; });
+const rejectedBridge = createHostToolObserver({
+  subscribe: createContextSubscriber({ on() { return () => rejectedDispose; } }),
+  writer: writer('async-reject')
+});
+assert.equal(rejectedBridge.attach().ok, true);
+const rejectedStop = rejectedBridge.stop();
+assert.equal(rejectedStop.ok, false);
+assert.equal(rejectedStop.asyncCleanupPending, true);
+rejectDispose(new Error('CANARY_ASYNC_DISPOSE'));
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(rejectedStop.asyncCleanupSettled, true);
+assert.equal(rejectedStop.asyncCleanupFailure, true);
+assert.equal(rejectedStop.ok, false);
+assert.ok(!JSON.stringify(rejectedStop).includes('CANARY_ASYNC_DISPOSE'));
+
+// A rollback whose first disposer is asynchronous is reported as pending, not
+// as a completed cleanup.
+const rollbackAsync = createHostToolObserver({
+  subscribe(name) {
+    if (name === 'tools/result') return () => asyncDispose;
+    throw new Error('CANARY_ROLLBACK');
+  },
+  writer: writer('rollback-async')
+});
+const rollbackAsyncHealth = rollbackAsync.attach();
+assert.equal(rollbackAsyncHealth.ok, false);
+assert.equal(rollbackAsyncHealth.ownershipUncertain, true);
+assert.equal(rollbackAsyncHealth.asyncCleanupPending, true);
 
 rmSync(root, { recursive: true, force: true });
 console.log('host adapter tests: ok');

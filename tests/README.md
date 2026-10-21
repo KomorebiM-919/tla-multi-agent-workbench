@@ -486,6 +486,13 @@ projection/bridge with invented positional `(exec, result)` and
 foreground-pwsh process leaves, prohibited getters, partial rollback and inert
 callbacks. It is not a live host observation and does not change the
 `hostVerified`, coverage or binding claims.
+`orchestration/tool-observer/context-subscription.mjs` is the explicit
+`ctx.on(name, callback)` boundary: method receiver, exactly two arguments, no
+`ctx.off`/`global`/`prepend`, function-disposer requirement, and no import-time
+registration. Its fake-context tests include a thenable disposer and a rejected
+thenable; `stop()` remains synchronous and reports `ok:false` with
+`asyncCleanupPending`/`ownershipUncertain` until the transition settles, and a
+rejection is observed rather than becoming an unhandled rejection.
 `node tools/b1-offline-check.mjs` also creates only its own temporary
 `tests/.scratch/b1-e2e-*` directory when the parent is absent, so it runs from a
 clean checkout. The trace/report always keeps `hostVerified=false`,
