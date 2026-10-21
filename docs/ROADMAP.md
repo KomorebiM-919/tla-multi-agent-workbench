@@ -276,3 +276,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   require separate review and human authorization. Materials:
   `docs/V0.2-OBSERVER-MOUNT-M0.md`,
   `docs/V0.2-OBSERVER-M0-INSTALL-REVIEW.md`.
+
+- B1-M0 offline review/publication is closed at `61ba0ab`. Next implement the
+  source-compatible wrapper and isolated fake-loader/package tests under
+  [M1 preparation](V0.2-OBSERVER-M1-PREPARATION.md). No actual loader or member
+  coverage is verified; M1B installation and one-run probe remain unauthorized.
