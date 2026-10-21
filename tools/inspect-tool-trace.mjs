@@ -3,6 +3,7 @@
 // diagnostics only and never calls acceptance/synthetic collectors.
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   inspectTraceBytes, makeReport, emptyCounts, TRACE_LIMITS, TraceError,
   REPORT_DIAGNOSTIC_CODES
@@ -77,4 +78,7 @@ function main() {
   process.exit(exitCode);
 }
 
-main();
+if (process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main();
+}

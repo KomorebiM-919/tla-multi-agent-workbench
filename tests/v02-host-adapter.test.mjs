@@ -340,5 +340,118 @@ assert.equal(rollbackAsyncHealth.ok, false);
 assert.equal(rollbackAsyncHealth.ownershipUncertain, true);
 assert.equal(rollbackAsyncHealth.asyncCleanupPending, true);
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+// Multiple async disposers: one completion must not clear the aggregate pending
+// state, and an early failure must stay latched.
+const first = deferred();
+const second = deferred();
+const multi = createHostToolObserver({
+  subscribe(name) {
+    return () => (name === 'tools/result' ? first.promise : second.promise);
+  },
+  writer: writer('multi-async')
+});
+assert.equal(multi.attach().ok, true);
+const multiHealth = multi.stop();
+assert.equal(multiHealth.ok, false);
+assert.equal(multiHealth.asyncCleanupPending, true);
+assert.equal(multiHealth.asyncCleanupSettled, false);
+first.resolve();
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(multiHealth.asyncCleanupPending, true);
+assert.equal(multiHealth.asyncCleanupSettled, false);
+assert.equal(multiHealth.ownershipUncertain, true);
+second.reject(new Error('CANARY_SECOND'));
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(multiHealth.asyncCleanupPending, false);
+assert.equal(multiHealth.asyncCleanupSettled, true);
+assert.equal(multiHealth.asyncCleanupFailure, true);
+assert.equal(multiHealth.ok, false);
+assert.ok(!JSON.stringify(multiHealth).includes('CANARY_SECOND'));
+
+// Reverse order: reject first, resolve second; the failure remains latched.
+const third = deferred();
+const fourth = deferred();
+const reverse = createHostToolObserver({
+  subscribe(name) {
+    return () => (name === 'tools/result' ? third.promise : fourth.promise);
+  },
+  writer: writer('reverse-async')
+});
+assert.equal(reverse.attach().ok, true);
+const reverseHealth = reverse.stop();
+third.reject(new Error('CANARY_THIRD'));
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(reverseHealth.asyncCleanupPending, true);
+assert.equal(reverseHealth.asyncCleanupFailure, true);
+fourth.resolve();
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(reverseHealth.asyncCleanupPending, false);
+assert.equal(reverseHealth.asyncCleanupSettled, true);
+assert.equal(reverseHealth.asyncCleanupFailure, true);
+assert.equal(reverseHealth.ok, false);
+
+// Mixed sync/async, and repeated stop returns the same observable health.
+const fifth = deferred();
+const mixed = createHostToolObserver({
+  subscribe(name) {
+    return name === 'tools/result' ? (() => {}) : (() => fifth.promise);
+  },
+  writer: writer('mixed-async')
+});
+assert.equal(mixed.attach().ok, true);
+const mixedHealth = mixed.stop();
+assert.equal(mixedHealth.asyncCleanupPending, true);
+assert.equal(mixed.stop(), mixedHealth);
+fifth.resolve();
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(mixedHealth.asyncCleanupPending, false);
+assert.equal(mixedHealth.asyncCleanupSettled, true);
+assert.equal(mixedHealth.ok, false);
+assert.equal(mixedHealth.ownershipUncertain, false);
+
+// A never-settling disposer keeps the aggregate pending without blocking stop.
+const never = createHostToolObserver({
+  subscribe() { return () => new Promise(() => {}); },
+  writer: writer('never-async')
+});
+assert.equal(never.attach().ok, true);
+const neverHealth = never.stop();
+assert.equal(neverHealth.ok, false);
+assert.equal(neverHealth.asyncCleanupPending, true);
+assert.equal(neverHealth.asyncCleanupSettled, false);
+assert.equal(neverHealth.ownershipUncertain, true);
+
+// Rollback async completion updates its health instead of leaving it pending.
+const rollbackDeferred = deferred();
+const rollbackResolved = createHostToolObserver({
+  subscribe(name) {
+    if (name === 'tools/result') return () => rollbackDeferred.promise;
+    throw new Error('CANARY_ROLLBACK_SECOND');
+  },
+  writer: writer('rollback-resolved')
+});
+const rollbackResolvedHealth = rollbackResolved.attach();
+assert.equal(rollbackResolvedHealth.asyncCleanupPending, true);
+rollbackDeferred.resolve();
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(rollbackResolvedHealth.asyncCleanupPending, false);
+assert.equal(rollbackResolvedHealth.asyncCleanupSettled, true);
+assert.equal(rollbackResolvedHealth.rollbackFailed, false);
+assert.equal(rollbackResolvedHealth.ok, false);
+assert.equal(rollbackResolvedHealth.ownershipUncertain, true);
+
 rmSync(root, { recursive: true, force: true });
 console.log('host adapter tests: ok');
