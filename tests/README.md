@@ -499,3 +499,22 @@ clean checkout. The trace/report always keeps `hostVerified=false`,
 `coverage=unknown` and `binding=unproven`; `VALID_METADATA` is not a completion
 verdict. See `docs/V0.2-TOOL-METADATA-B1.md` and
 `docs/V0.2-TOOL-OBSERVER-SOURCE-MAP.md`.
+
+### Phase B1-M0 offline observer
+
+`node tests/v02-observer-m0.test.mjs` uses invented contexts, invented
+`tools/result`/`session/event` records and real temporary files. It covers the
+separate default-off entry, strict config/identity/fresh-output checks, normal
+attach/stop and journal transitions, partial subscription rollback, multiple
+async disposers in both orders, rejection/never-settle mixtures, bounded
+cleanup timeout, repeated wait/stop, footer/close failures, journal limits and
+privacy canaries. It does not install the observer or start a host.
+
+`node tools/check-observer-m0-package.mjs --repo <repo> --commit <sha>
+--checkout <fresh-autocrlf-checkout> --manifest
+docs/V0.2-OBSERVER-M0-PACKAGE-MANIFEST.json` compares canonical Git blobs, the
+fresh checkout and `git archive`, assembles the 10-file closure in a new
+directory and performs a fictional mount/stop. The historical seven-file
+fidelity test remains pinned to `1f1ece1`; it is not refreshed from the M0
+working tree. All outputs remain `hostVerified=false`, `coverage=unknown` and
+`binding=unproven`.

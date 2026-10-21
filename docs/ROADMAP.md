@@ -267,7 +267,12 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   live member-coverage proof; installation and host launch remain unauthorized.
   Materials: `docs/V0.2-TOOL-OBSERVER-INSTALL-REVIEW.md`.
 
-- B1 offline review is closed at `1f1ece1`. Implement the independent observer
-  entry, lifecycle evidence and bounded cleanup observation under
-  [M0](V0.2-OBSERVER-MOUNT-M0.md). This is offline work; M1 installation/mount
-  trials and member coverage require separate review and human authorization.
+- B1 offline review is closed at `1f1ece1`. M0 is implemented as an offline,
+  default-off package: the separate candidate entry, strict
+  `tla.observer-lifecycle/v1` journal, bounded `waitForCleanup`, and a 10-file
+  `b1-observer-m0` manifest with blob/checkout/archive/fake-mount validation.
+  `loadable=false`, `hostVerified=false`, `coverage=unknown` and
+  `binding=unproven`; M1 installation/mount trials and real member coverage
+  require separate review and human authorization. Materials:
+  `docs/V0.2-OBSERVER-MOUNT-M0.md`,
+  `docs/V0.2-OBSERVER-M0-INSTALL-REVIEW.md`.

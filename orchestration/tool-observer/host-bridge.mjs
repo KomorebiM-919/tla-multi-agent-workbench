@@ -197,12 +197,14 @@ function isThenable(value) {
 // must not clear the aggregate pending state for the others. A failure is
 // latched and a late success cannot erase it.
 function publishDrain(state) {
-  if (state.health === null) return;
-  state.health.asyncCleanupPending = state.pending > 0;
-  state.health.asyncCleanupSettled = state.observed && state.pending === 0;
-  state.health.asyncCleanupFailure = state.asyncFailed;
-  state.health.ownershipUncertain = state.ownershipUncertain
-    || state.failed || state.pending > 0 || state.asyncFailed;
+  if (state.health !== null) {
+    state.health.asyncCleanupPending = state.pending > 0;
+    state.health.asyncCleanupSettled = state.observed && state.pending === 0;
+    state.health.asyncCleanupFailure = state.asyncFailed;
+    state.health.ownershipUncertain = state.ownershipUncertain
+      || state.failed || state.pending > 0 || state.asyncFailed;
+  }
+  for (const waiter of [...state.waiters]) waiter(state);
 }
 
 function settleDisposer(dispose, state) {
@@ -211,11 +213,12 @@ function settleDisposer(dispose, state) {
     result = dispose();
   } catch {
     state.failed = true;
+    state.failedCount += 1;
     publishDrain(state);
     return;
   }
   let thenable;
-  try { thenable = isThenable(result); } catch { state.failed = true; publishDrain(state); return; }
+  try { thenable = isThenable(result); } catch { state.failed = true; state.failedCount += 1; publishDrain(state); return; }
   if (!thenable) return;
 
   state.observed = true;
@@ -223,7 +226,7 @@ function settleDisposer(dispose, state) {
   publishDrain(state);
   const finish = (failed) => {
     state.pending = Math.max(0, state.pending - 1);
-    if (failed) state.asyncFailed = true;
+    if (failed) { state.asyncFailed = true; state.failedCount += 1; }
     publishDrain(state);
   };
   try {
@@ -261,6 +264,7 @@ export function createHostToolObserver({
   let attached = false;
   let stopped = false;
   let health = null;
+  let cleanupState = null;
 
   function handlerFor(eventName) {
     return (...args) => {
@@ -281,11 +285,13 @@ export function createHostToolObserver({
   function disposeAll() {
     const state = {
       failed: false,
+      failedCount: 0,
       pending: 0,
       observed: false,
       asyncFailed: false,
       ownershipUncertain: false,
-      health: null
+      health: null,
+      waiters: new Set()
     };
     for (const dispose of disposers.values()) settleDisposer(dispose, state);
     disposers.clear();
@@ -310,6 +316,7 @@ export function createHostToolObserver({
     };
     state.health = health;
     state.ownershipUncertain = true;
+    cleanupState = state;
     publishDrain(state);
     return health;
   }
@@ -350,6 +357,7 @@ export function createHostToolObserver({
     if (drained.failed) safeDiagnostic(writer, 'UNSUBSCRIBE_FAILED');
     const result = safeStop(writer);
     attached = false;
+    cleanupState = drained;
     health = {
       ok: !drained.failed && !drained.observed && result.ok === true,
       stopped: true,
@@ -367,5 +375,51 @@ export function createHostToolObserver({
     return health;
   }
 
-  return { attach, stop, health: () => health, get attached() { return attached; } };
+  function cleanupSnapshot(state, status = null) {
+    const pendingCount = state.pending;
+    const failedCount = state.failedCount;
+    const resolved = status ?? (failedCount > 0 ? 'failed' : pendingCount === 0 ? 'settled' : 'pending');
+    return { status: resolved, pendingCount, failedCount };
+  }
+
+  function waitForCleanup({ timeoutMs } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) {
+      fail('WAIT_INVALID', 'timeoutMs must be a safe integer in 1..5000');
+    }
+    if (!stopped || cleanupState === null) fail('WAIT_BEFORE_STOP', 'stop must be called first');
+    const state = cleanupState;
+    const current = cleanupSnapshot(state);
+    if (current.pendingCount === 0 || current.failedCount > 0) {
+      return Promise.resolve(current.status === 'pending' ? cleanupSnapshot(state, 'settled') : current);
+    }
+    return new Promise((resolve) => {
+      let finished = false;
+      const waiter = (next) => {
+        if (finished) return;
+        const snap = cleanupSnapshot(next);
+        if (snap.pendingCount > 0 && snap.failedCount === 0) return;
+        finished = true;
+        clearTimeout(timer);
+        state.waiters.delete(waiter);
+        resolve(snap);
+      };
+      const timer = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        state.waiters.delete(waiter);
+        const snap = cleanupSnapshot(state);
+        resolve({ ...snap, status: snap.failedCount > 0 ? 'failed' : 'timeout' });
+      }, timeoutMs);
+      state.waiters.add(waiter);
+      const race = cleanupSnapshot(state);
+      if (race.pendingCount === 0 || race.failedCount > 0) {
+        finished = true;
+        clearTimeout(timer);
+        state.waiters.delete(waiter);
+        resolve(race);
+      }
+    });
+  }
+
+  return { attach, stop, waitForCleanup, health: () => health, get attached() { return attached; } };
 }

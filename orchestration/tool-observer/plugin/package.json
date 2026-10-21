@@ -1,0 +1,15 @@
+{
+  "name": "tla-tool-observer",
+  "version": "0.0.0-local",
+  "private": true,
+  "type": "module",
+  "description": "Offline M0 candidate boundary for TLA tool metadata observation; not an installation or mount contract.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "dependencies": {}
+}

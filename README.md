@@ -300,6 +300,11 @@ claiming cleanup. This is still an offline project boundary, not proof of a
 public host API, member coverage or live capture. Host installation remains
 unauthorized.
 
-The offline B1 package is reviewed at `1f1ece1`. Next is
-[M0 independent entry and mount preparation](docs/V0.2-OBSERVER-MOUNT-M0.md),
-currently design-only; no observer installation or real-host run is authorized.
+The offline B1 package is reviewed at `1f1ece1`. M0 now has an implemented,
+default-off candidate entry, strict lifecycle journal and bounded cleanup wait;
+see [M0 independent entry and mount preparation](docs/V0.2-OBSERVER-MOUNT-M0.md)
+and [the M0 install-review package](docs/V0.2-OBSERVER-M0-INSTALL-REVIEW.md).
+The 10-file `b1-observer-m0` manifest is separate from the historical
+seven-file set. `loadable=false`, `hostVerified=false`, `coverage=unknown` and
+`binding=unproven`; no observer installation, profile change or real-host run is
+authorized.

@@ -11,7 +11,10 @@ import { spawnSync } from 'node:child_process';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'tools', 'check-observer-package-fidelity.mjs');
 const MANIFEST = join(ROOT, 'docs', 'V0.2-TOOL-OBSERVER-PACKAGE-MANIFEST.json');
-const HEAD = spawnSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+const BASE = '1f1ece117415cace636b5ce08c110f164e866f3c';
+const checkoutRoot = join(tmpdir(), `fidelity-base-${Date.now()}`);
+const add = spawnSync('git', ['-C', ROOT, 'worktree', 'add', '--detach', checkoutRoot, BASE], { encoding: 'utf8' });
+if (add.status !== 0) throw new Error(`could not create ${BASE} checkout: ${add.stderr}`);
 let failures = 0;
 
 function check(name, condition, detail = '') {
@@ -24,7 +27,7 @@ function check(name, condition, detail = '') {
 }
 
 function run(args) {
-  return spawnSync(process.execPath, [SCRIPT, '--repo', ROOT, '--commit', HEAD, '--checkout', ROOT, '--manifest', MANIFEST, ...args], {
+  return spawnSync(process.execPath, [SCRIPT, '--repo', ROOT, '--commit', BASE, '--checkout', checkoutRoot, '--manifest', MANIFEST, ...args], {
     encoding: 'utf8'
   });
 }
@@ -64,6 +67,7 @@ try {
   check('normal closure is imported', /PACKAGE FIDELITY OK/.test(normal.stdout));
 } finally {
   rmSync(canaryRoot, { recursive: true, force: true });
+  spawnSync('git', ['-C', ROOT, 'worktree', 'remove', '--force', checkoutRoot], { encoding: 'utf8' });
 }
 
 if (failures > 0) {
