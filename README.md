@@ -281,3 +281,11 @@ allow-listed metadata, and keeps `hostVerified=false`, `coverage=unknown` and
 `binding=unproven`. It is not installed, not subscribed in a host, and does not
 feed acceptance, synthetic protocols or business closure. See
 [the B1 source map](docs/V0.2-TOOL-OBSERVER-SOURCE-MAP.md).
+
+B1 is now closed as an offline package: cross-source metadata is accepted only
+when both records describe the same session/call and known fields agree; changed
+replays and known conflicts remain diagnostic. The writer/validator fixes and
+the offline dispatcher-to-bundle check are recorded in
+[the B1 corrections](docs/V0.2-TOOL-METADATA-B1-CORRECTIONS.md). `session/event`
+is statically mapped; `tools/result` remains unknown, so live host support is
+still unverified.

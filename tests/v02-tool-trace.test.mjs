@@ -78,11 +78,38 @@ try {
   assert.equal(twoSource.status, 'VALID_METADATA');
 
   const duplicateSource = inspectTraceBytes(jsonl(
-    header(id), call(1), result(2), result(3, 's1', 'c1', { source: 'session/event' }), footer(id, 3)
+    header(id), call(1), result(2), result(3, 's1', 'c1', { source: 'session/event', outcome: 'unknown', valueState: 'unknown' }), footer(id, 3)
   ));
-  assert.equal(duplicateSource.status, 'INCOMPLETE');
-  assert.ok(duplicateSource.diagnostics.some((item) => item.code === 'SOURCE_LINK_AMBIGUOUS'));
+  assert.equal(duplicateSource.status, 'VALID_METADATA');
+  assert.equal(duplicateSource.counts.pairedCalls, 1);
   assert.equal(duplicateSource.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'), false);
+
+  const conflictingSource = inspectTraceBytes(jsonl(
+    header(id), call(1), result(2), result(3, 's1', 'c1', { source: 'session/event', toolName: 'read', outcome: 'unknown', valueState: 'unknown' }), footer(id, 3)
+  ));
+  assert.equal(conflictingSource.status, 'INCOMPLETE');
+  assert.ok(conflictingSource.diagnostics.some((item) => item.code === 'CALL_CONFLICT'));
+
+  const changedResultReplay = inspectTraceBytes(jsonl(
+    header(id), call(1), result(2), result(3, 's1', 'c1', { outcome: 'error', valueState: 'absent' }), footer(id, 3)
+  ));
+  assert.equal(changedResultReplay.status, 'INCOMPLETE');
+  assert.ok(changedResultReplay.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'));
+
+  const missingIdentity = inspectTraceBytes(jsonl(header(id), call(1, 's1', null), footer(id, 1)));
+  assert.equal(missingIdentity.status, 'INCOMPLETE');
+  assert.ok(missingIdentity.diagnostics.some((item) => item.code === 'CALL_IDENTITY_MISSING'));
+
+  const crossSession = inspectTraceBytes(jsonl(
+    header(id), call(1, 's1', 'c1'), call(2, 's2', 'c1'), result(3, 's1', 'c1'), footer(id, 3)
+  ));
+  assert.equal(crossSession.status, 'INCOMPLETE');
+  assert.ok(crossSession.diagnostics.some((item) => item.code === 'CALL_UNPAIRED'));
+  assert.equal(crossSession.diagnostics.some((item) => item.code === 'CALL_CONFLICT'), false);
+
+  const resultFirst = inspectTraceBytes(jsonl(header(id), result(1), call(2), footer(id, 2)));
+  assert.equal(resultFirst.status, 'VALID_METADATA');
+  assert.equal(resultFirst.counts.pairedCalls, 1);
 
   const dropped = inspectTraceBytes(jsonl(header(id), footer(id, 0, { diagnosticsDropped: 1 })));
   assert.equal(dropped.status, 'INCOMPLETE');
@@ -337,6 +364,9 @@ try {
   const missingInput = spawnSync(process.execPath, [join(process.cwd(), 'tools/inspect-tool-trace.mjs'), '--trace', join(root, 'absent.jsonl'), '--out', missingInputReport], { encoding: 'utf8' });
   assert.equal(missingInput.status, 2);
   assert.equal(JSON.parse(readFileSync(missingInputReport, 'utf8')).status, 'INCOMPLETE');
+
+  const e2e = spawnSync(process.execPath, [join(process.cwd(), 'tools/b1-offline-check.mjs')], { encoding: 'utf8' });
+  assert.equal(e2e.status, 0, e2e.stderr);
 
   console.log('tool trace tests: ok');
 } finally {

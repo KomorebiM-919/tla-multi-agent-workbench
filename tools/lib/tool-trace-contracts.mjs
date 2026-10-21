@@ -226,6 +226,10 @@ export function inspectTraceBytes(bytes, { maxPending = TRACE_LIMITS.maxPending 
   const results = new Map();
   const pending = new Set();
   const seen = new Map();
+  const push = (map, key, obs) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(obs);
+  };
   for (const obs of observations) {
     if (obs.event === 'call') counts.calls += 1;
     else counts.results += 1;
@@ -243,39 +247,44 @@ export function inspectTraceBytes(bytes, { maxPending = TRACE_LIMITS.maxPending 
       continue;
     }
     const key = `${obs.sessionId}\u0000${obs.callId}`;
-    if (!pending.has(key)) {
-      if (pending.size >= maxPending) {
-        addDiag(diagnostics, 'LIMIT_REACHED', obs.receiptSeq);
-        continue;
+    if (!(calls.has(key) && results.has(key))) {
+      if (!pending.has(key)) {
+        if (pending.size >= maxPending) {
+          addDiag(diagnostics, 'LIMIT_REACHED', obs.receiptSeq);
+          continue;
+        }
+        pending.add(key);
       }
-      pending.add(key);
     }
-    if (obs.event === 'call') {
-      if (calls.has(key)) {
-        addDiag(diagnostics, calls.get(key).source === obs.source ? 'CALL_CONFLICT' : 'SOURCE_LINK_AMBIGUOUS', obs.receiptSeq);
-      } else {
-        calls.set(key, obs);
-      }
-    } else if (results.has(key)) {
-      addDiag(diagnostics, results.get(key).source === obs.source ? 'RESULT_CONFLICT' : 'SOURCE_LINK_AMBIGUOUS', obs.receiptSeq);
-    } else {
-      results.set(key, obs);
-    }
+    if (obs.event === 'call') push(calls, key, obs);
+    else push(results, key, obs);
     if (calls.has(key) && results.has(key)) pending.delete(key);
   }
-  for (const key of calls.keys()) if (!results.has(key)) addDiag(diagnostics, 'CALL_UNPAIRED', calls.get(key).receiptSeq);
-  for (const key of results.keys()) if (!calls.has(key)) addDiag(diagnostics, 'RESULT_UNPAIRED', results.get(key).receiptSeq);
-  for (const [key, call] of calls) {
-    const result = results.get(key);
-    if (result === undefined) continue;
-    if (call.toolName !== null && result.toolName !== null && call.toolName !== result.toolName) {
-      addDiag(diagnostics, 'CALL_CONFLICT', result.receiptSeq);
+
+  const keys = new Set([...calls.keys(), ...results.keys()]);
+  const known = (items, field) => [...new Set(items.map((item) => item[field])
+    .filter((value) => value !== null && value !== 'unknown'))];
+  for (const key of keys) {
+    const callList = calls.get(key) ?? [];
+    const resultList = results.get(key) ?? [];
+    for (const list of [callList, resultList]) {
+      const bySource = new Map();
+      for (const item of list) bySource.set(item.source, (bySource.get(item.source) ?? 0) + 1);
+      if ([...bySource.values()].some((value) => value > 1)) {
+        addDiag(diagnostics, list === callList ? 'CALL_CONFLICT' : 'RESULT_CONFLICT', list[list.length - 1].receiptSeq);
+      }
     }
-    if (call.rootCallId !== null && result.rootCallId !== null && call.rootCallId !== result.rootCallId) {
-      addDiag(diagnostics, 'CALL_CONFLICT', result.receiptSeq);
+    const all = [...callList, ...resultList];
+    for (const field of ['toolName', 'rootCallId']) {
+      if (known(all, field).length > 1) addDiag(diagnostics, 'CALL_CONFLICT', all[all.length - 1].receiptSeq);
     }
+    for (const field of ['outcome', 'valueState']) {
+      if (known(resultList, field).length > 1) addDiag(diagnostics, 'RESULT_CONFLICT', resultList[resultList.length - 1].receiptSeq);
+    }
+    if (callList.length > 0 && resultList.length === 0) addDiag(diagnostics, 'CALL_UNPAIRED', callList[callList.length - 1].receiptSeq);
+    if (resultList.length > 0 && callList.length === 0) addDiag(diagnostics, 'RESULT_UNPAIRED', resultList[resultList.length - 1].receiptSeq);
   }
-  counts.pairedCalls = [...calls.keys()].filter((key) => results.has(key)).length;
+  counts.pairedCalls = [...keys].filter((key) => calls.has(key) && results.has(key)).length;
   if (last.value.diagnosticsDropped > 0) {
     addDiag(diagnostics, 'LIMIT_REACHED', null);
   }
