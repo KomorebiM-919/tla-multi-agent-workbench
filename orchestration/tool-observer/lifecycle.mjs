@@ -96,6 +96,7 @@ export function createLifecycleJournal({
   let bytes = 0;
   let stopped = false;
   let failed = false;
+  let writeFailed = false;
   let attached = false;
   let stoppingSeen = false;
   let final = false;
@@ -108,8 +109,28 @@ export function createLifecycleJournal({
     return `${line}\n`;
   }
 
+  function writeAll(line) {
+    const buffer = Buffer.from(line, 'utf8');
+    let offset = 0;
+    while (offset < buffer.length) {
+      let written;
+      try {
+        written = io.writeSync(fd, buffer.subarray(offset));
+      } catch {
+        writeFailed = true;
+        fail('WRITE_FAILED', 'journal write failed');
+      }
+      if (!Number.isSafeInteger(written) || written <= 0 || written > buffer.length - offset) {
+        writeFailed = true;
+        fail('WRITE_FAILED', 'journal short write');
+      }
+      offset += written;
+    }
+  }
+
   function writeRecord(phase, code = null, health = null) {
     if (fd === null) fail('WRITE_FAILED', 'journal is not open');
+    if (writeFailed) fail('WRITE_FAILED', 'journal write already failed');
     if (final) fail('WRITE_FAILED', 'journal already has a final record');
     if (phase === 'preparing') {
       if (seq !== 0) fail('WRITE_FAILED', 'preparing must be first');
@@ -132,7 +153,7 @@ export function createLifecycleJournal({
     if (seq + 1 > LIFECYCLE_LIMITS.maxRecords) fail('JOURNAL_INVALID', 'journal exceeds 16 records');
     const value = recordValue({ seq: seq + 1, phase, identity, observerPid, code, health });
     const line = encode(value);
-    try { io.writeSync(fd, line); } catch { fail('WRITE_FAILED', 'journal write failed'); }
+    writeAll(line);
     seq += 1;
     bytes += Buffer.byteLength(line, 'utf8');
     if (phase === 'attached') attached = true;

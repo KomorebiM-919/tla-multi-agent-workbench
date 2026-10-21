@@ -120,6 +120,7 @@ export function createToolObserver({
   let observer;
   let stopped = false;
   let finalResult = null;
+  let stopPromise = null;
 
   function failRecord(code) {
     try { journal?.writeRecord('failed', code, null); } catch { /* journal failure is secondary */ }
@@ -166,40 +167,103 @@ export function createToolObserver({
   }
 
   function stop() {
-    if (stopped) return finalResult ?? { ok: true, stopped: true };
+    if (stopPromise !== null) return stopPromise;
+    if (finalResult !== null) return Promise.resolve(finalResult);
     stopped = true;
-    try { journal.writeRecord('stopping'); } catch { failRecord('WRITE_FAILED'); return (finalResult = { ok: false, code: 'WRITE_FAILED' }); }
-    let stoppedHealth;
-    try { stoppedHealth = observer.stop(); } catch { stoppedHealth = { ok: false }; }
-    return observer.waitForCleanup({ timeoutMs: normalized.cleanupTimeoutMs }).then((cleanup) => {
-      if (cleanup.status === 'timeout') {
-        try { journal.writeRecord('failed', 'CLEANUP_TIMEOUT', null); } catch { /* secondary */ }
-        try { journal.close(); } catch { /* secondary */ }
-        return (finalResult = { ok: false, code: 'CLEANUP_TIMEOUT', cleanup });
-      }
-      if (cleanup.status === 'failed' || stoppedHealth?.ok !== true) {
-        try { journal.writeRecord('failed', 'CLEANUP_FAILED', null); } catch { /* secondary */ }
-        try { journal.close(); } catch { /* secondary */ }
-        return (finalResult = { ok: false, code: 'CLEANUP_FAILED', cleanup });
-      }
+    stopPromise = (async () => {
+      let journalError = null;
       try {
-        journal.writeRecord('stopped', null, {
-          writerOk: stoppedHealth.writer?.ok === true,
-          cleanupState: 'settled',
-          ownershipUncertain: stoppedHealth.ownershipUncertain === true || cleanup.failedCount > 0
-        });
-        if (stoppedHealth.writer?.ok !== true) {
-          return (finalResult = { ok: false, code: 'WRITE_FAILED', cleanup });
-        }
+        journal.writeRecord('stopping');
       } catch {
-        try { journal.writeRecord('failed', 'WRITE_FAILED', null); } catch { /* secondary */ }
-        try { journal.close(); } catch { /* secondary */ }
-        return (finalResult = { ok: false, code: 'WRITE_FAILED', cleanup });
+        journalError = 'WRITE_FAILED';
       }
-      const closeResult = journal.close();
-      if (closeResult.closeFailed !== null) return (finalResult = { ok: false, code: 'CLOSE_FAILED', cleanup });
-      return (finalResult = { ok: true, cleanup });
-    });
+
+      // Cleanup must still run when the journal cannot record the transition.
+      let stoppedHealth;
+      try {
+        stoppedHealth = observer.stop();
+      } catch {
+        stoppedHealth = { ok: false };
+      }
+      const asyncWasPending = stoppedHealth?.asyncCleanupPending === true;
+      let cleanup;
+      try {
+        cleanup = await observer.waitForCleanup({ timeoutMs: normalized.cleanupTimeoutMs });
+      } catch {
+        cleanup = { status: 'failed', failedCount: 0, ownershipUncertain: false };
+      }
+
+      const close = () => {
+        try {
+          return journal.close();
+        } catch {
+          return { closeFailed: 'CLOSE_FAILED' };
+        }
+      };
+
+      if (cleanup.status === 'timeout' || cleanup.status === 'failed') {
+        const cleanupCode = cleanup.status === 'timeout' ? 'CLEANUP_TIMEOUT' : 'CLEANUP_FAILED';
+        if (journalError === null) {
+          try {
+            journal.writeRecord('failed', cleanupCode, null);
+          } catch {
+            journalError = 'WRITE_FAILED';
+          }
+        }
+        const closeResult = close();
+        const code = journalError ?? cleanupCode;
+        finalResult = {
+          ok: false,
+          code,
+          cleanup,
+          journalError,
+          closeError: closeResult.closeFailed
+        };
+        return finalResult;
+      }
+
+      const writerOk = stoppedHealth?.writer?.ok === true;
+      const ownershipUncertain = stoppedHealth?.ownershipUncertain === true
+        || cleanup.ownershipUncertain === true
+        || cleanup.failedCount > 0;
+      const pendingOnly = stoppedHealth?.ok === false && asyncWasPending;
+      const canSucceed = cleanup.status === 'settled'
+        && cleanup.failedCount === 0
+        && ownershipUncertain === false
+        && writerOk
+        && (stoppedHealth?.ok === true || pendingOnly);
+
+      if (journalError === null && canSucceed) {
+        try {
+          journal.writeRecord('stopped', null, {
+            writerOk,
+            cleanupState: 'settled',
+            ownershipUncertain: false
+          });
+        } catch {
+          journalError = 'WRITE_FAILED';
+        }
+      } else if (journalError === null) {
+        try {
+          journal.writeRecord('failed', 'CLEANUP_FAILED', null);
+        } catch {
+          journalError = 'WRITE_FAILED';
+        }
+      }
+
+      const closeResult = close();
+      if (journalError !== null) {
+        finalResult = { ok: false, code: journalError, cleanup, journalError };
+      } else if (closeResult.closeFailed !== null) {
+        finalResult = { ok: false, code: 'CLOSE_FAILED', cleanup, journalError };
+      } else if (canSucceed) {
+        finalResult = { ok: true, cleanup, journalError };
+      } else {
+        finalResult = { ok: false, code: 'CLEANUP_FAILED', cleanup, journalError };
+      }
+      return finalResult;
+    })();
+    return stopPromise;
   }
 
   return { enabled: true, ok: true, traceId, stop, observer, journal, writer };

@@ -7,9 +7,9 @@
   "files": [
     {
       "path": "orchestration/tool-observer/plugin/index.js",
-      "bytes": 9813,
-      "sha256": "ca15f11a62e824844de2ae490d33026c698d3580179ed462dd2ded9cd0b304a2",
-      "blob": "89691bdde141ae2ca7af18cc18f0dda1abd20d2c"
+      "bytes": 11127,
+      "sha256": "8077fc8b581d6cf2aeb1578af4b2e839207ff8b9b9a826c81bfcd74d8d5f4743",
+      "blob": "b289e02d7f30314ee88ff5f0e31e5b3083013918"
     },
     {
       "path": "orchestration/tool-observer/plugin/package.json",
@@ -37,9 +37,9 @@
     },
     {
       "path": "orchestration/tool-observer/lifecycle.mjs",
-      "bytes": 12151,
-      "sha256": "69acfd07fca7f4628dad4e2b25fb61d0e06de0933b7e1a32ad698fa52c658bb9",
-      "blob": "7bd565a7d27c266997bbd1ee2a67a992b3ccd6eb"
+      "bytes": 12731,
+      "sha256": "b7ad4c47423bf20994b11b709540b1361f869a23b0c5fccec863d5a1d97835bd",
+      "blob": "f4d275d155b7b2b42a46438d01d6f9ac952663e9"
     },
     {
       "path": "tools/lib/tool-trace-contracts.mjs",

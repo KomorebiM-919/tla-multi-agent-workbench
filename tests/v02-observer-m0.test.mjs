@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync
+  closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeSync
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -305,6 +305,171 @@ test('writer close failure is reported independently of a written footer', () =>
   assert.equal(result.stage, 'close');
   assert.equal(result.code, 'CLOSE_FAILED');
   assert.equal(JSON.stringify(result).includes('CANARY_PRIVATE_EXCEPTION'), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('entry stop disposes even when the stopping journal write fails', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  let disposed = 0;
+  const ctx = { on() { return () => { disposed += 1; }; } };
+  const controller = await apply(ctx, config(runDir));
+  controller.journal.writeRecord = () => { throw new Error('CANARY_JOURNAL_WRITE'); };
+  const result = await controller.stop();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'WRITE_FAILED');
+  assert.equal(disposed, 2);
+  assert.equal(JSON.stringify(result).includes('CANARY_JOURNAL_WRITE'), false);
+  const journalText = readFileSync(join(runDir, 'lifecycle.jsonl'), 'utf8');
+  assert.equal(journalText.includes('"phase":"stopped"'), false);
+  assert.equal(journalText.includes('"phase":"stopping"'), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('second stop while cleanup is pending shares the first result', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const resolvers = [];
+  const ctx = {
+    on() {
+      return () => new Promise((resolve) => { resolvers.push(resolve); });
+    }
+  };
+  const controller = await apply(ctx, config(runDir));
+  const first = controller.stop();
+  const second = controller.stop();
+  assert.equal(first, second);
+  for (const resolve of resolvers) resolve();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.ok, true);
+  assert.equal(a, b);
+  const again = await controller.stop();
+  assert.equal(again.ok, true);
+  assert.equal(again, a);
+  const lifecycle = readLifecycle(readFileSync(join(runDir, 'lifecycle.jsonl')));
+  assert.equal(lifecycle.records.at(-1).phase, 'stopped');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('async cleanup that settles successfully changes the entry verdict to success', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const ctx = { on() { return () => Promise.resolve(); } };
+  const controller = await apply(ctx, config(runDir));
+  const result = await controller.stop();
+  assert.equal(result.ok, true);
+  assert.equal(result.cleanup.status, 'settled');
+  const lifecycle = readLifecycle(readFileSync(join(runDir, 'lifecycle.jsonl')));
+  assert.deepEqual(lifecycle.records.map((r) => r.phase), ['preparing', 'attached', 'stopping', 'stopped']);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('writer failure is not hidden by settled cleanup', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const controller = await apply(fakeContext(), config(runDir));
+  controller.writer.stop = () => ({ ok: false, code: 'CLOSE_FAILED' });
+  const result = await controller.stop();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'CLEANUP_FAILED');
+  const lifecycle = readLifecycle(readFileSync(join(runDir, 'lifecycle.jsonl')));
+  assert.equal(lifecycle.records.at(-1).phase, 'failed');
+  assert.equal(lifecycle.records.at(-1).code, 'CLEANUP_FAILED');
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('journal short writes never advance the phase or claim stopped', () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const file = join(runDir, 'lifecycle.jsonl');
+  const identity = {
+    traceId: UUID, origin: 'simulated-dispatcher', runnerRunId: 'runner-1',
+    launchId: UUID, gateRunId: 'gate-1', budgetRunId: 'gate-1'
+  };
+  let calls = 0;
+  let canaryThrown = false;
+  const io = {
+    openSync: (...args) => openSync(...args),
+    closeSync: (fd) => closeSync(fd),
+    writeSync: (fd, buffer) => {
+      calls += 1;
+      if (calls === 3) return 1;
+      if (calls === 4) { canaryThrown = true; throw new Error('CANARY_SHORT_WRITE'); }
+      return writeSync(fd, buffer);
+    }
+  };
+  const journal = createLifecycleJournal({ file, identity, io });
+  journal.open();
+  journal.writeRecord('attached');
+  assert.throws(() => journal.writeRecord('stopping'), /WRITE_FAILED/);
+  assert.equal(canaryThrown, true);
+  assert.throws(() => journal.writeRecord('stopped', null, {
+    writerOk: true, cleanupState: 'settled', ownershipUncertain: false
+  }), /WRITE_FAILED/);
+  journal.close();
+  const text = readFileSync(file, 'utf8');
+  assert.throws(() => readLifecycle(Buffer.from(text)), /JOURNAL_INVALID/);
+  const phases = text.trimEnd().split('\n').map((line) => JSON.parse(line).phase);
+  assert.deepEqual(phases, ['preparing', 'attached']);
+  assert.equal(text.includes('CANARY_SHORT_WRITE'), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('a short write of the terminal record leaves the journal unparseable', () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const file = join(runDir, 'lifecycle.jsonl');
+  const identity = {
+    traceId: UUID, origin: 'simulated-dispatcher', runnerRunId: 'runner-1',
+    launchId: UUID, gateRunId: 'gate-1', budgetRunId: 'gate-1'
+  };
+  let calls = 0;
+  const io = {
+    openSync: (...args) => openSync(...args),
+    closeSync: (fd) => closeSync(fd),
+    writeSync: (fd, buffer) => {
+      calls += 1;
+      if (calls === 4) return 1;
+      if (calls === 5) throw new Error('CANARY_TERMINAL_SHORT_WRITE');
+      return writeSync(fd, buffer);
+    }
+  };
+  const journal = createLifecycleJournal({ file, identity, io });
+  journal.open();
+  journal.writeRecord('attached');
+  journal.writeRecord('stopping');
+  assert.throws(() => journal.writeRecord('stopped', null, {
+    writerOk: true, cleanupState: 'settled', ownershipUncertain: false
+  }), /WRITE_FAILED/);
+  journal.close();
+  const text = readFileSync(file, 'utf8');
+  assert.throws(() => readLifecycle(Buffer.from(text)), /JOURNAL_INVALID/);
+  const phases = text.trimEnd().split('\n').map((line) => JSON.parse(line).phase);
+  assert.deepEqual(phases, ['preparing', 'attached', 'stopping']);
+  assert.equal(text.includes('CANARY_TERMINAL_SHORT_WRITE'), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('journal and writer failures are both retained without a stopped claim', async () => {
+  const root = scratch();
+  const runDir = join(root, 'run');
+  mkdirSync(runDir);
+  const controller = await apply(fakeContext(), config(runDir));
+  controller.journal.writeRecord = () => { throw new Error('CANARY_JOURNAL'); };
+  controller.writer.stop = () => ({ ok: false, code: 'CLOSE_FAILED' });
+  const result = await controller.stop();
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'WRITE_FAILED');
+  assert.equal(result.journalError, 'WRITE_FAILED');
+  assert.equal(JSON.stringify(result).includes('CANARY_JOURNAL'), false);
+  const journalText = readFileSync(join(runDir, 'lifecycle.jsonl'), 'utf8');
+  assert.equal(journalText.includes('"phase":"stopped"'), false);
   rmSync(root, { recursive: true, force: true });
 });
 
