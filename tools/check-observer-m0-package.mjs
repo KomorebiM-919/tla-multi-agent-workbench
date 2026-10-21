@@ -47,7 +47,6 @@ function git(repo, args) {
 }
 
 function sha256(buffer) { return createHash('sha256').update(buffer).digest('hex'); }
-function sha1(buffer) { return createHash('sha1').update(buffer).digest('hex'); }
 
 function manifest(path) {
   const parsed = JSON.parse(readFileSync(path, 'utf8'));
@@ -125,8 +124,9 @@ function main() {
     if (tar.status !== 0) throw new Error(`tar extraction failed: ${tar.stderr || 'unknown error'}`);
     for (const path of paths) {
       const expected = pinned.get(path);
+      const blobId = git(args.repo, ['rev-parse', `${args.commit}:${path}`]).toString('utf8').trim();
+      if (expected.blob && blobId !== expected.blob) throw new Error(`${path} Git blob does not match manifest`);
       const blob = git(args.repo, ['cat-file', 'blob', `${args.commit}:${path}`]);
-      if (expected.blob && sha1(blob) !== expected.blob) throw new Error(`${path} Git blob does not match manifest`);
       const checkout = readFileSync(join(args.checkout, path));
       const archiveBytes = readFileSync(join(extracted, path));
       for (const [label, bytes] of [['blob', blob], ['checkout', checkout], ['archive', archiveBytes]]) {
