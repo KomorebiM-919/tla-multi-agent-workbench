@@ -266,3 +266,8 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   completed cleanup. This is still a project boundary, not a public host API or
   live member-coverage proof; installation and host launch remain unauthorized.
   Materials: `docs/V0.2-TOOL-OBSERVER-INSTALL-REVIEW.md`.
+
+- B1 offline review is closed at `1f1ece1`. Implement the independent observer
+  entry, lifecycle evidence and bounded cleanup observation under
+  [M0](V0.2-OBSERVER-MOUNT-M0.md). This is offline work; M1 installation/mount
+  trials and member coverage require separate review and human authorization.

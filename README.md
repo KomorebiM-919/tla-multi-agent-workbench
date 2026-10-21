@@ -299,3 +299,7 @@ not awaited: the synchronous `stop()` reports ownership uncertainty instead of
 claiming cleanup. This is still an offline project boundary, not proof of a
 public host API, member coverage or live capture. Host installation remains
 unauthorized.
+
+The offline B1 package is reviewed at `1f1ece1`. Next is
+[M0 independent entry and mount preparation](docs/V0.2-OBSERVER-MOUNT-M0.md),
+currently design-only; no observer installation or real-host run is authorized.
