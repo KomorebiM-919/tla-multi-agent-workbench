@@ -53,6 +53,8 @@ orchestration/interceptor-plugin/** -text
 /orchestration/tool-observer/lifecycle.mjs text eol=lf
 /orchestration/tool-observer/plugin/index.js text eol=lf
 /orchestration/tool-observer/plugin/package.json text eol=lf
+/orchestration/tool-observer/host-plugin/index.js text eol=lf
+/orchestration/tool-observer/host-plugin/package.json text eol=lf
 /tools/lib/tool-trace-contracts.mjs text eol=lf
 /tools/lib/launch-receipts.mjs text eol=lf
 /tools/lib/trace-output.mjs text eol=lf

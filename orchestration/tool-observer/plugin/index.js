@@ -5,7 +5,7 @@
 import { readdirSync, lstatSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { TraceError } from '../../../tools/lib/tool-trace-contracts.mjs';
+import { TRACE_ORIGINS, TraceError } from '../../../tools/lib/tool-trace-contracts.mjs';
 import { assertFreshOutputPath } from '../../../tools/lib/trace-output.mjs';
 import { isId, isUuid } from '../../../tools/lib/launch-receipts.mjs';
 import { createContextSubscriber } from '../context-subscription.mjs';
@@ -94,6 +94,7 @@ export function validateConfig(config) {
 export function createToolObserver({
   ctx,
   config,
+  origin = 'simulated-dispatcher',
   assertPath = assertFreshOutputPath,
   writerFactory = createTraceWriter,
   journalFactory = createLifecycleJournal,
@@ -101,6 +102,7 @@ export function createToolObserver({
   pid = process.pid
 } = {}) {
   const normalized = validateConfig(config);
+  if (!TRACE_ORIGINS.includes(origin)) fail('CONFIG_INVALID', 'origin is invalid');
   if (normalized.enabled === false) return { enabled: false, stop: () => ({ ok: true, stopped: true }) };
   if (typeof assertPath !== 'function') fail('CONFIG_INVALID', 'assertPath is required');
   for (const file of [normalized.traceFile, normalized.lifecycleFile]) {
@@ -109,7 +111,7 @@ export function createToolObserver({
   const traceId = randomUUID();
   const identity = {
     traceId,
-    origin: 'simulated-dispatcher',
+    origin,
     runnerRunId: normalized.runnerRunId,
     launchId: normalized.launchId,
     gateRunId: normalized.gateRunId,

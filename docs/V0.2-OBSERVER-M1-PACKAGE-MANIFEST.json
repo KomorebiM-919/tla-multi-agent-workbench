@@ -1,0 +1,75 @@
+{
+  "schema": "tla.observer-m1-package/v1",
+  "candidateSet": "b1-observer-m1a",
+  "entry": "orchestration/tool-observer/host-plugin/index.js",
+  "sourceBase": "61ba0abfa4813783160299bdc96de3cfc8feef10",
+  "note": "Offline M1A loader-shaped wrapper payload. The M0 ten-file set and the historical seven-file set remain frozen in their own manifests. This manifest pins only the wrapper entry and its transitive local imports; it does not claim that a host loaded it.",
+  "files": [
+    {
+      "path": "orchestration/tool-observer/host-plugin/index.js",
+      "bytes": 2493,
+      "sha256": "968e8e7bdd70d977a75ee43575804d717acbc2d93f227325f0d5ca387230c785",
+      "blob": "0d31d1dcac4a2dc9957b8df2a2ea74171e914fb0"
+    },
+    {
+      "path": "orchestration/tool-observer/host-plugin/package.json",
+      "bytes": 123,
+      "sha256": "4077d6b330f9caad0491dc8ff501a80376b18774bcee8246d36f7e2198999409",
+      "blob": "7bd3682a94e5146a660bd570876215fc393326b7"
+    },
+    {
+      "path": "orchestration/tool-observer/plugin/index.js",
+      "bytes": 11237,
+      "sha256": "916b258b4fb603d86e992f7eda403f117c60e8ff78ca129bf09dc2484f73d03b",
+      "blob": "96b6c2d247d6c93e544309a29c1a07c0a0142c12"
+    },
+    {
+      "path": "orchestration/tool-observer/plugin/package.json",
+      "bytes": 344,
+      "sha256": "09e69861621237dc3b6eaf72ec62e369ae0b02e96a850f408eefeb04a2a5216d",
+      "blob": "fc183bf86944ab8c439446becfc4a329f5db11c4"
+    },
+    {
+      "path": "orchestration/tool-observer/context-subscription.mjs",
+      "bytes": 950,
+      "sha256": "ede4016a1d78635c63d81dc1fa402f7adb0e2b8c28b3b6dad1397be16ab67fe8",
+      "blob": "c2dec8538393c1ea60d0ae060e4186205735c699"
+    },
+    {
+      "path": "orchestration/tool-observer/host-bridge.mjs",
+      "bytes": 14922,
+      "sha256": "2d78f99bab8580c77873f792192e3100a0d04e97c82f2065c387b44ca5d245b6",
+      "blob": "3e53f9cd675f17b60543e2d50ec2bafd04a7a477"
+    },
+    {
+      "path": "orchestration/tool-observer/writer.mjs",
+      "bytes": 8207,
+      "sha256": "eea83363fa20dc3df5c5f69b2d30c8293b3950227c24dfe4dad20a7e89f1c970",
+      "blob": "3ddae37f8caf848bcd427521f4f192b811d59e2e"
+    },
+    {
+      "path": "orchestration/tool-observer/lifecycle.mjs",
+      "bytes": 12731,
+      "sha256": "b7ad4c47423bf20994b11b709540b1361f869a23b0c5fccec863d5a1d97835bd",
+      "blob": "f4d275d155b7b2b42a46438d01d6f9ac952663e9"
+    },
+    {
+      "path": "tools/lib/tool-trace-contracts.mjs",
+      "bytes": 16788,
+      "sha256": "e8785c7ce151eb5c6f23aa4c196566ac0d443bcf5ac06a8aff3d3616a8888c92",
+      "blob": "a05ad131b7dd91c5f140f8d33dca9eb524d51219"
+    },
+    {
+      "path": "tools/lib/trace-output.mjs",
+      "bytes": 3253,
+      "sha256": "33256452c01667bfe7b6d8dd7b68aaf91e3489b004dbeffb7e5f2fd83f3073b4",
+      "blob": "31162b1864f1fc51633d628b58ded7506dd0317d"
+    },
+    {
+      "path": "tools/lib/launch-receipts.mjs",
+      "bytes": 6579,
+      "sha256": "1356eb6d82f0b93b254c2ad459f554a077bf88459ad80933d8e54f089771d768",
+      "blob": "1bcaf66122d927964bee500dfd7cd85e600bbbea"
+    }
+  ]
+}

@@ -518,3 +518,18 @@ directory and performs a fictional mount/stop. The historical seven-file
 fidelity test remains pinned to `1f1ece1`; it is not refreshed from the M0
 working tree. All outputs remain `hostVerified=false`, `coverage=unknown` and
 `binding=unproven`.
+
+### Phase B1-M1A loader-shaped wrapper
+
+`node tests/v02-host-loader.test.mjs` models the loader contract with a fake
+normalizer/effect collector: named exports, disabled no-op, `Promise<disposer>`
+collection, double unload, the old M0 controller rejection, setup rollback,
+fixed async failures, cleanup rejection and privacy canaries. It does not import
+Cordis/DSH and is not a live loader test.
+
+`node tools/check-observer-m1-package.mjs --repo <repo> --commit <sha>
+--checkout <fresh-autocrlf-checkout> --manifest
+docs/V0.2-OBSERVER-M1-PACKAGE-MANIFEST.json` compares the M1A 11-file closure
+across Git blob, fresh checkout, archive and manifest, then fake-loads/unloads
+only the assembled package. It does not install anything. The M0 and historical
+seven-file manifests remain frozen.

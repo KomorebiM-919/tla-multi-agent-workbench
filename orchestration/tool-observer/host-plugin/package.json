@@ -1,0 +1,7 @@
+{
+  "name": "tla-tool-observer",
+  "version": "0.0.0-local",
+  "private": true,
+  "type": "module",
+  "main": "index.js"
+}
