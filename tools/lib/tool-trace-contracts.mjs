@@ -263,7 +263,7 @@ export function inspectTraceBytes(bytes, { maxPending = TRACE_LIMITS.maxPending 
 
   const keys = new Set([...calls.keys(), ...results.keys()]);
   const known = (items, field) => [...new Set(items.map((item) => item[field])
-    .filter((value) => value !== null && value !== 'unknown'))];
+    .filter((value) => value !== null && !((field === 'outcome' || field === 'valueState') && value === 'unknown')))];
   for (const key of keys) {
     const callList = calls.get(key) ?? [];
     const resultList = results.get(key) ?? [];

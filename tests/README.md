@@ -477,9 +477,12 @@ receipt file (exclusive write refused before host start).
 `node tests/v02-tool-trace.test.mjs` uses only invented records, an invented
 dispatcher and temporary files. It covers the strict trace/report contracts,
 framing/UTF-8/sequence/pairing rules, replay/conflict diagnostics, writer
-short/partial writes, limits, close fault, adapter rollback/exception
-containment, and the CLI exit codes. It imports no DSH module and starts no host.
-The trace/report always keeps `hostVerified=false`, `coverage=unknown` and
-`binding=unproven`; `VALID_METADATA` is not a completion verdict. See
-`docs/V0.2-TOOL-METADATA-B1.md` and
+short/partial writes, limits, close fault, primary `{code, stage}` health,
+adapter rollback/exception containment, and the CLI exit codes. It imports no
+DSH module and starts no host.
+`node tools/b1-offline-check.mjs` also creates only its own temporary
+`tests/.scratch/b1-e2e-*` directory when the parent is absent, so it runs from a
+clean checkout. The trace/report always keeps `hostVerified=false`,
+`coverage=unknown` and `binding=unproven`; `VALID_METADATA` is not a completion
+verdict. See `docs/V0.2-TOOL-METADATA-B1.md` and
 `docs/V0.2-TOOL-OBSERVER-SOURCE-MAP.md`.

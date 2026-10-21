@@ -89,7 +89,7 @@ export function createToolObserver({ dispatcher, writer, mapper = mapToolsResult
       const result = writer.stop();
       attached = false;
       stopped = true;
-      health = { ok: false, code: 'SUBSCRIBE_FAILED', detail: String(error?.message ?? error), writer: result };
+      health = { ok: false, code: 'SUBSCRIBE_FAILED', writer: result };
       return health;
     }
   }

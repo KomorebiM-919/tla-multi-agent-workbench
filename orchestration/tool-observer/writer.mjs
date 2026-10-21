@@ -52,8 +52,13 @@ export function createTraceWriter({
   let degraded = false;
   let writeFailed = false;
   let closeFailed = null;
+  let primaryFailure = null;
   const diagnostics = [];
   let diagnosticsDropped = 0;
+
+  function recordPrimary(stage, code) {
+    if (primaryFailure === null) primaryFailure = { stage, code };
+  }
 
   function addDiagnostic(code, seq = null, count = 1) {
     if (!['FIELD_UNAVAILABLE', 'FIELD_INVALID', 'CALL_UNPAIRED', 'RESULT_UNPAIRED',
@@ -90,11 +95,18 @@ export function createTraceWriter({
 
   function open() {
     if (opened || stopped) fail('WRITE_FAILED', 'writer is not reusable');
-    assertPath(outputFile);
+    try {
+      assertPath(outputFile);
+    } catch (error) {
+      recordPrimary('header', 'WRITE_FAILED');
+      if (error instanceof TraceError) throw error;
+      throw new TraceError('WRITE_FAILED', 'path assertion failed');
+    }
     try {
       fd = io.openSync(outputFile, 'wx');
     } catch (error) {
-      fail('WRITE_FAILED', String(error?.message ?? error));
+      recordPrimary('header', 'WRITE_FAILED');
+      throw new TraceError('WRITE_FAILED', 'open failed');
     }
     opened = true;
     try {
@@ -104,10 +116,10 @@ export function createTraceWriter({
     } catch (error) {
       writeFailed = true;
       degraded = true;
-      try { io.closeSync(fd); } catch { /* retained by caller health */ }
-      fd = null;
+      recordPrimary('header', error instanceof TraceError ? error.code : 'WRITE_FAILED');
+      closeHandle();
       if (error instanceof TraceError) throw error;
-      throw new TraceError('WRITE_FAILED', String(error?.message ?? error));
+      throw new TraceError('WRITE_FAILED', 'header write failed');
     }
     return true;
   }
@@ -136,6 +148,7 @@ export function createTraceWriter({
     } catch (error) {
       writeFailed = true;
       degraded = true;
+      recordPrimary('observation', 'WRITE_FAILED');
       addDiagnostic('WRITE_FAILED');
       return { accepted: false, receiptSeq: null };
     }
@@ -150,7 +163,7 @@ export function createTraceWriter({
       io.closeSync(fd);
       fd = null;
     } catch (error) {
-      closeFailed = String(error?.message ?? error);
+      closeFailed = 'CLOSE_FAILED';
       degraded = true;
       fd = null;
     }
@@ -159,16 +172,19 @@ export function createTraceWriter({
   function finalize() {
     if (stopped) {
       return {
-        ok: false, code: 'STOPPED', closeFailed,
+        ok: false, code: 'STOPPED', stage: 'stopped', closeFailed,
         diagnostics: diagnostics.map((item) => ({ ...item }))
       };
     }
     if (!opened || writeFailed) {
       closeHandle();
       stopped = true;
+      const code = primaryFailure?.code ?? (writeFailed ? 'WRITE_FAILED' : 'NOT_OPEN');
+      const stage = primaryFailure?.stage ?? 'write';
       return {
         ok: false,
-        code: writeFailed ? 'WRITE_FAILED' : 'NOT_OPEN',
+        code,
+        stage,
         closeFailed,
         observations,
         diagnostics: diagnostics.map((item) => ({ ...item }))
@@ -188,18 +204,25 @@ export function createTraceWriter({
       if (bytes + bytesOf(line) > byteLimit) {
         addDiagnostic('LIMIT_REACHED');
         degraded = true;
+        recordPrimary('footer', 'LIMIT_REACHED');
         footerOk = false;
       } else {
         writeAll(line);
       }
-    } catch {
+    } catch (error) {
       writeFailed = true;
+      degraded = true;
+      recordPrimary('footer', error instanceof TraceError ? error.code : 'WRITE_FAILED');
       footerOk = false;
     }
     closeHandle();
     stopped = true;
+    const code = primaryFailure?.code ?? (closeFailed === null ? null : 'CLOSE_FAILED');
+    const stage = primaryFailure?.stage ?? (closeFailed === null ? null : 'close');
     return {
       ok: footerOk && closeFailed === null && !degraded,
+      code,
+      stage,
       footerWritten: footerOk,
       closeFailed,
       degraded,

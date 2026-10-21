@@ -90,6 +90,27 @@ try {
   assert.equal(conflictingSource.status, 'INCOMPLETE');
   assert.ok(conflictingSource.diagnostics.some((item) => item.code === 'CALL_CONFLICT'));
 
+  const literalUnknownTool = inspectTraceBytes(jsonl(
+    header(id), call(1, 's1', 'c1'),
+    call(2, 's1', 'c1', { source: 'session/event', toolName: 'unknown' }), footer(id, 2)
+  ));
+  assert.equal(literalUnknownTool.status, 'INCOMPLETE');
+  assert.ok(literalUnknownTool.diagnostics.some((item) => item.code === 'CALL_CONFLICT'));
+
+  const directOutcomeConflict = inspectTraceBytes(jsonl(
+    header(id), call(1), result(2),
+    result(3, 's1', 'c1', { source: 'session/event', outcome: 'error', valueState: 'unknown' }),
+    footer(id, 3)
+  ));
+  assert.equal(directOutcomeConflict.status, 'INCOMPLETE');
+  assert.ok(directOutcomeConflict.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'));
+
+  const literalUnknownIdentity = inspectTraceBytes(jsonl(
+    header(id), call(1, 's1', 'c1', { toolName: 'unknown' }),
+    result(2, 's1', 'c1', { toolName: 'unknown' }), footer(id, 2)
+  ));
+  assert.equal(literalUnknownIdentity.status, 'VALID_METADATA');
+
   const changedResultReplay = inspectTraceBytes(jsonl(
     header(id), call(1), result(2), result(3, 's1', 'c1', { outcome: 'error', valueState: 'absent' }), footer(id, 3)
   ));
@@ -106,6 +127,14 @@ try {
   assert.equal(crossSession.status, 'INCOMPLETE');
   assert.ok(crossSession.diagnostics.some((item) => item.code === 'CALL_UNPAIRED'));
   assert.equal(crossSession.diagnostics.some((item) => item.code === 'CALL_CONFLICT'), false);
+
+  assert.throws(() => validateObservation(call(1, 's1 ', 'c1')), /whitespace/u);
+  const caseDistinct = inspectTraceBytes(jsonl(
+    header(id), call(1, 's1', 'c1'), call(2, 'S1', 'c1'), result(3, 's1', 'c1'), footer(id, 3)
+  ));
+  assert.equal(caseDistinct.status, 'INCOMPLETE');
+  assert.ok(caseDistinct.diagnostics.some((item) => item.code === 'CALL_UNPAIRED'));
+  assert.equal(caseDistinct.diagnostics.some((item) => item.code === 'CALL_CONFLICT'), false);
 
   const resultFirst = inspectTraceBytes(jsonl(header(id), result(1), call(2), footer(id, 2)));
   assert.equal(resultFirst.status, 'VALID_METADATA');
@@ -182,13 +211,16 @@ try {
   const closeWriter = createTraceWriter({
     outputFile: closeFault,
     assertPath: () => {},
-    io: { openSync: fs.openSync, writeSync: fs.writeSync, closeSync: () => { throw new Error('close injected'); } }
+    io: { openSync: fs.openSync, writeSync: fs.writeSync, closeSync: () => { throw new Error('sk-secret close marker'); } }
   });
   closeWriter.open();
   closeWriter.accept(call(1));
   const closeHealth = closeWriter.stop();
-  assert.equal(closeHealth.closeFailed, 'close injected');
+  assert.equal(closeHealth.closeFailed, 'CLOSE_FAILED');
+  assert.equal(closeHealth.code, 'CLOSE_FAILED');
+  assert.equal(closeHealth.stage, 'close');
   assert.equal(closeHealth.ok, false);
+  assert.doesNotMatch(JSON.stringify(closeHealth), /sk-secret/u);
   assert.match(readFileSync(closeFault, 'utf8'), /"kind":"footer"/u);
 
   const shortFile = join(root, 'short-write.jsonl');
@@ -224,7 +256,10 @@ try {
   });
   failingWriter.open();
   assert.equal(failingWriter.accept(call(1)).accepted, false);
-  assert.equal(failingWriter.stop().closeFailed, null);
+  const failingHealth = failingWriter.stop();
+  assert.equal(failingHealth.code, 'WRITE_FAILED');
+  assert.equal(failingHealth.stage, 'observation');
+  assert.equal(failingHealth.closeFailed, null);
   assert.equal(closeCalls, 1);
   assert.doesNotMatch(readFileSync(failingFile, 'utf8'), /"kind":"footer"/u);
 
@@ -232,10 +267,36 @@ try {
   const headerWriter = createTraceWriter({
     outputFile: headerFile,
     assertPath: () => {},
-    io: { openSync: fs.openSync, writeSync: () => { throw new Error('header injected'); }, closeSync: fs.closeSync }
+    io: { openSync: fs.openSync, writeSync: () => { throw new Error('header injected sk-secret'); }, closeSync: fs.closeSync }
   });
-  assert.throws(() => headerWriter.open(), /WRITE_FAILED/u);
-  assert.equal(headerWriter.stop().ok, false);
+  let headerError = null;
+  try { headerWriter.open(); } catch (error) { headerError = error; }
+  assert.match(String(headerError?.message), /WRITE_FAILED/u);
+  assert.doesNotMatch(String(headerError?.message), /sk-secret/u);
+  const headerHealth = headerWriter.stop();
+  assert.equal(headerHealth.ok, false);
+  assert.equal(headerHealth.code, 'WRITE_FAILED');
+  assert.equal(headerHealth.stage, 'header');
+
+  let headerCloseCalls = 0;
+  const headerCloseFile = join(root, 'header-close-fault.jsonl');
+  const headerCloseWriter = createTraceWriter({
+    outputFile: headerCloseFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: () => { throw new Error('header injected'); },
+      closeSync: () => { headerCloseCalls += 1; throw new Error('header close injected'); }
+    }
+  });
+  assert.throws(() => headerCloseWriter.open(), /WRITE_FAILED/u);
+  const headerCloseHealth = headerCloseWriter.stop();
+  assert.equal(headerCloseHealth.code, 'WRITE_FAILED');
+  assert.equal(headerCloseHealth.stage, 'header');
+  assert.equal(headerCloseHealth.closeFailed, 'CLOSE_FAILED');
+  assert.equal(headerCloseCalls, 1);
+  assert.equal(headerCloseWriter.stop().code, 'STOPPED');
+  assert.equal(headerCloseCalls, 1);
 
   const footerFile = join(root, 'footer-fault.jsonl');
   const footerWriter = createTraceWriter({
@@ -244,7 +305,7 @@ try {
     io: {
       openSync: fs.openSync,
       writeSync: (fd, buffer, offset, length) => {
-        if (buffer.toString('utf8').includes('"kind":"footer"')) throw new Error('footer injected');
+        if (buffer.toString('utf8').includes('"kind":"footer"')) throw new Error('footer injected sk-secret');
         return fs.writeSync(fd, buffer, offset, length);
       },
       closeSync: fs.closeSync
@@ -253,8 +314,56 @@ try {
   footerWriter.open();
   footerWriter.accept(call(1));
   const footerHealth = footerWriter.stop();
+  assert.equal(footerHealth.code, 'WRITE_FAILED');
+  assert.equal(footerHealth.stage, 'footer');
   assert.equal(footerHealth.footerWritten, false);
   assert.equal(footerHealth.ok, false);
+
+  const footerCloseFile = join(root, 'footer-close-fault.jsonl');
+  const footerCloseWriter = createTraceWriter({
+    outputFile: footerCloseFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: (fd, buffer, offset, length) => {
+        if (buffer.toString('utf8').includes('"kind":"footer"')) throw new Error('footer injected');
+        return fs.writeSync(fd, buffer, offset, length);
+      },
+      closeSync: () => { throw new Error('footer close injected sk-secret'); }
+    }
+  });
+  footerCloseWriter.open();
+  footerCloseWriter.accept(call(1));
+  const footerCloseHealth = footerCloseWriter.stop();
+  assert.equal(footerCloseHealth.code, 'WRITE_FAILED');
+  assert.equal(footerCloseHealth.stage, 'footer');
+  assert.equal(footerCloseHealth.closeFailed, 'CLOSE_FAILED');
+  assert.equal(footerCloseHealth.ok, false);
+  assert.doesNotMatch(JSON.stringify(footerCloseHealth), /sk-secret/u);
+  assert.doesNotMatch(readFileSync(footerCloseFile, 'utf8'), /sk-secret/u);
+
+  const observationCloseFile = join(root, 'observation-close-fault.jsonl');
+  const observationCloseWriter = createTraceWriter({
+    outputFile: observationCloseFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: (fd, buffer, offset, length) => {
+        if (buffer.toString('utf8').includes('"kind":"observation"')) throw new Error('observation injected sk-secret');
+        return fs.writeSync(fd, buffer, offset, length);
+      },
+      closeSync: () => { throw new Error('observation close injected'); }
+    }
+  });
+  observationCloseWriter.open();
+  assert.equal(observationCloseWriter.accept(call(1)).accepted, false);
+  const observationCloseHealth = observationCloseWriter.stop();
+  assert.equal(observationCloseHealth.code, 'WRITE_FAILED');
+  assert.equal(observationCloseHealth.stage, 'observation');
+  assert.equal(observationCloseHealth.closeFailed, 'CLOSE_FAILED');
+  assert.equal(observationCloseHealth.ok, false);
+  assert.doesNotMatch(JSON.stringify(observationCloseHealth), /sk-secret/u);
+  assert.doesNotMatch(readFileSync(observationCloseFile, 'utf8'), /sk-secret/u);
 
   const limitedFile = join(root, 'limited.jsonl');
   const limitedWriter = createTraceWriter({ outputFile: limitedFile, assertPath: () => {}, maxObservations: 1 });
@@ -326,13 +435,15 @@ try {
     let calls = 0;
     return {
       handlers,
-      on(name, fn) { calls += 1; if (calls === 2) throw new Error('subscribe failed'); handlers.set(name, fn); },
+      on(name, fn) { calls += 1; if (calls === 2) throw new Error('subscribe failed sk-secret'); handlers.set(name, fn); },
       off(name) { handlers.delete(name); }
     };
   })();
   const rollbackWriter = { open() {}, accept() {}, addDiagnostic() {}, stop() { return { ok: false }; } };
   const rollbackObserver = createToolObserver({ dispatcher: rollbackDispatcher, writer: rollbackWriter, subscriptions: ['tools/result', 'session/event'] });
-  assert.equal(rollbackObserver.attach().ok, false);
+  const rollbackHealth = rollbackObserver.attach();
+  assert.equal(rollbackHealth.ok, false);
+  assert.doesNotMatch(JSON.stringify(rollbackHealth), /sk-secret/u);
   assert.equal(rollbackDispatcher.handlers.size, 0);
   assert.throws(() => createToolObserver({ dispatcher, writer: fakeWriter, subscriptions: ['tools/result', 'tools/result'] }), /duplicate subscription/u);
 

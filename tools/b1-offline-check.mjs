@@ -11,7 +11,9 @@ import { createToolObserver } from '../orchestration/tool-observer/index.mjs';
 import { assertFreshOutputPath } from '../tools/lib/trace-output.mjs';
 import { assembleBundle } from '../tools/bundle-run-evidence.mjs';
 
-const root = mkdtempSync(join(process.cwd(), 'tests/.scratch/b1-e2e-'));
+const scratchParent = join(process.cwd(), 'tests/.scratch');
+mkdirSync(scratchParent, { recursive: true });
+const root = mkdtempSync(join(scratchParent, 'b1-e2e-'));
 const trace = join(root, 'observer.jsonl');
 const report = join(root, 'report.json');
 function fakeDispatcher() {
@@ -112,7 +114,10 @@ try {
   const faultObserver = createToolObserver({ dispatcher: faultDispatcher, writer: faultWriter, mapper, subscriptions: ['session/event', 'tools/result'] });
   assert.equal(faultObserver.attach().ok, true);
   faultDispatcher.emit('session/event', { sessionId: 's1', callId: 'c1', toolName: 'write' });
-  assert.equal(faultObserver.stop().ok, false);
+  const faultHealth = faultObserver.stop();
+  assert.equal(faultHealth.ok, false);
+  assert.equal(faultHealth.writer.code, 'WRITE_FAILED');
+  assert.equal(faultHealth.writer.stage, 'observation');
   assert.equal(cli(fault).status, 2);
 
   const dropped = join(root, 'dropped.jsonl');
