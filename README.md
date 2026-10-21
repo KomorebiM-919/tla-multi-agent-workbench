@@ -271,5 +271,13 @@ claiming authentication, host truth or business closure; the bundle remains
 `hostVerified: false`. See [the B0 contract](docs/V0.2-LAUNCH-RECEIPTS-B0.md).
 
 B0 offline review is closed at `b6c9af1`. The next implementation contract is
-[B1 passive tool metadata](docs/V0.2-TOOL-METADATA-B1.md), currently design only.
-It provides no file-byte proof, capture-completeness guarantee or live closure.
+[B1 passive tool metadata](docs/V0.2-TOOL-METADATA-B1.md). It provides no
+file-byte proof, capture-completeness guarantee or live closure.
+
+B1 now has an offline implementation: a strict
+`tla.tool-metadata-trace/v1` validator/writer and a separate
+`tla.tool-metadata-report/v1` inspector. It is passive and bounded, emits only
+allow-listed metadata, and keeps `hostVerified=false`, `coverage=unknown` and
+`binding=unproven`. It is not installed, not subscribed in a host, and does not
+feed acceptance, synthetic protocols or business closure. See
+[the B1 source map](docs/V0.2-TOOL-OBSERVER-SOURCE-MAP.md).
