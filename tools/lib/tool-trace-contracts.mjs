@@ -184,7 +184,10 @@ function addDiag(list, code, receiptSeq, count = 1) {
 
 function recordBytes(line) { return Buffer.byteLength(line, 'utf8') + 1; }
 
-export function inspectTraceBytes(bytes) {
+export function inspectTraceBytes(bytes, { maxPending = TRACE_LIMITS.maxPending } = {}) {
+  if (!Number.isSafeInteger(maxPending) || maxPending < 1 || maxPending > TRACE_LIMITS.maxPending) {
+    fail('INPUT_INVALID', 'maxPending is invalid');
+  }
   const lines = decodeLines(bytes);
   if (lines.length === 0) fail('INPUT_INVALID', 'trace is empty');
   const first = record(lines[0], null);
@@ -202,6 +205,8 @@ export function inspectTraceBytes(bytes) {
     throw error;
   }
   if (last.kind !== 'footer') fail('FOOTER_MISSING', 'last record is not a footer');
+  if (recordBytes(lines[0]) > TRACE_LIMITS.maxRecordBytes) fail('HEADER_INVALID', 'header exceeds 16 KiB');
+  if (recordBytes(lines[lines.length - 1]) > TRACE_LIMITS.maxRecordBytes) fail('FOOTER_INVALID', 'footer exceeds 16 KiB');
   validateFooter(last.value, { traceId: first.value.traceId });
   if (last.value.observationsWritten !== lines.length - 2) fail('FOOTER_INVALID', 'observationsWritten does not match');
   if (lines.length - 2 > TRACE_LIMITS.maxObservations) fail('INPUT_INVALID', 'observation limit exceeded');
@@ -219,6 +224,7 @@ export function inspectTraceBytes(bytes) {
   const counts = { observations: observations.length, calls: 0, results: 0, pairedCalls: 0, exactReplays: 0 };
   const calls = new Map();
   const results = new Map();
+  const pending = new Set();
   const seen = new Map();
   for (const obs of observations) {
     if (obs.event === 'call') counts.calls += 1;
@@ -237,13 +243,25 @@ export function inspectTraceBytes(bytes) {
       continue;
     }
     const key = `${obs.sessionId}\u0000${obs.callId}`;
-    if (obs.event === 'call') {
-      if (calls.has(key)) addDiag(diagnostics, 'CALL_CONFLICT', obs.receiptSeq);
-      else calls.set(key, obs);
-    } else {
-      if (results.has(key)) addDiag(diagnostics, 'RESULT_CONFLICT', obs.receiptSeq);
-      else results.set(key, obs);
+    if (!pending.has(key)) {
+      if (pending.size >= maxPending) {
+        addDiag(diagnostics, 'LIMIT_REACHED', obs.receiptSeq);
+        continue;
+      }
+      pending.add(key);
     }
+    if (obs.event === 'call') {
+      if (calls.has(key)) {
+        addDiag(diagnostics, calls.get(key).source === obs.source ? 'CALL_CONFLICT' : 'SOURCE_LINK_AMBIGUOUS', obs.receiptSeq);
+      } else {
+        calls.set(key, obs);
+      }
+    } else if (results.has(key)) {
+      addDiag(diagnostics, results.get(key).source === obs.source ? 'RESULT_CONFLICT' : 'SOURCE_LINK_AMBIGUOUS', obs.receiptSeq);
+    } else {
+      results.set(key, obs);
+    }
+    if (calls.has(key) && results.has(key)) pending.delete(key);
   }
   for (const key of calls.keys()) if (!results.has(key)) addDiag(diagnostics, 'CALL_UNPAIRED', calls.get(key).receiptSeq);
   for (const key of results.keys()) if (!calls.has(key)) addDiag(diagnostics, 'RESULT_UNPAIRED', results.get(key).receiptSeq);
@@ -258,9 +276,12 @@ export function inspectTraceBytes(bytes) {
     }
   }
   counts.pairedCalls = [...calls.keys()].filter((key) => results.has(key)).length;
-  if (calls.size + results.size > TRACE_LIMITS.maxPending) addDiag(diagnostics, 'LIMIT_REACHED', null);
+  if (last.value.diagnosticsDropped > 0) {
+    addDiag(diagnostics, 'LIMIT_REACHED', null);
+  }
   if (diagnostics.length > TRACE_LIMITS.maxDiagnostics) fail('FOOTER_INVALID', 'diagnostics exceed limit');
-  const degraded = last.value.captureState === 'degraded' || diagnostics.some((item) => DEGRADING.has(item.code));
+  const degraded = last.value.captureState === 'degraded' || last.value.diagnosticsDropped > 0
+    || diagnostics.some((item) => DEGRADING.has(item.code));
   return {
     status: degraded ? 'INCOMPLETE' : 'VALID_METADATA',
     hostVerified: false,

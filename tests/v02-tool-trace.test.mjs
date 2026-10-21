@@ -9,11 +9,27 @@ import {
   inspectTraceBytes, TRACE_LIMITS, TRACE_SCHEMA, validateFooter, validateHeader,
   validateObservation
 } from '../tools/lib/tool-trace-contracts.mjs';
+import { assertFreshOutputPath } from '../tools/lib/trace-output.mjs';
 import { createTraceWriter } from '../orchestration/tool-observer/writer.mjs';
 import { createToolObserver } from '../orchestration/tool-observer/index.mjs';
 
 mkdirSync('tests/.scratch', { recursive: true });
 const root = mkdtempSync(join(process.cwd(), 'tests/.scratch/b1-trace-'));
+const pathDir = join(root, 'path');
+mkdirSync(pathDir, { recursive: true });
+const fresh = join(pathDir, 'fresh.jsonl');
+assert.equal(assertFreshOutputPath(fresh, { reparseProbe: () => ({ available: true, reparse: false }) }), fresh);
+assert.throws(() => assertFreshOutputPath(fresh, { reparseProbe: () => ({ available: false }) }), /probe unavailable/u);
+assert.throws(() => assertFreshOutputPath(fresh, { reparseProbe: () => ({ available: true, reparse: true }) }), /reparse point/u);
+const junctionTarget = join(root, 'junction-target');
+const junctionLink = join(root, 'junction-link');
+mkdirSync(junctionTarget, { recursive: true });
+const madeJunction = spawnSync('cmd.exe', ['/d', '/c', 'mklink', '/J', junctionLink, junctionTarget], { encoding: 'utf8', windowsHide: true });
+if (madeJunction.status === 0) {
+  assert.throws(() => assertFreshOutputPath(join(junctionLink, 'new.jsonl')), /symbolic link|reparse point/u);
+} else {
+  console.log(`junction path test skipped: ${String(madeJunction.stderr ?? madeJunction.stdout).trim()}`);
+}
 const binding = { runnerRunId: null, launchId: null, gateRunId: null, budgetRunId: null };
 const header = (traceId = randomUUID(), origin = 'simulated-dispatcher') => ({
   schema: TRACE_SCHEMA, kind: 'header', traceId, origin, scope: 'tool-metadata-only',
@@ -57,6 +73,26 @@ try {
   assert.equal(changed.status, 'INCOMPLETE');
   assert.ok(changed.diagnostics.some((item) => item.code === 'CALL_CONFLICT'));
 
+  const twoSource = inspectTraceBytes(jsonl(header(id), call(1), result(2), footer(id, 2)));
+  assert.equal(twoSource.counts.pairedCalls, 1);
+  assert.equal(twoSource.status, 'VALID_METADATA');
+
+  const duplicateSource = inspectTraceBytes(jsonl(
+    header(id), call(1), result(2), result(3, 's1', 'c1', { source: 'session/event' }), footer(id, 3)
+  ));
+  assert.equal(duplicateSource.status, 'INCOMPLETE');
+  assert.ok(duplicateSource.diagnostics.some((item) => item.code === 'SOURCE_LINK_AMBIGUOUS'));
+  assert.equal(duplicateSource.diagnostics.some((item) => item.code === 'RESULT_CONFLICT'), false);
+
+  const dropped = inspectTraceBytes(jsonl(header(id), footer(id, 0, { diagnosticsDropped: 1 })));
+  assert.equal(dropped.status, 'INCOMPLETE');
+  assert.ok(dropped.diagnostics.some((item) => item.code === 'LIMIT_REACHED'));
+
+  const pending = inspectTraceBytes(jsonl(header(id), call(1, 's1', 'c1'), call(2, 's1', 'c2'), footer(id, 2)), { maxPending: 1 });
+  assert.equal(pending.status, 'INCOMPLETE');
+  assert.ok(pending.diagnostics.some((item) => item.code === 'LIMIT_REACHED'));
+  assert.throws(() => inspectTraceBytes(valid, { maxPending: 0 }), /INPUT_INVALID/);
+
   const missingId = inspectTraceBytes(jsonl(header(id), call(1, null, 'c1'), footer(id, 1)));
   assert.equal(missingId.status, 'INCOMPLETE');
   assert.ok(missingId.diagnostics.some((item) => item.code === 'CALL_IDENTITY_MISSING'));
@@ -76,6 +112,10 @@ try {
   assert.throws(() => inspectTraceBytes(jsonl(header(id), footer(id, 0), call(1))), /TRAILING_DATA/);
   assert.throws(() => inspectTraceBytes(Buffer.alloc(0)), /INPUT_INVALID/);
   assert.throws(() => inspectTraceBytes(Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), valid])), /INPUT_INVALID/);
+  const paddedHeader = Buffer.from(`${JSON.stringify(header(id))}${' '.repeat(17_000)}\n`);
+  assert.throws(() => inspectTraceBytes(Buffer.concat([paddedHeader, Buffer.from(`${JSON.stringify(footer(id, 0))}\n`)])), /HEADER_INVALID/);
+  const paddedFooter = Buffer.from(`${JSON.stringify(footer(id, 0))}${' '.repeat(17_000)}\n`);
+  assert.throws(() => inspectTraceBytes(Buffer.concat([Buffer.from(`${JSON.stringify(header(id))}\n`), paddedFooter])), /FOOTER_INVALID/);
 
   assert.throws(() => validateHeader({ ...header(id), extra: true }), /RECORD_INVALID/);
   assert.throws(() => validateObservation({ ...call(1), outcome: 'success' }), /FIELD_INVALID/);
@@ -83,6 +123,18 @@ try {
 
   // Writer: real file, exclusive creation, twice-stop and close fault.
   const writerFile = join(root, 'writer.jsonl');
+  for (const options of [
+    { maxBytes: 0 }, { maxBytes: 131071 }, { maxBytes: 1.5 }, { maxBytes: '1' },
+    { maxObservations: 0 }, { maxObservations: -1 }, { maxObservations: 1.5 }, { maxObservations: 10001 },
+    { maxPending: 0 }, { maxPending: -1 }, { maxPending: 1.5 }, { maxPending: 1001 }
+  ]) {
+    assert.throws(() => createTraceWriter({ outputFile: join(root, 'invalid-limits.jsonl'), assertPath: () => {}, ...options }), /WRITE_FAILED/u);
+  }
+  const validLimits = createTraceWriter({
+    outputFile: join(root, 'valid-limits.jsonl'), assertPath: () => {},
+    maxBytes: 128 * 1024, maxObservations: 1, maxPending: 1
+  });
+  assert.equal(typeof validLimits.open, 'function');
   const writer = createTraceWriter({ outputFile: writerFile, assertPath: () => {} });
   assert.equal(writer.open(), true);
   assert.equal(writer.accept(call(1)).accepted, true);
@@ -129,6 +181,7 @@ try {
 
   const failingFile = join(root, 'write-fault.jsonl');
   let writes = 0;
+  let closeCalls = 0;
   const failingWriter = createTraceWriter({
     outputFile: failingFile,
     assertPath: () => {},
@@ -139,13 +192,42 @@ try {
         if (writes >= 2) throw new Error('disk injected');
         return fs.writeSync(fd, buffer, offset, length);
       },
-      closeSync: fs.closeSync
+      closeSync: (fd) => { closeCalls += 1; return fs.closeSync(fd); }
     }
   });
   failingWriter.open();
   assert.equal(failingWriter.accept(call(1)).accepted, false);
-  assert.equal(failingWriter.stop().ok, false);
+  assert.equal(failingWriter.stop().closeFailed, null);
+  assert.equal(closeCalls, 1);
   assert.doesNotMatch(readFileSync(failingFile, 'utf8'), /"kind":"footer"/u);
+
+  const headerFile = join(root, 'header-fault.jsonl');
+  const headerWriter = createTraceWriter({
+    outputFile: headerFile,
+    assertPath: () => {},
+    io: { openSync: fs.openSync, writeSync: () => { throw new Error('header injected'); }, closeSync: fs.closeSync }
+  });
+  assert.throws(() => headerWriter.open(), /WRITE_FAILED/u);
+  assert.equal(headerWriter.stop().ok, false);
+
+  const footerFile = join(root, 'footer-fault.jsonl');
+  const footerWriter = createTraceWriter({
+    outputFile: footerFile,
+    assertPath: () => {},
+    io: {
+      openSync: fs.openSync,
+      writeSync: (fd, buffer, offset, length) => {
+        if (buffer.toString('utf8').includes('"kind":"footer"')) throw new Error('footer injected');
+        return fs.writeSync(fd, buffer, offset, length);
+      },
+      closeSync: fs.closeSync
+    }
+  });
+  footerWriter.open();
+  footerWriter.accept(call(1));
+  const footerHealth = footerWriter.stop();
+  assert.equal(footerHealth.footerWritten, false);
+  assert.equal(footerHealth.ok, false);
 
   const limitedFile = join(root, 'limited.jsonl');
   const limitedWriter = createTraceWriter({ outputFile: limitedFile, assertPath: () => {}, maxObservations: 1 });
@@ -225,6 +307,7 @@ try {
   const rollbackObserver = createToolObserver({ dispatcher: rollbackDispatcher, writer: rollbackWriter, subscriptions: ['tools/result', 'session/event'] });
   assert.equal(rollbackObserver.attach().ok, false);
   assert.equal(rollbackDispatcher.handlers.size, 0);
+  assert.throws(() => createToolObserver({ dispatcher, writer: fakeWriter, subscriptions: ['tools/result', 'tools/result'] }), /duplicate subscription/u);
 
   // CLI: valid, invalid, existing output.
   const traceFile = join(root, 'cli.jsonl');

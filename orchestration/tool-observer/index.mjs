@@ -42,6 +42,9 @@ export function createToolObserver({ dispatcher, writer, mapper = mapToolsResult
   if (!Array.isArray(subscriptions) || subscriptions.some((name) => name !== 'tools/result' && name !== 'session/event')) {
     fail('SUBSCRIBE_FAILED', 'unsupported subscription name');
   }
+  if (new Set(subscriptions).size !== subscriptions.length) {
+    fail('SUBSCRIBE_FAILED', 'duplicate subscription name');
+  }
   const handlers = new Map();
   let attached = false;
   let stopped = false;

@@ -8,8 +8,12 @@ import {
 } from '../../tools/lib/tool-trace-contracts.mjs';
 
 function fail(code, detail) { throw new TraceError(code, detail); }
-function positive(value, fallback) {
-  return Number.isSafeInteger(value) && value > 0 && value <= fallback ? value : fallback;
+function limit(value, fallback, name, minimum = 1) {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || value < minimum || value > fallback) {
+    fail('WRITE_FAILED', `${name} must be a safe integer between ${minimum} and ${fallback}`);
+  }
+  return value;
 }
 function bytesOf(value) { return Buffer.byteLength(value, 'utf8'); }
 
@@ -20,14 +24,15 @@ export function createTraceWriter({
   bindingClaim = { runnerRunId: null, launchId: null, gateRunId: null, budgetRunId: null },
   maxBytes = TRACE_LIMITS.maxBytes,
   maxObservations = TRACE_LIMITS.maxObservations,
+  maxPending = TRACE_LIMITS.maxPending,
   assertPath = null,
   io = { openSync, writeSync, closeSync }
 } = {}) {
   if (typeof outputFile !== 'string' || outputFile.length === 0) fail('WRITE_FAILED', 'outputFile is required');
   if (typeof assertPath !== 'function') fail('WRITE_FAILED', 'assertPath is required');
-  const byteLimit = positive(maxBytes, TRACE_LIMITS.maxBytes);
-  const observationLimit = positive(maxObservations, TRACE_LIMITS.maxObservations);
-  if (byteLimit < TRACE_LIMITS.minMaxBytes) fail('WRITE_FAILED', 'maxBytes must be at least 128 KiB');
+  const byteLimit = limit(maxBytes, TRACE_LIMITS.maxBytes, 'maxBytes', TRACE_LIMITS.minMaxBytes);
+  const observationLimit = limit(maxObservations, TRACE_LIMITS.maxObservations, 'maxObservations');
+  limit(maxPending, TRACE_LIMITS.maxPending, 'maxPending');
   const header = validateHeader({
     schema: TRACE_SCHEMA,
     kind: 'header',
@@ -101,7 +106,8 @@ export function createTraceWriter({
       degraded = true;
       try { io.closeSync(fd); } catch { /* retained by caller health */ }
       fd = null;
-      throw error;
+      if (error instanceof TraceError) throw error;
+      throw new TraceError('WRITE_FAILED', String(error?.message ?? error));
     }
     return true;
   }
@@ -138,11 +144,35 @@ export function createTraceWriter({
     return { accepted: true, receiptSeq };
   }
 
+  function closeHandle() {
+    if (fd === null) return;
+    try {
+      io.closeSync(fd);
+      fd = null;
+    } catch (error) {
+      closeFailed = String(error?.message ?? error);
+      degraded = true;
+      fd = null;
+    }
+  }
+
   function finalize() {
-    if (stopped) return { ok: false, code: 'STOPPED', diagnostics: diagnostics.map((item) => ({ ...item })) };
+    if (stopped) {
+      return {
+        ok: false, code: 'STOPPED', closeFailed,
+        diagnostics: diagnostics.map((item) => ({ ...item }))
+      };
+    }
     if (!opened || writeFailed) {
+      closeHandle();
       stopped = true;
-      return { ok: false, code: writeFailed ? 'WRITE_FAILED' : 'NOT_OPEN', observations, diagnostics: diagnostics.map((item) => ({ ...item })) };
+      return {
+        ok: false,
+        code: writeFailed ? 'WRITE_FAILED' : 'NOT_OPEN',
+        closeFailed,
+        observations,
+        diagnostics: diagnostics.map((item) => ({ ...item }))
+      };
     }
     const footer = validateFooter({
       kind: 'footer',
@@ -166,13 +196,7 @@ export function createTraceWriter({
       writeFailed = true;
       footerOk = false;
     }
-    try {
-      io.closeSync(fd);
-      fd = null;
-    } catch (error) {
-      closeFailed = String(error?.message ?? error);
-      degraded = true;
-    }
+    closeHandle();
     stopped = true;
     return {
       ok: footerOk && closeFailed === null && !degraded,
