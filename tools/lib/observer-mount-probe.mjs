@@ -254,9 +254,28 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
     const runner = idFrom(runnerSummary, ['runId', 'runnerRunId'], 'runnerSummary', issues)
     const gate = idFrom(gateSummary, ['runId', 'gateRunId'], 'gateSummary', issues)
     const budget = idFrom(gateSummary, ['runId', 'budgetRunId'], 'gateSummary', issues)
-    const budgetIds = [...new Set(budgetEvents.map((event) => event?.runId).filter((value) => value !== undefined))]
+    check(checks, 'runner-completed', runnerSummary.status === 'completed', 'runner status must be completed; got ' + String(runnerSummary.status))
+    if (runnerSummary.status !== undefined && runnerSummary.status !== 'completed') contradicted = true
+    check(checks, 'gate-host-started', gateSummary.hostStarted === true, 'gate summary hostStarted=' + String(gateSummary.hostStarted))
+    if (gateSummary.hostStarted === false) contradicted = true
+    if (runnerSummary.hostStarted !== undefined) {
+      check(checks, 'runner-host-started', runnerSummary.hostStarted === true, 'runner summary hostStarted=' + String(runnerSummary.hostStarted))
+      if (runnerSummary.hostStarted === false) contradicted = true
+    }
+    const eventIds = []
+    for (const [index, event] of budgetEvents.entries()) {
+      const eventId = idFrom(event, ['runId', 'budgetRunId'], 'budgetEvents[' + String(index) + ']', issues)
+      if (eventId.conflict) contradicted = true
+      if (eventId.id === null) issue(issues, 'BUDGET_IDENTITY_MISSING', 'budget event ' + String(index) + ' has no run identity')
+      else eventIds.push(eventId.id)
+    }
+    const budgetIds = [...new Set(eventIds)]
+    if (budgetIds.length > 1) {
+      issue(issues, 'BUDGET_IDENTITY_CONFLICT', 'budget events disagree on run identity')
+      contradicted = true
+    }
     if (budgetIds.length !== 1 || typeof budgetIds[0] !== 'string' || budgetIds[0].trim() === '') {
-      issue(issues, 'BUDGET_IDENTITY_INVALID', 'budget events must carry exactly one non-empty runId')
+      issue(issues, 'BUDGET_IDENTITY_INVALID', 'budget events must carry exactly one non-empty run identity')
     }
     const budgetEventsId = budgetIds.length === 1 ? budgetIds[0] : null
     runnerId = runner.id; gateId = gate.id; budgetId = budget.id
@@ -278,6 +297,9 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
     check(checks, 'ledger-schema', ledger.schema === 'tla.run-ledger/v2', 'ledger schema=' + String(ledger.schema))
     check(checks, 'ledger-complete', ledger.complete === true && Array.isArray(ledger.incompleteRuns) && ledger.incompleteRuns.length === 0 && Array.isArray(ledger.inconsistent) && ledger.inconsistent.length === 0, 'ledger must be complete with no incomplete/inconsistent runs')
     if (ledger.complete !== true || (Array.isArray(ledger.incompleteRuns) && ledger.incompleteRuns.length > 0)) contradicted = true
+    check(checks, 'ledger-upstream-over-gate', Array.isArray(ledger.upstreamOverGate) && ledger.upstreamOverGate.length === 0, 'ledger upstreamOverGate must be an empty array')
+    if (Array.isArray(ledger.upstreamOverGate) && ledger.upstreamOverGate.length > 0) contradicted = true
+    if (Array.isArray(ledger.inconsistent) && ledger.inconsistent.length > 0) contradicted = true
     limitations.push('tla.run-ledger/v2 has no runner/gate run IDs; ledger completeness is checked, but ledger-to-receipt identity is structural, not independently bound')
   } catch (error) {
     issue(issues, 'LEDGER_INVALID', String(error.message))
@@ -288,6 +310,7 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
     const claim = trace.header.bindingClaim
     const identityChecks = [
       ['journal-runner', journal.identity?.runnerRunId, runnerReceipt.runnerRunId, runnerId],
+      ['journal-launch', journal.identity?.launchId, runnerReceipt.launchId, runnerReceipt.launchId],
       ['journal-gate', journal.identity?.gateRunId, gateReceipt.gateRunId, gateId],
       ['journal-budget', journal.identity?.budgetRunId, gateReceipt.budgetRunId, budgetId],
       ['trace-runner', claim.runnerRunId, runnerReceipt.runnerRunId, runnerId],

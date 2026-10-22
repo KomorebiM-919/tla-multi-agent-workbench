@@ -560,3 +560,10 @@ probe report. It requires lifecycle, non-degraded origin, read/pwsh results,
 B0 binding, complete ledger and clean cleanup; missing evidence is `incomplete`
 and contradictory evidence is `failed`. It always emits `hostVerified=false`,
 `coverage=unknown`, `closed=false` and never upgrades a real acceptance state.
+
+The 20-test suite also has five single-defect fixtures: a foreign journal
+`launchId`, gate `hostStarted=false`, runner `cleanup-anomaly`, a non-empty
+ledger `upstreamOverGate`, and a budget event with conflicting
+`runId`/`budgetRunId`. Each returns `failed` even when both receipts are
+`local-runtime` and `binding=consistent`. A complete `local-runtime` fixture can
+probe-pass but is still invented data with `hostVerified=false`.

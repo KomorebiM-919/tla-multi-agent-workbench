@@ -111,8 +111,9 @@ function createMaterials (overrides = {}) {
     budgetRunId: 'tla-run-mount-1',
     traceId: randomUUID()
   }
-  const runner = runnerReceipt({ runnerRunId: identity.runnerRunId, launchId: identity.launchId, state: 'spawned', launcherPid: process.pid, command: 'node', args: ['gated-run.mjs'], origin: 'simulated' })
-  const gate = gateReceipt({ runnerRunId: identity.runnerRunId, launchId: identity.launchId, gateRunId: identity.gateRunId, budgetRunId: identity.budgetRunId, command: 'node', args: ['gated-run.mjs'], origin: 'simulated' })
+  const receiptOrigin = overrides.receiptOrigin ?? 'simulated'
+  const runner = runnerReceipt({ runnerRunId: identity.runnerRunId, launchId: identity.launchId, state: 'spawned', launcherPid: process.pid, command: 'node', args: ['gated-run.mjs'], origin: receiptOrigin })
+  const gate = gateReceipt({ runnerRunId: identity.runnerRunId, launchId: identity.launchId, gateRunId: identity.gateRunId, budgetRunId: identity.budgetRunId, command: 'node', args: ['gated-run.mjs'], origin: receiptOrigin })
   const paths = {
     journal: join(dir, 'lifecycle.jsonl'),
     trace: join(dir, 'trace.jsonl'),
@@ -123,14 +124,15 @@ function createMaterials (overrides = {}) {
     budgetEvents: join(dir, 'budget-events.jsonl'),
     ledger: join(dir, 'ledger.json')
   }
-  writeFileSync(paths.journal, [1, 2, 3, 4].map((seq) => journalLine(seq, ['preparing', 'attached', 'stopping', 'stopped'][seq - 1], identity)).join('\n') + '\n')
+  const journalIdentity = { ...identity, launchId: overrides.journalLaunchId ?? identity.launchId }
+  writeFileSync(paths.journal, [1, 2, 3, 4].map((seq) => journalLine(seq, ['preparing', 'attached', 'stopping', 'stopped'][seq - 1], journalIdentity)).join('\n') + '\n')
   writeFileSync(paths.trace, traceBody(identity, overrides.trace))
   writeFileSync(paths.runnerReceipt, JSON.stringify(runner))
   writeFileSync(paths.gateReceipt, JSON.stringify(gate))
-  writeFileSync(paths.runnerSummary, JSON.stringify({ runId: overrides.runnerRunId ?? identity.runnerRunId }))
-  writeFileSync(paths.gateSummary, JSON.stringify({ runId: overrides.gateRunId ?? identity.gateRunId, budgetRunId: overrides.budgetRunId ?? identity.budgetRunId }))
-  writeFileSync(paths.budgetEvents, JSON.stringify({ runId: overrides.budgetEventsId ?? identity.budgetRunId }) + '\n')
-  writeFileSync(paths.ledger, JSON.stringify(overrides.ledger ?? { schema: 'tla.run-ledger/v2', complete: true, incompleteRuns: [], inconsistent: [] }))
+  writeFileSync(paths.runnerSummary, JSON.stringify({ runId: overrides.runnerRunId ?? identity.runnerRunId, status: overrides.runnerStatus ?? 'completed', hostStarted: overrides.runnerHostStarted ?? true }))
+  writeFileSync(paths.gateSummary, JSON.stringify({ runId: overrides.gateRunId ?? identity.gateRunId, budgetRunId: overrides.budgetRunId ?? identity.budgetRunId, hostStarted: overrides.hostStarted ?? true }))
+  writeFileSync(paths.budgetEvents, JSON.stringify(overrides.budgetEvent ?? { runId: identity.budgetRunId }) + '\n')
+  writeFileSync(paths.ledger, JSON.stringify(overrides.ledger ?? { schema: 'tla.run-ledger/v2', complete: true, incompleteRuns: [], inconsistent: [], upstreamOverGate: [] }))
   return { dir, paths, identity }
 }
 
@@ -227,11 +229,73 @@ test('each required material missing is incomplete, not success', () => {
 })
 
 test('run identity conflict and cross-run budget borrowing are failed', () => {
-  const one = createMaterials({ budgetEventsId: 'tla-run-other' })
+  const one = createMaterials({ budgetEvent: { runId: 'tla-run-other' } })
   try {
     const report = evaluateMountProbe(inputFor(one))
     assert.equal(report.status, 'failed')
   } finally { rmSync(one.dir, { recursive: true, force: true }) }
+})
+
+test('a journal that names another valid launchId is failed even with consistent local-runtime receipts', () => {
+  const materials = createMaterials({ journalLaunchId: randomUUID(), receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.ok(report.checks.some((entry) => entry.code === 'identity-journal-launch' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('gate hostStarted=false is failed even with consistent local-runtime receipts', () => {
+  const materials = createMaterials({ hostStarted: false, receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.ok(report.checks.some((entry) => entry.code === 'gate-host-started' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('runner cleanup-anomaly is failed even with consistent local-runtime receipts', () => {
+  const materials = createMaterials({ runnerStatus: 'cleanup-anomaly', receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.ok(report.checks.some((entry) => entry.code === 'runner-completed' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('ledger upstreamOverGate is failed even when complete=true and receipts agree', () => {
+  const materials = createMaterials({ ledger: { schema: 'tla.run-ledger/v2', complete: true, incompleteRuns: [], inconsistent: [], upstreamOverGate: ['run-x'] }, receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.ok(report.checks.some((entry) => entry.code === 'ledger-upstream-over-gate' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('a budget event with conflicting role aliases is failed even with consistent receipts', () => {
+  const materials = createMaterials({ budgetEvent: { runId: 'tla-run-one', budgetRunId: 'tla-run-two' }, receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.ok(report.issues.some((entry) => entry.code === 'IDENTITY_CONFLICT' || entry.code === 'BUDGET_IDENTITY_CONFLICT'))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('a complete local-runtime fixture may be probe-passed but still cannot claim host coverage', () => {
+  const materials = createMaterials({ receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'probe-passed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.equal(report.hostVerified, false)
+    assert.equal(report.coverage, 'unknown')
+    assert.equal(report.closed, false)
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
 })
 
 test('failed read or missing footer cannot pass', () => {
@@ -301,7 +365,7 @@ test('actual gate path renders the receipt-bound observer patch before host star
 test('mount-probe CLI uses 0/1/2 for passed/incomplete/failed', () => {
   const good = createMaterials()
   const incomplete = createMaterials()
-  const failed = createMaterials({ budgetEventsId: 'tla-run-other' })
+  const failed = createMaterials({ budgetEvent: { runId: 'tla-run-other' } })
   try {
     unlinkSync(incomplete.paths.journal)
     const writeInput = (materials, name) => {
