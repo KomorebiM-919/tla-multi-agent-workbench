@@ -209,10 +209,11 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
     check(checks, 'trace-pairing', unpaired.length === 0, 'each read/pwsh result must have a call with the same identity; unpaired=' + String(unpaired.length))
     if (unpaired.length > 0) contradicted = true
     const pwshForeground = pwsh.filter((entry) => entry.process !== null && entry.process.exitCode === 0
+      && entry.process.signal === null
       && entry.process.timedOut === false && entry.process.aborted === false
       && entry.process.stdoutTruncated === false && entry.process.stderrTruncated === false)
-    check(checks, 'trace-pwsh-foreground', pwsh.length > 0 && pwshForeground.length === pwsh.length, 'pwsh must have foreground exit 0 and untruncated, non-aborted facts')
-    if (pwsh.some((entry) => entry.process === null || entry.process.exitCode !== 0 || entry.process.timedOut !== false || entry.process.aborted !== false || entry.process.stdoutTruncated !== false || entry.process.stderrTruncated !== false)) contradicted = true
+    check(checks, 'trace-pwsh-foreground', pwsh.length > 0 && pwshForeground.length === pwsh.length, 'pwsh must have foreground exit 0, signal null and untruncated, non-aborted facts')
+    if (pwsh.some((entry) => entry.process === null || entry.process.exitCode !== 0 || entry.process.signal !== null || entry.process.timedOut !== false || entry.process.aborted !== false || entry.process.stdoutTruncated !== false || entry.process.stderrTruncated !== false)) contradicted = true
     const unsafe = parsed.observations.filter((entry) => !traceKeySafe(entry) || hasForbiddenText(JSON.stringify(entry)))
     check(checks, 'dto-safe', unsafe.length === 0, 'trace entries must use safe fields and contain no absolute/private text')
     if (unsafe.length > 0) contradicted = true
@@ -258,9 +259,39 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
     if (runnerSummary.status !== undefined && runnerSummary.status !== 'completed') contradicted = true
     check(checks, 'gate-host-started', gateSummary.hostStarted === true, 'gate summary hostStarted=' + String(gateSummary.hostStarted))
     if (gateSummary.hostStarted === false) contradicted = true
+    check(checks, 'gate-result', gateSummary.result === 'host-ok', 'gate result must be host-ok; got ' + String(gateSummary.result))
+    if (gateSummary.result !== undefined && gateSummary.result !== 'host-ok') contradicted = true
+    check(checks, 'gate-allow', gateSummary.decision?.allow === true, 'gate decision.allow must be true')
+    if (gateSummary.decision?.allow === false) contradicted = true
+    check(checks, 'gate-blockers', Array.isArray(gateSummary.decision?.blockers) && gateSummary.decision.blockers.length === 0, 'gate decision.blockers must be an empty array')
+    if (Array.isArray(gateSummary.decision?.blockers) && gateSummary.decision.blockers.length > 0) contradicted = true
+    check(checks, 'gate-exit-code', gateSummary.exitCode === 0, 'gate exitCode must be 0; got ' + String(gateSummary.exitCode))
+    if (typeof gateSummary.exitCode === 'number' && gateSummary.exitCode !== 0) contradicted = true
     if (runnerSummary.hostStarted !== undefined) {
       check(checks, 'runner-host-started', runnerSummary.hostStarted === true, 'runner summary hostStarted=' + String(runnerSummary.hostStarted))
       if (runnerSummary.hostStarted === false) contradicted = true
+    }
+    const teardown = Array.isArray(runnerSummary.teardown) ? runnerSummary.teardown : null
+    check(checks, 'runner-teardown', teardown !== null && teardown.length > 0, 'runner teardown records are required')
+    if (teardown !== null) {
+      const hostEntry = teardown.find((entry) => entry?.role === 'host')
+      const portsEntry = teardown.find((entry) => entry?.role === 'ports')
+      check(checks, 'runner-teardown-host', hostEntry !== undefined, 'a host teardown record is required')
+      check(checks, 'runner-teardown-ports', portsEntry !== undefined, 'a ports teardown record is required')
+      if (portsEntry !== undefined) {
+        check(checks, 'runner-ports-free', portsEntry.gateFree === true && portsEntry.upstreamFree === true, 'both gate and upstream ports must be free')
+        if (portsEntry.gateFree === false || portsEntry.upstreamFree === false) contradicted = true
+      }
+      for (const entry of teardown) {
+        if (entry?.role !== 'host' && entry?.role !== 'upstream') continue
+        const survivors = Array.isArray(entry.survivors) ? entry.survivors : null
+        check(checks, 'runner-survivors-' + entry.role, survivors !== null && survivors.length === 0, entry.role + ' survivors must be an empty array')
+        if (survivors !== null && survivors.length > 0) contradicted = true
+        const badHow = entry.how === 'still-alive' || entry.how === 'descendants-survived'
+        const knownHow = entry.how === 'already-exited' || entry.how === 'tree-killed'
+        check(checks, 'runner-how-' + entry.role, !badHow && knownHow, entry.role + ' teardown how=' + String(entry.how))
+        if (badHow) contradicted = true
+      }
     }
     const eventIds = []
     for (const [index, event] of budgetEvents.entries()) {

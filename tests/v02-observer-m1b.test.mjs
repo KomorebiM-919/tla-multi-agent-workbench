@@ -67,7 +67,7 @@ function observation (receiptSeq, input) {
   }
 }
 
-function traceBody (identity, { failed = false, omitFooter = false } = {}) {
+function traceBody (identity, { failed = false, omitFooter = false, signal = null } = {}) {
   const header = {
     schema: 'tla.tool-metadata-trace/v1',
     kind: 'header',
@@ -83,7 +83,7 @@ function traceBody (identity, { failed = false, omitFooter = false } = {}) {
     order: 'observer-delivery-only',
     coverage: 'unknown'
   }
-  const processFact = { exitCode: failed ? 1 : 0, signal: null, timedOut: false, aborted: false, stdoutTruncated: false, stderrTruncated: false }
+  const processFact = { exitCode: failed ? 1 : 0, signal, timedOut: false, aborted: false, stdoutTruncated: false, stderrTruncated: false }
   const lines = [traceLine(header)]
   lines.push(traceLine(observation(1, { event: 'call', callId: 'call-read', toolName: 'read' })))
   lines.push(traceLine(observation(2, { event: 'result', callId: 'call-read', toolName: 'read', outcome: failed ? 'error' : 'success' })))
@@ -129,8 +129,27 @@ function createMaterials (overrides = {}) {
   writeFileSync(paths.trace, traceBody(identity, overrides.trace))
   writeFileSync(paths.runnerReceipt, JSON.stringify(runner))
   writeFileSync(paths.gateReceipt, JSON.stringify(gate))
-  writeFileSync(paths.runnerSummary, JSON.stringify({ runId: overrides.runnerRunId ?? identity.runnerRunId, status: overrides.runnerStatus ?? 'completed', hostStarted: overrides.runnerHostStarted ?? true }))
-  writeFileSync(paths.gateSummary, JSON.stringify({ runId: overrides.gateRunId ?? identity.gateRunId, budgetRunId: overrides.budgetRunId ?? identity.budgetRunId, hostStarted: overrides.hostStarted ?? true }))
+  writeFileSync(paths.runnerSummary, JSON.stringify({
+    runId: overrides.runnerRunId ?? identity.runnerRunId,
+    status: overrides.runnerStatus ?? 'completed',
+    hostStarted: overrides.runnerHostStarted ?? true,
+    teardown: overrides.teardown ?? [
+      { role: 'host', how: 'tree-killed', descendants: [], descendantsProof: 'collected', survivors: [] },
+      { role: 'upstream', how: 'already-exited', survivors: [] },
+      { role: 'ports', gateFree: true, upstreamFree: true }
+    ]
+  }))
+  const gateDecision = overrides.gateDecision === undefined
+    ? { allow: overrides.gateAllow ?? true, blockers: overrides.gateBlockers ?? [] }
+    : overrides.gateDecision
+  writeFileSync(paths.gateSummary, JSON.stringify({
+    runId: overrides.gateRunId ?? identity.gateRunId,
+    budgetRunId: overrides.budgetRunId ?? identity.budgetRunId,
+    hostStarted: overrides.hostStarted ?? true,
+    result: overrides.gateResult ?? 'host-ok',
+    decision: gateDecision,
+    exitCode: overrides.gateExitCode ?? 0
+  }))
   writeFileSync(paths.budgetEvents, JSON.stringify(overrides.budgetEvent ?? { runId: identity.budgetRunId }) + '\n')
   writeFileSync(paths.ledger, JSON.stringify(overrides.ledger ?? { schema: 'tla.run-ledger/v2', complete: true, incompleteRuns: [], inconsistent: [], upstreamOverGate: [] }))
   return { dir, paths, identity }
@@ -296,6 +315,95 @@ test('a complete local-runtime fixture may be probe-passed but still cannot clai
     assert.equal(report.coverage, 'unknown')
     assert.equal(report.closed, false)
   } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('hostStarted=true is not protection when gate refused with a blocker', () => {
+  const materials = createMaterials({
+    hostStarted: true,
+    gateResult: 'protection-not-established',
+    gateAllow: false,
+    gateBlockers: [{ code: 'HEARTBEAT_MISSING', detail: 'no run-bound mount' }],
+    gateExitCode: 3,
+    receiptOrigin: 'local-runtime'
+  })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.equal(report.binding.status, 'consistent')
+    assert.ok(report.checks.some((entry) => entry.code === 'gate-result' && entry.ok === false))
+    assert.ok(report.checks.some((entry) => entry.code === 'gate-allow' && entry.ok === false))
+    assert.ok(report.checks.some((entry) => entry.code === 'gate-blockers' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('runner completed cannot hide a surviving host descendant', () => {
+  const materials = createMaterials({
+    teardown: [
+      { role: 'host', how: 'descendants-survived', descendants: [4242], descendantsProof: 'collected', survivors: [4242] },
+      { role: 'upstream', how: 'already-exited', survivors: [] },
+      { role: 'ports', gateFree: true, upstreamFree: true }
+    ],
+    receiptOrigin: 'local-runtime'
+  })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.ok(report.checks.some((entry) => entry.code === 'runner-survivors-host' && entry.ok === false))
+    assert.ok(report.checks.some((entry) => entry.code === 'runner-how-host' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('runner completed cannot hide an unreleased port', () => {
+  const materials = createMaterials({
+    teardown: [
+      { role: 'host', how: 'tree-killed', descendants: [], descendantsProof: 'collected', survivors: [] },
+      { role: 'upstream', how: 'already-exited', survivors: [] },
+      { role: 'ports', gateFree: false, upstreamFree: true }
+    ],
+    receiptOrigin: 'local-runtime'
+  })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.ok(report.checks.some((entry) => entry.code === 'runner-ports-free' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('a pwsh exit 0 with a terminating signal is not foreground success', () => {
+  const materials = createMaterials({ trace: { signal: 'SIGTERM' }, receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'failed')
+    assert.ok(report.checks.some((entry) => entry.code === 'trace-pwsh-foreground' && entry.ok === false))
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('missing teardown records are incomplete, not success', () => {
+  const materials = createMaterials({ teardown: [], receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, 'incomplete')
+    assert.notEqual(report.status, 'probe-passed')
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+})
+
+test('missing gate decision and invalid teardown survivor types are incomplete', () => {
+  const noDecision = createMaterials({ gateDecision: null, receiptOrigin: 'local-runtime' })
+  const badType = createMaterials({
+    teardown: [
+      { role: 'host', how: 'tree-killed', survivors: 'not-an-array' },
+      { role: 'upstream', how: 'already-exited', survivors: [] },
+      { role: 'ports', gateFree: true, upstreamFree: true }
+    ],
+    receiptOrigin: 'local-runtime'
+  })
+  try {
+    assert.equal(evaluateMountProbe(inputFor(noDecision)).status, 'incomplete')
+    assert.equal(evaluateMountProbe(inputFor(badType)).status, 'incomplete')
+  } finally {
+    rmSync(noDecision.dir, { recursive: true, force: true })
+    rmSync(badType.dir, { recursive: true, force: true })
+  }
 })
 
 test('failed read or missing footer cannot pass', () => {
