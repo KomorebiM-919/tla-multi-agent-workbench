@@ -561,7 +561,7 @@ B0 binding, complete ledger and clean cleanup; missing evidence is `incomplete`
 and contradictory evidence is `failed`. It always emits `hostVerified=false`,
 `coverage=unknown`, `closed=false` and never upgrades a real acceptance state.
 
-The 26-test suite also has five single-defect fixtures: a foreign journal
+The M1B suite also has five single-defect fixtures: a foreign journal
 `launchId`, gate `hostStarted=false`, runner `cleanup-anomaly`, a non-empty
 ledger `upstreamOverGate`, and a budget event with conflicting
 `runId`/`budgetRunId`. Each returns `failed` even when both receipts are
@@ -573,3 +573,10 @@ It also rejects a gate that started but refused with
 descendants or a held port, and pwsh `exitCode=0` with a terminating signal.
 Missing teardown or gate decision records are incomplete; invalid survivor types
 are incomplete; each failure condition is a separate fixture.
+
+The M1B suite now has 67 cases, including exactly-one host/upstream/ports
+records, duplicate failure evidence in either order, legitimate producer
+cleanup outcomes (including terminated/killed), missing/invalid fields and
+a local Node child stopped by stopOwnedProcess. This does not start DSH.
+Missing cleanup evidence is incomplete; repeated roles or surviving/held
+resources are failed.

@@ -274,22 +274,31 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
     const teardown = Array.isArray(runnerSummary.teardown) ? runnerSummary.teardown : null
     check(checks, 'runner-teardown', teardown !== null && teardown.length > 0, 'runner teardown records are required')
     if (teardown !== null) {
-      const hostEntry = teardown.find((entry) => entry?.role === 'host')
-      const portsEntry = teardown.find((entry) => entry?.role === 'ports')
-      check(checks, 'runner-teardown-host', hostEntry !== undefined, 'a host teardown record is required')
-      check(checks, 'runner-teardown-ports', portsEntry !== undefined, 'a ports teardown record is required')
-      if (portsEntry !== undefined) {
-        check(checks, 'runner-ports-free', portsEntry.gateFree === true && portsEntry.upstreamFree === true, 'both gate and upstream ports must be free')
-        if (portsEntry.gateFree === false || portsEntry.upstreamFree === false) contradicted = true
+      // The producer emits exactly one record per role. Do not let a first
+      // successful record hide a later failure, or one role stand in for another.
+      const roles = ['host', 'upstream', 'ports']
+      for (const role of roles) {
+        const count = teardown.filter(entry => entry?.role === role).length
+        check(checks, 'runner-teardown-' + role, count === 1, role + ' teardown records must number exactly one; got ' + count)
+        if (count > 1) contradicted = true
       }
-      for (const entry of teardown) {
-        if (entry?.role !== 'host' && entry?.role !== 'upstream') continue
+      for (const [index, entry] of teardown.entries()) {
+        const validRecord = isObject(entry) && roles.includes(entry.role)
+        check(checks, 'runner-teardown-record', validRecord, 'teardown[' + index + '] must be a host, upstream or ports object')
+        if (!validRecord) continue
+        if (entry.role === 'ports') {
+          check(checks, 'runner-ports-free', entry.gateFree === true && entry.upstreamFree === true, 'teardown[' + index + ']: both gate and upstream ports must be free')
+          if (entry.gateFree === false || entry.upstreamFree === false) contradicted = true
+          continue
+        }
         const survivors = Array.isArray(entry.survivors) ? entry.survivors : null
-        check(checks, 'runner-survivors-' + entry.role, survivors !== null && survivors.length === 0, entry.role + ' survivors must be an empty array')
+        check(checks, 'runner-survivors-' + entry.role, survivors !== null && survivors.length === 0, 'teardown[' + index + ']: ' + entry.role + ' survivors must be an empty array')
         if (survivors !== null && survivors.length > 0) contradicted = true
         const badHow = entry.how === 'still-alive' || entry.how === 'descendants-survived'
-        const knownHow = entry.how === 'already-exited' || entry.how === 'tree-killed'
-        check(checks, 'runner-how-' + entry.role, !badHow && knownHow, entry.role + ' teardown how=' + String(entry.how))
+        // stopOwnedProcess also succeeds after SIGTERM or its SIGKILL fallback.
+        // These are local cleanup outcomes, not proof of descendant coverage.
+        const knownHow = ['already-exited', 'terminated', 'tree-killed', 'killed'].includes(entry.how)
+        check(checks, 'runner-how-' + entry.role, knownHow, 'teardown[' + index + ']: ' + entry.role + ' teardown how=' + String(entry.how))
         if (badHow) contradicted = true
       }
     }

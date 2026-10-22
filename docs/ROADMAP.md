@@ -294,3 +294,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   installed; `hostVerified=false`, `coverage=unknown`, `binding=unproven`.
   Materials: `docs/V0.2-OBSERVER-M1B-IMPLEMENTATION.md`,
   `docs/V0.2-OBSERVER-M1B-INSTALL-REVIEW.md`.
+- M1B teardown evidence now requires exactly one host/upstream/ports record,
+  checks all entries for failures, and accepts all existing successful producer
+  stop outcomes. A local Node-child regression is included; real observer
+  installation and host coverage remain unverified and unauthorized.

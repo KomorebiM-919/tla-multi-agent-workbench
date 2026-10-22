@@ -3,10 +3,11 @@ import { test } from 'node:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { validateObserverPlan, renderObserverPatch, OBSERVER_PLAN_SCHEMA, OBSERVER_PLUGIN_NAME, OBSERVER_VERSION, OBSERVER_FILE_COUNT } from '../tools/lib/observer-plan.mjs'
-import { buildHostArgs, validateSpec } from '../tools/experiment-runner.mjs'
+import { buildHostArgs, validateSpec, stopOwnedProcess } from '../tools/experiment-runner.mjs'
 import { evaluateMountProbe, MOUNT_PROBE_INPUT_SCHEMA } from '../tools/lib/observer-mount-probe.mjs'
 import { gateReceipt, runnerReceipt } from '../tools/lib/launch-receipts.mjs'
 import { validatePolicy } from './lib/reactive-model.mjs'
@@ -500,4 +501,131 @@ test('probe policy declares the three-response request budget under the existing
   assert.doesNotThrow(() => validatePolicy(policy))
   assert.equal(policy.modelRequests, 3)
   assert.ok(policy.modelRequests <= 40)
+})
+
+
+// Match stopOwnedProcess/runner output, not a second cleanup implementation.
+function cleanTeardown () {
+  return [
+    { role: 'host', how: 'tree-killed', descendants: [], descendantsProof: 'collected', survivors: [] },
+    { role: 'upstream', how: 'terminated', descendants: [], descendantsProof: 'skipped', survivors: [] },
+    { role: 'ports', gateFree: true, upstreamFree: true }
+  ]
+}
+
+function assertTeardown (teardown, status, code) {
+  const materials = createMaterials({ teardown, receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, status, JSON.stringify(report.checks.filter(entry => !entry.ok)))
+    if (code) assert.ok(report.checks.some(entry => entry.code === code && !entry.ok), code)
+    assert.equal(report.hostVerified, false)
+    assert.equal(report.coverage, 'unknown')
+    return report
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+}
+
+for (const role of ['host', 'upstream', 'ports']) {
+  test('teardown requires its own ' + role + ' record', () => {
+    assertTeardown(cleanTeardown().filter(entry => entry.role !== role), 'incomplete', 'runner-teardown-' + role)
+  })
+  for (const shape of ['identical', 'failure-last', 'failure-first']) {
+    test('duplicate ' + role + ' teardown is failed: ' + shape, () => {
+      const entries = cleanTeardown()
+      const duplicate = { ...entries.find(entry => entry.role === role) }
+      if (shape !== 'identical') {
+        if (role === 'ports') duplicate.gateFree = false
+        else { duplicate.how = 'descendants-survived'; duplicate.survivors = [4242] }
+      }
+      if (shape === 'failure-first') entries.unshift(duplicate)
+      else entries.push(duplicate)
+      const report = assertTeardown(entries, 'failed', 'runner-teardown-' + role)
+      if (shape !== 'identical') {
+        const code = role === 'ports' ? 'runner-ports-free' : 'runner-survivors-' + role
+        assert.ok(report.checks.some(entry => entry.code === code && !entry.ok))
+      }
+    })
+  }
+}
+
+for (const role of ['host', 'upstream']) {
+  for (const how of ['already-exited', 'terminated', 'tree-killed', 'killed']) {
+    test('producer cleanup success is accepted: ' + role + '/' + how, () => {
+      const entries = cleanTeardown()
+      entries.find(entry => entry.role === role).how = how
+      assertTeardown(entries, 'probe-passed')
+    })
+  }
+  for (const [how, status] of [['still-alive', 'failed'], ['descendants-survived', 'failed'], ['none', 'incomplete'], ['future-how', 'incomplete']]) {
+    test('non-success cleanup is not accepted: ' + role + '/' + how, () => {
+      const entries = cleanTeardown()
+      entries.find(entry => entry.role === role).how = how
+      assertTeardown(entries, status, 'runner-how-' + role)
+    })
+  }
+}
+
+test('teardown array order is immaterial', () => {
+  assertTeardown(cleanTeardown().reverse(), 'probe-passed')
+})
+
+for (const entry of [null, 7, {}, { role: 'other', how: 'still-alive' }]) {
+  test('uninterpretable teardown record blocks success: ' + JSON.stringify(entry), () => {
+    assertTeardown([...cleanTeardown(), entry], 'incomplete', 'runner-teardown-record')
+  })
+}
+
+for (const role of ['host', 'upstream']) {
+  test('non-array survivors are incomplete for ' + role, () => {
+    const entries = cleanTeardown()
+    entries.find(entry => entry.role === role).survivors = null
+    assertTeardown(entries, 'incomplete', 'runner-survivors-' + role)
+  })
+}
+
+for (const value of [undefined, null, 'true', 1]) {
+  test('port-free evidence requires booleans: ' + String(value), () => {
+    const entries = cleanTeardown()
+    entries.find(entry => entry.role === 'ports').upstreamFree = value
+    assertTeardown(entries, 'incomplete', 'runner-ports-free')
+  })
+}
+
+test('mount probe accepts the actual producer result for a stopped local child', { timeout: 10000 }, async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true })
+  try {
+    await once(child, 'spawn')
+    const result = await stopOwnedProcess(child, { descendants: false, graceMs: 1000, killMs: 1000 })
+    assert.ok(['terminated', 'tree-killed', 'killed'].includes(result.how), result.how)
+    assert.deepEqual(result.survivors, [])
+    const entries = cleanTeardown()
+    entries[1] = { role: 'upstream', ...result }
+    assertTeardown(entries, 'probe-passed')
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit')
+      child.kill('SIGKILL')
+      await exited
+    }
+  }
+})
+
+
+test('teardown CLI preserves passed/incomplete/failed exit codes', () => {
+  const duplicate = cleanTeardown()
+  duplicate.push({ role: 'ports', gateFree: false, upstreamFree: true })
+  for (const [teardown, status, exitCode] of [
+    [cleanTeardown(), 'probe-passed', 0],
+    [cleanTeardown().filter(entry => entry.role !== 'upstream'), 'incomplete', 1],
+    [duplicate, 'failed', 2]
+  ]) {
+    const materials = createMaterials({ teardown, receiptOrigin: 'local-runtime' })
+    try {
+      const input = join(materials.dir, 'input.json')
+      writeFileSync(input, JSON.stringify(inputFor(materials)))
+      const child = spawnSync(process.execPath, ['tools/check-observer-mount-probe.mjs', '--input', input, '--json'], { cwd: repo, encoding: 'utf8', timeout: 10000 })
+      assert.equal(child.status, exitCode, child.stderr)
+      assert.equal(JSON.parse(child.stdout).status, status)
+    } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+  }
 })
