@@ -542,3 +542,21 @@ across Git blob, fresh checkout, archive and manifest, then fake-loads/unloads
 only the assembled package. The fake load writes simulated records and checks
 production origin with a non-writing stub. It does not install anything. The M0
 and historical seven-file manifests remain frozen.
+
+### Phase B1-M1B install envelope and probe
+
+`node tests/v02-observer-m1b.test.mjs` covers the 12-file envelope, strict
+observer plan, default-off spec, host-arg wiring, synthetic mount-probe and
+failure deletion. It uses invented fixtures and never starts a host.
+
+`node tools/check-observer-m1b-package.mjs --repo .` builds the exact 12-file
+envelope in a temporary directory, checks the manifest bytes and Git blobs,
+rejects extra files, verifies the root package identity
+(`0.0.0-local` / 12 files / digest `dc68af45…`) and imports the entry without
+calling it. The package is not installed.
+
+`node tools/check-observer-mount-probe.mjs --input <json>` evaluates a synthetic
+probe report. It requires lifecycle, non-degraded origin, read/pwsh results,
+B0 binding, complete ledger and clean cleanup; missing evidence is `incomplete`
+and contradictory evidence is `failed`. It always emits `hostVerified=false`,
+`coverage=unknown`, `closed=false` and never upgrades a real acceptance state.

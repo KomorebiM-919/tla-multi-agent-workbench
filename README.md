@@ -318,3 +318,11 @@ M1A offline publication is fixed at `21729f6`. The
 [M1B approval packet](docs/V0.2-OBSERVER-M1B-APPROVAL.md) identifies remaining
 package-root, runtime identity and observer registry/wiring gaps. It is not yet
 ready for installation or one-run authorization; offline preparation comes first.
+
+M1B offline preparation is implemented in
+[the M1B implementation note](docs/V0.2-OBSERVER-M1B-IMPLEMENTATION.md) and
+[the install-review packet](docs/V0.2-OBSERVER-M1B-INSTALL-REVIEW.md). It adds a
+12-file envelope, a default-off supervised observer plan, gate-owned receipt-
+bound patch rendering, a synthetic mount-probe checker and a three-response
+probe fixture. The observer is not installed; `hostVerified=false`,
+`coverage=unknown`, `binding=unproven`; real-host authorization remains `0`.

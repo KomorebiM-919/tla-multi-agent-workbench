@@ -287,3 +287,10 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   root install envelope, exact instance identity, gate-owned observer config,
   bounded probe policy/checker and isolated install inventory. No real profile
   modification or host/model trial is authorized by preparation.
+
+- B1-M1B offline preparation is implemented: 12-file install envelope, root
+  package identity, default-off `observer` spec, gate-owned receipt-bound patch,
+  three-field B0 join and synthetic mount-probe checker. The package is not
+  installed; `hostVerified=false`, `coverage=unknown`, `binding=unproven`.
+  Materials: `docs/V0.2-OBSERVER-M1B-IMPLEMENTATION.md`,
+  `docs/V0.2-OBSERVER-M1B-INSTALL-REVIEW.md`.
