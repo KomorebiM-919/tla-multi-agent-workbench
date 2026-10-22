@@ -281,3 +281,9 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   source-compatible wrapper and isolated fake-loader/package tests under
   [M1 preparation](V0.2-OBSERVER-M1-PREPARATION.md). No actual loader or member
   coverage is verified; M1B installation and one-run probe remain unauthorized.
+
+- M1A offline package is reviewed/published at `21729f6`. Next complete the
+  [M1B offline wiring and approval packet](V0.2-OBSERVER-M1B-APPROVAL.md):
+  root install envelope, exact instance identity, gate-owned observer config,
+  bounded probe policy/checker and isolated install inventory. No real profile
+  modification or host/model trial is authorized by preparation.

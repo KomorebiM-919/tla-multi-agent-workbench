@@ -313,3 +313,8 @@ B1-M0 offline publication is fixed at `61ba0ab`. The next work is
 [M1A loader-wrapper preparation](docs/V0.2-OBSERVER-M1-PREPARATION.md),
 design only: the M0 controller return is not a loader disposer. Real installation
 and the proposed minimal host trial still require separate authorization.
+
+M1A offline publication is fixed at `21729f6`. The
+[M1B approval packet](docs/V0.2-OBSERVER-M1B-APPROVAL.md) identifies remaining
+package-root, runtime identity and observer registry/wiring gaps. It is not yet
+ready for installation or one-run authorization; offline preparation comes first.
