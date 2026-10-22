@@ -64,7 +64,6 @@ function verifyEntrySource (repo, base, entry) {
   if (bytes.length !== entry.bytes) fail('SOURCE_BYTES', 'source byte count changed: ' + entry.source)
   if (sha256(bytes) !== entry.sha256) fail('SOURCE_HASH', 'source hash changed: ' + entry.source)
   if (entry.blob !== null && entry.blob !== undefined && !/^[0-9a-f]{40}$/u.test(entry.blob)) fail('SOURCE_BLOB', 'invalid blob id: ' + entry.source)
-  if (entry.path === 'package.json') return
   try {
     const actual = git(repo, ['rev-parse', base + ':' + entry.source]).trim()
     if (actual !== entry.blob) fail('SOURCE_BASE', 'manifest blob does not match sourceBase: ' + entry.source)
@@ -113,7 +112,6 @@ function verifyFreshCheckout (repo, base, manifest) {
     execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', fresh, base], { stdio: ['ignore', 'pipe', 'pipe'] })
     added = true
     for (const entry of manifest.files) {
-      if (entry.path === 'package.json') continue
       const freshPath = join(fresh, entry.source)
       if (!existsSync(freshPath)) fail('FRESH_CHECKOUT', 'fresh checkout is missing ' + entry.source)
       const bytes = readFileSync(freshPath)
@@ -128,6 +126,27 @@ function verifyFreshCheckout (repo, base, manifest) {
   }
 }
 
+function verifyArchive (repo, base, manifest) {
+  const dir = mkdtempSync(join(tmpdir(), 'tla-m1b-archive-'))
+  const tar = join(dir, 'source.tar')
+  try {
+    const paths = manifest.files.map((entry) => entry.source)
+    execFileSync('git', ['-C', repo, 'archive', '--format=tar', '--output=' + tar, base, '--', ...paths], { stdio: ['ignore', 'pipe', 'pipe'] })
+    execFileSync('tar', ['-xf', tar, '-C', dir], { stdio: ['ignore', 'pipe', 'pipe'] })
+    for (const entry of manifest.files) {
+      const archived = join(dir, entry.source)
+      if (!existsSync(archived)) fail('ARCHIVE', 'archive is missing ' + entry.source)
+      const bytes = readFileSync(archived)
+      if (bytes.length !== entry.bytes || sha256(bytes) !== entry.sha256) fail('ARCHIVE', 'archive differs from manifest: ' + entry.source)
+    }
+  } catch (error) {
+    if (error instanceof PackageError) throw error
+    fail('ARCHIVE', 'archive could not be verified: ' + String(error.message))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 export function checkM1BPackage (options = {}) {
   const repo = resolve(options.repo ?? process.cwd())
   const manifest = loadManifest(repo)
@@ -136,6 +155,7 @@ export function checkM1BPackage (options = {}) {
   if (!/^[0-9a-f]{40}$/u.test(parsedBase)) fail('SOURCE_BASE', 'sourceBase is not a commit')
   for (const entry of manifest.files) verifyEntrySource(repo, base, entry)
   verifyFreshCheckout(repo, base, manifest)
+  verifyArchive(repo, base, manifest)
 
   const out = options.out === undefined
     ? mkdtempSync(join(tmpdir(), 'tla-m1b-envelope-'))

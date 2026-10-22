@@ -1,7 +1,7 @@
 {
   "schema": "tla.observer-m1b-package/v1",
   "candidateSet": "b1-observer-m1b",
-  "sourceBase": "05920ebdc075c68fde3e0175676c8bd1daba8ef0",
+  "sourceBase": "9cb81bbf760df94a4d3847701e519a72a92ff7a6",
   "envelope": {
     "rootPackage": "package.json",
     "entry": "orchestration/tool-observer/host-plugin/index.js",

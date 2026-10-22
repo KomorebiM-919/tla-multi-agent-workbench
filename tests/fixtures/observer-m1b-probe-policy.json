@@ -1,6 +1,7 @@
 {
   "schema": "tla.reactive-model/v2",
   "description": "Offline M1B mount-probe policy: one captain reads probe.txt, runs one harmless foreground pwsh marker, then stops. It is a three-response proposal, not a real host policy.",
+  "modelRequests": 3,
   "rules": [
     {
       "name": "captain-read-probe",
