@@ -1,0 +1,47 @@
+{
+  "schema": "tla.reactive-model/v2",
+  "description": "Offline M1B mount-probe policy: one captain reads probe.txt, runs one harmless foreground pwsh marker, then stops. It is a three-response proposal, not a real host policy.",
+  "rules": [
+    {
+      "name": "captain-read-probe",
+      "role": "captain",
+      "state": "new",
+      "match": { "noToolResult": true },
+      "maxUses": 1,
+      "next": "read-issued",
+      "reply": {
+        "toolCalls": [
+          { "name": "read", "input": { "file_path": "probe.txt" } }
+        ]
+      }
+    },
+    {
+      "name": "captain-pwsh-marker",
+      "role": "captain",
+      "state": "read-issued",
+      "match": { "tool": "read", "isError": false },
+      "maxUses": 1,
+      "next": "pwsh-issued",
+      "reply": {
+        "toolCalls": [
+          {
+            "name": "pwsh",
+            "input": {
+              "command": "Write-Output 'M1B-OBSERVER-PROBE'",
+              "description": "Emit the M1B probe marker"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "captain-stop",
+      "role": "captain",
+      "state": "pwsh-issued",
+      "match": { "tool": "pwsh", "isError": false },
+      "maxUses": 1,
+      "next": "done",
+      "reply": { "text": "M1B probe complete." }
+    }
+  ]
+}

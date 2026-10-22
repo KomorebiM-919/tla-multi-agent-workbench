@@ -35,11 +35,12 @@
 //        4 = 运行中保护失效（已撤销租约并终止宿主）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, closeSync, openSync, readFileSync, mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, openSync, readFileSync, mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { createBudgetGate } from '../orchestration/gate/gate.mjs';
+import { observerPlanPaths, readObserverPlan, renderObserverPatch } from './lib/observer-plan.mjs';
 import {
   checkBaseUrl,
   checkProtectionHeartbeat,
@@ -47,6 +48,7 @@ import {
   judgePluginInstances,
   resolveInstancePackages,
   REVIEWED_PLUGIN_NAMES,
+  REVIEWED_PLUGIN_EVIDENCE,
   verifyInstalledPlugin,
   formatDecision,
   parseDumpConfigStrict,
@@ -142,6 +144,7 @@ export function parseArgs(argv) {
       case '--receipt-runner-id': options.receiptRunnerId = next('receipt-runner-id'); break;
       case '--receipt-launch-id': options.receiptLaunchId = next('receipt-launch-id'); break;
       case '--receipt-file': options.receiptFile = next('receipt-file'); break;
+      case '--observer-plan': options.observerPlan = next('observer-plan'); break;
       default: throw new UsageError('unknown argument: ' + arg);
     }
   }
@@ -578,6 +581,46 @@ async function main() {
     }
   }
 
+  let observerPatchPath = null;
+  if (options.observerPlan !== undefined) {
+    if (options.receiptFile === undefined) {
+      fail('--observer-plan requires both B0 launch receipts');
+      return;
+    }
+    const planPath = resolve(options.observerPlan);
+    if (!receiptPathInside(planPath, runDir)) {
+      fail('observer plan must be inside the fresh run directory');
+      return;
+    }
+    try {
+      const plan = readObserverPlan(planPath);
+      const reviewed = REVIEWED_PLUGIN_EVIDENCE['tla-tool-observer'];
+      if (reviewed === undefined || plan.version !== reviewed.version || plan.fileCount !== reviewed.fileCount || plan.digest !== reviewed.buildDigest) {
+        fail('observer plan does not match the reviewed 12-file package identity');
+        return;
+      }
+      const paths = observerPlanPaths(runDir);
+      if (existsSync(paths.observerDir)) {
+        fail('observer run directory already exists; it must be fresh');
+        return;
+      }
+      mkdirSync(paths.observerDir);
+      const rendered = renderObserverPatch(plan, {
+        runDir,
+        runnerRunId: options.receiptRunnerId,
+        launchId: options.receiptLaunchId,
+        gateRunId: options.runId,
+        budgetRunId: options.runId
+      });
+      writeFileSync(paths.patchPath, rendered.patch, 'utf8');
+      options.patches.push(paths.patchPath);
+      observerPatchPath = paths.patchPath;
+    } catch (error) {
+      fail('observer plan could not be rendered: ' + String(error instanceof Error ? error.message : error));
+      return;
+    }
+  }
+
   const gateLog = options.gateLog || join(runDir, 'gate-events.jsonl');
   const summaryPath = options.summary || join(runDir, 'gate-summary.json');
   const record = {
@@ -589,6 +632,7 @@ async function main() {
     timeoutMs: options.timeoutMs,
     heartbeatMaxAgeMs: options.heartbeatMaxAgeMs,
     leaseTtlMs: options.leaseTtlMs,
+    observer: observerPatchPath === null ? null : { patchPath: observerPatchPath }
   };
 
   const patchChecks = options.patches.map((patch) => ({ name: basename(patch), ...sha256OfFile(patch) }));

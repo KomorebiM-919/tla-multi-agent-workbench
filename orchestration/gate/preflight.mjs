@@ -108,6 +108,18 @@ export const REVIEWED_PLUGIN_EVIDENCE = Object.freeze({
       '真正的模型请求由它通过 ctx.subagents 派生的子代理在宿主 AgentLoop 内发起，因此仍走 agent/request 与同一道闸门',
     ]),
   }),
+  'tla-tool-observer': Object.freeze({
+    version: '0.0.0-local',
+    buildDigest: 'dc68af4508722c8452e84f4538dc215126c649771ea49d479f10be948e16f619',
+    fileCount: 12,
+    bundlePatch: null,
+    reviewedFor: '离线工具观察插件（M1B 独立安装 envelope；默认关闭，仅由本次 run overlay insert）',
+    evidence: Object.freeze([
+      '入口与组合根只读显式注入的 ctx/工厂，不自动发现宿主、不 import DSH/Cordis、不安装或写 profile',
+      'writer 只写本次 run 的 trace/lifecycle 子目录；生命周期与有界清理在离线测试中覆盖',
+      '该身份是本地完整性核对，不是运行时代码审计或真实挂载/成员覆盖证明；hostVerified 仍为 false',
+    ]),
+  }),
 });
 // 升级到未登记版本时不能自动放行：名字在表里也要按登记的版本判断。
 export const REVIEWED_PLUGIN_NAMES = new Set(Object.keys(REVIEWED_PLUGIN_EVIDENCE));

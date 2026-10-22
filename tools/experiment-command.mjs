@@ -23,6 +23,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseLauncherArgs, UsageError } from './gated-run.mjs';
 import { inspectEffectiveConfig } from './inspect-effective-config.mjs';
+import { readObserverPlan } from './lib/observer-plan.mjs';
 import { renderOverlay } from './overlay-template.mjs';
 import { preflightSpec } from './experiment-runner.mjs';
 import { runStaticChecks } from './static-preflight.mjs';
@@ -82,6 +83,8 @@ const KNOWN = new Set([
   '--pin-source',
   '--pin-fixtures',
   '--evidence-receipts',
+  '--observer-plan',
+  '--observer-plan',
   '--print',
   '--json',
 ]);
@@ -117,6 +120,7 @@ function readLocalArgs(argv) {
       case '--pin-source': spec.pinned = { ...(spec.pinned ?? {}), sourceSha: next() }; break;
       case '--pin-fixtures': spec.pinned = { ...(spec.pinned ?? {}), fixturesSha: next() }; break;
       case '--evidence-receipts': spec.evidenceReceipts = true; break;
+      case '--observer-plan': spec.observer = readObserverPlan(next()); break;
       case '--print': spec.print = true; break;
       case '--json': spec.json = true; break;
       default: throw new Error('unhandled argument: ' + arg);
@@ -155,6 +159,10 @@ export function buildCommand(spec, build = {}) {
     else if (PLACEHOLDER_PATTERN.test(String(value))) problems.push(name + ' still holds a placeholder: ' + value);
   };
   const supervised = spec.fakeServerPath !== undefined && spec.policyPath !== undefined;
+  if (spec.observer !== undefined) {
+    if (!supervised) problems.push('--observer-plan requires the supervised runner; a direct launcher has no B0 receipt pair');
+    if (spec.evidenceReceipts !== true) problems.push('--observer-plan requires --evidence-receipts');
+  }
   const overlayPath = build.overlayPath !== undefined
     ? resolve(build.overlayPath)
     : (spec.overlay === undefined ? undefined : resolve(spec.overlay));
@@ -371,6 +379,9 @@ export function supervisorSpecFor(spec) {
     if (spec[name] !== undefined) derived[name] = spec[name];
   }
   if (spec.evidenceReceipts === true) derived.evidenceReceipts = true;
+  if (spec.observer !== undefined) {
+    derived.observer = { ...spec.observer, packageRoot: resolve(spec.observer.packageRoot) };
+  }
   if (spec.pinned !== undefined) {
     // The two external files are part of what executes, so the spec carries their bytes and
     // the runner compares them instead of merely recording a hash after the fact.

@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { probeUpstreamHealth, describeHealth } from './health-probe.mjs';
 import { renderOverlay } from './overlay-template.mjs';
 import { newLaunchId, runnerReceipt, writeReceiptExclusive } from './lib/launch-receipts.mjs';
+import { observerPlanPaths, validateObserverPlan } from './lib/observer-plan.mjs';
 
 // Every default path is resolved from this module, never from the caller's working
 // directory: the runner must launch the launcher that lives beside it even when it is
@@ -124,6 +125,15 @@ export function validateSpec(spec) {
   }
   if (spec.evidenceReceipts === true && spec.hostCommand !== undefined) {
     problems.push('evidenceReceipts requires the real gated launcher; custom hostCommand cannot produce a gate receipt');
+  }
+  if (spec.observer !== undefined) {
+    if (spec.evidenceReceipts !== true) problems.push('observer requires evidenceReceipts=true so both launch receipts exist');
+    if (spec.hostCommand !== undefined) problems.push('observer requires the standard gated launcher; custom hostCommand cannot render the observer patch');
+    try {
+      validateObserverPlan(spec.observer);
+    } catch (error) {
+      problems.push('observer is invalid: ' + String(error instanceof Error ? error.message : error));
+    }
   }
   if (spec.projectCwd !== undefined && !existsSync(resolve(spec.projectCwd))) problems.push('projectCwd does not exist: ' + String(spec.projectCwd));
   if (spec.runDir !== undefined && existsSync(resolve(spec.runDir))) {
@@ -725,6 +735,14 @@ export async function runExperiment(spec, options = {}) {
         };
       })()
     : null;
+  const observerPlan = spec.observer === undefined
+    ? null
+    : (() => {
+        const plan = validateObserverPlan(spec.observer);
+        const paths = observerPlanPaths(runDir);
+        writeFileSync(paths.planPath, JSON.stringify(plan, null, 2) + '\n', 'utf8');
+        return { plan, paths };
+      })();
   const overlayText = renderOverlay({
     gateUrl: endpoints.gateUrl,
     runDir,
@@ -758,6 +776,12 @@ export async function runExperiment(spec, options = {}) {
       runnerPath: receiptPlan.runnerPath,
       gatePath: receiptPlan.gatePath,
       runnerState: null
+    },
+    observer: observerPlan === null ? null : {
+      schema: observerPlan.plan.schema,
+      planPath: observerPlan.paths.planPath,
+      observerDir: observerPlan.paths.observerDir,
+      patchPath: observerPlan.paths.patchPath
     },
     pinned: spec.pinned === undefined ? null : spec.pinned,
     pinnedEvidence: null,
@@ -915,7 +939,7 @@ export async function runExperiment(spec, options = {}) {
   }
 
   const hostCommand = spec.hostCommand === undefined ? process.execPath : spec.hostCommand;
-  const hostArgv = spec.hostCommand === undefined ? buildHostArgs(spec, endpoints, runDir, overlayPath, effective, receiptPlan) : spec.hostArgs.slice();
+  const hostArgv = spec.hostCommand === undefined ? buildHostArgs(spec, endpoints, runDir, overlayPath, effective, receiptPlan, observerPlan === null ? null : observerPlan.paths.planPath) : spec.hostArgs.slice();
   summary.hostArgs = hostArgv;
   // The summary must describe the argv the host really received, not the intent behind it.
   if (spec.hostCommand === undefined) {
@@ -940,6 +964,7 @@ export async function runExperiment(spec, options = {}) {
       expectedArgs['--receipt-launch-id'] = receiptPlan.launchId;
       expectedArgs['--receipt-file'] = receiptPlan.gatePath;
     }
+    if (observerPlan !== null) expectedArgs['--observer-plan'] = observerPlan.paths.planPath;
     const agreement = verifyInvocationArgs(hostArgv, expectedArgs);
     // A spec field that never reaches the launcher is the same bug as a knob that is
     // recorded but not passed on, so the required files are checked one by one.
@@ -1022,7 +1047,7 @@ function buildHostEnv(spec) {
   return env;
 }
 
-export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective, receiptPlan = null) {
+export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective, receiptPlan = null, observerPlanPath = null) {
   const args = [
     spec.launcherPath === undefined ? join(TOOLS_DIR, 'gated-run.mjs') : resolve(spec.launcherPath),
     '--profile', spec.profile,
@@ -1050,6 +1075,7 @@ export function buildHostArgs(spec, endpoints, runDir, overlayPath, effective, r
     args.push('--receipt-launch-id', receiptPlan.launchId);
     args.push('--receipt-file', receiptPlan.gatePath);
   }
+  if (observerPlanPath !== null) args.push('--observer-plan', observerPlanPath);
   args.push('--prompt', spec.prompt === undefined ? 'supervised experiment' : spec.prompt);
   return args;
 }

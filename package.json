@@ -1,0 +1,11 @@
+{
+  "name": "tla-tool-observer",
+  "version": "0.0.0-local",
+  "private": true,
+  "type": "module",
+  "description": "Offline tool observation package for the TLA V0.2 experiment.",
+  "main": "orchestration/tool-observer/host-plugin/index.js",
+  "exports": {
+    ".": "./orchestration/tool-observer/host-plugin/index.js"
+  }
+}
