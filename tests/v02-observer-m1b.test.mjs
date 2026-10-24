@@ -133,6 +133,7 @@ function createMaterials (overrides = {}) {
   writeFileSync(paths.runnerSummary, JSON.stringify({
     runId: overrides.runnerRunId ?? identity.runnerRunId,
     status: overrides.runnerStatus ?? 'completed',
+    treeProof: Object.hasOwn(overrides, 'treeProof') ? overrides.treeProof : 'tree-killed',
     hostStarted: overrides.runnerHostStarted ?? true,
     teardown: overrides.teardown ?? [
       { role: 'host', how: 'tree-killed', descendants: [], descendantsProof: 'collected', survivors: [] },
@@ -550,10 +551,10 @@ for (const role of ['host', 'upstream', 'ports']) {
 
 for (const role of ['host', 'upstream']) {
   for (const how of ['already-exited', 'terminated', 'tree-killed', 'killed']) {
-    test('producer cleanup success is accepted: ' + role + '/' + how, () => {
+    test('producer cleanup outcome preserves role-specific proof: ' + role + '/' + how, () => {
       const entries = cleanTeardown()
       entries.find(entry => entry.role === role).how = how
-      assertTeardown(entries, 'probe-passed')
+      assertTeardown(entries, role === 'host' && how === 'already-exited' ? 'incomplete' : 'probe-passed')
     })
   }
   for (const [how, status] of [['still-alive', 'failed'], ['descendants-survived', 'failed'], ['none', 'incomplete'], ['future-how', 'incomplete']]) {
@@ -628,4 +629,74 @@ test('teardown CLI preserves passed/incomplete/failed exit codes', () => {
       assert.equal(JSON.parse(child.stdout).status, status)
     } finally { rmSync(materials.dir, { recursive: true, force: true }) }
   }
+})
+
+
+function assertHostTree (changes, treeProof, status, code) {
+  const teardown = cleanTeardown()
+  Object.assign(teardown[0], changes)
+  const materials = createMaterials({ teardown, treeProof, receiptOrigin: 'local-runtime' })
+  try {
+    const report = evaluateMountProbe(inputFor(materials))
+    assert.equal(report.status, status, JSON.stringify(report.checks.filter(entry => !entry.ok)))
+    if (code) assert.ok(report.checks.some(entry => entry.code === code && !entry.ok), code)
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
+}
+
+test('an already-exited host cannot prove its descendants even with no survivors', () => {
+  assertHostTree({ how: 'already-exited', descendantsProof: 'skipped' }, 'exited-before-teardown', 'incomplete', 'runner-host-descendants-proof')
+})
+
+test('tree-killed summary cannot replace unavailable host descendant evidence', () => {
+  assertHostTree({ descendantsProof: 'unavailable' }, 'tree-killed', 'incomplete', 'runner-host-descendants-proof')
+})
+
+for (const proof of [undefined, null, 'skipped', 'unavailable', 7, 'future-proof']) {
+  test('host descendant proof must be collected: ' + String(proof), () => {
+    assertHostTree({ descendantsProof: proof }, 'tree-killed', 'incomplete', 'runner-host-descendants-proof')
+  })
+}
+
+for (const treeProof of [undefined, null, 'exited-before-teardown', 'descendants-unverified', 'cleanup-failed', 7, 'future-proof']) {
+  test('unknown or missing tree summary cannot pass: ' + String(treeProof), () => {
+    assertHostTree({}, treeProof, 'incomplete', 'runner-tree-proof')
+  })
+}
+
+for (const descendants of [undefined, null, 'none', [0], [-1], [1.5], ['42'], [42, 42]]) {
+  test('host descendant identities must be a valid snapshot: ' + JSON.stringify(descendants), () => {
+    assertHostTree({ descendants }, 'tree-killed', 'incomplete', 'runner-host-descendants')
+  })
+}
+
+test('a collected non-empty host snapshot joins its descendant cleanup summary', () => {
+  assertHostTree({ how: 'terminated', descendants: [4242], descendantsProof: 'collected' }, 'descendants-killed', 'probe-passed')
+})
+
+test('a known tree summary cannot contradict the collected snapshot', () => {
+  assertHostTree({ descendants: [4242] }, 'tree-killed', 'failed', 'runner-tree-proof')
+  assertHostTree({ descendants: [] }, 'descendants-killed', 'failed', 'runner-tree-proof')
+})
+
+test('failed cleanup still wins over unavailable host descendant evidence', () => {
+  assertHostTree({ how: 'descendants-survived', descendantsProof: 'unavailable', survivors: [4242] }, 'descendants-unverified', 'failed')
+})
+
+test('upstream single-process cleanup needs no host tree proof of its own', () => {
+  const teardown = cleanTeardown()
+  Object.assign(teardown[1], { how: 'already-exited', descendants: [], descendantsProof: 'skipped' })
+  assertTeardown(teardown, 'probe-passed')
+})
+
+test('CLI reports unavailable host descendants as incomplete', () => {
+  const teardown = cleanTeardown()
+  teardown[0].descendantsProof = 'unavailable'
+  const materials = createMaterials({ teardown, receiptOrigin: 'local-runtime' })
+  try {
+    const input = join(materials.dir, 'input.json')
+    writeFileSync(input, JSON.stringify(inputFor(materials)))
+    const child = spawnSync(process.execPath, ['tools/check-observer-mount-probe.mjs', '--input', input, '--json'], { cwd: repo, encoding: 'utf8', timeout: 10000 })
+    assert.equal(child.status, 1, child.stderr)
+    assert.equal(JSON.parse(child.stdout).status, 'incomplete')
+  } finally { rmSync(materials.dir, { recursive: true, force: true }) }
 })

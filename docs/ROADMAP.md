@@ -298,3 +298,7 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   checks all entries for failures, and accepts all existing successful producer
   stop outcomes. A local Node-child regression is included; real observer
   installation and host coverage remain unverified and unauthorized.
+- M1B host teardown now requires collected descendant evidence and a matching
+  treeProof. Unavailable enumeration remains descendants-unverified; strict
+  tree-proof mode rejects completion without known cleanup proof. Upstream
+  keeps its single-process semantics. No real-host acceptance is claimed.

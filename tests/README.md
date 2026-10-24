@@ -574,9 +574,16 @@ descendants or a held port, and pwsh `exitCode=0` with a terminating signal.
 Missing teardown or gate decision records are incomplete; invalid survivor types
 are incomplete; each failure condition is a separate fixture.
 
-The M1B suite now has 67 cases, including exactly-one host/upstream/ports
+The M1B suite now has 95 cases, including exactly-one host/upstream/ports
 records, duplicate failure evidence in either order, legitimate producer
 cleanup outcomes (including terminated/killed), missing/invalid fields and
 a local Node child stopped by stopOwnedProcess. This does not start DSH.
 Missing cleanup evidence is incomplete; repeated roles or surviving/held
 resources are failed.
+
+Host cleanup requires collected descendant identities and a matching runner
+treeProof; host already-exited and unavailable enumeration are incomplete.
+Upstream remains a single-process case. The 131-check runner suite forces the
+unavailable-enumeration path with local-child/builtin-module instrumentation;
+it does not start DSH or add a production injection option. See implementation
+correction round 5 for the new conservative treeProof values and scope.

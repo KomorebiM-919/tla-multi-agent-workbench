@@ -297,9 +297,20 @@ export function evaluateMountProbe (input, { readFile = readMaterial } = {}) {
         const badHow = entry.how === 'still-alive' || entry.how === 'descendants-survived'
         // stopOwnedProcess also succeeds after SIGTERM or its SIGKILL fallback.
         // These are local cleanup outcomes, not proof of descendant coverage.
-        const knownHow = ['already-exited', 'terminated', 'tree-killed', 'killed'].includes(entry.how)
+        const knownHow = (entry.role === 'upstream' && entry.how === 'already-exited') || ['terminated', 'tree-killed', 'killed'].includes(entry.how)
         check(checks, 'runner-how-' + entry.role, knownHow, 'teardown[' + index + ']: ' + entry.role + ' teardown how=' + String(entry.how))
         if (badHow) contradicted = true
+        if (entry.role === 'host') {
+          const collected = entry.descendantsProof === 'collected' && entry.how !== 'already-exited'
+          check(checks, 'runner-host-descendants-proof', collected, 'teardown[' + index + ']: host descendants must have been collected before cleanup')
+          const descendants = entry.descendants
+          const validSnapshot = Array.isArray(descendants) && descendants.every(pid => Number.isSafeInteger(pid) && pid > 0) && new Set(descendants).size === descendants.length
+          check(checks, 'runner-host-descendants', validSnapshot, 'teardown[' + index + ']: host descendants must be a unique array of positive safe-integer pids')
+          const expected = validSnapshot && descendants.length > 0 ? 'descendants-killed' : 'tree-killed'
+          const knownProof = ['tree-killed', 'descendants-killed'].includes(runnerSummary.treeProof)
+          check(checks, 'runner-tree-proof', knownProof && collected && validSnapshot && runnerSummary.treeProof === expected, 'runner treeProof must agree with the collected host snapshot; got ' + String(runnerSummary.treeProof))
+          if (knownProof && collected && validSnapshot && runnerSummary.treeProof !== expected) contradicted = true
+        }
       }
     }
     const eventIds = []

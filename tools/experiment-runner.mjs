@@ -831,9 +831,9 @@ export async function runExperiment(spec, options = {}) {
         // "already-exited" means the child ended on its own before we could kill its tree. We
         // cannot enumerate the descendants of a dead pid without platform support, so say so.
         if (result.how === 'already-exited') summary.treeProof = 'exited-before-teardown';
-        else if (result.descendantsProof === 'collected') {
-          summary.treeProof = result.descendants.length > 0 ? 'descendants-killed' : 'tree-killed';
-        } else summary.treeProof = 'tree-killed';
+        else if (result.descendantsProof !== 'collected') summary.treeProof = 'descendants-unverified';
+        else if (result.survivors.length > 0 || !['terminated', 'tree-killed', 'killed'].includes(result.how)) summary.treeProof = 'cleanup-failed';
+        else summary.treeProof = result.descendants.length > 0 ? 'descendants-killed' : 'tree-killed';
       }
     }
     const gateFree = await waitPortFree(endpoints.gatePort);
@@ -850,9 +850,9 @@ export async function runExperiment(spec, options = {}) {
         summary.reason = (summary.reason === null ? '' : summary.reason + '; ') + 'a port owned by this experiment is still accepting connections after cleanup: ' + stuck;
       }
     }
-    if (spec.requireTreeProof === true && summary.treeProof === 'exited-before-teardown' && summary.status === 'completed') {
+    if (spec.requireTreeProof === true && !['tree-killed', 'descendants-killed'].includes(summary.treeProof) && summary.status === 'completed') {
       summary.status = 'cleanup-anomaly';
-      summary.reason = 'the host exited before teardown, so its descendants cannot be proven gone';
+      summary.reason = 'the host process tree could not be verified: ' + String(summary.treeProof);
     }
     summary.finishedAt = nowIso();
     writeFileSync(join(workDir, 'runner-' + endpoints.runId + '.json'), JSON.stringify(summary, null, 2) + '\n', 'utf8');

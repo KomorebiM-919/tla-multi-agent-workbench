@@ -6,7 +6,8 @@
  *
  * No DSH host is started and no external model is contacted.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import childProcess, { spawn, spawnSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -364,6 +365,45 @@ writeFileSync(standinPolicy, '{"rules":[]}\n', 'utf8');
   }
   check('the grandchild did not survive the supervisor', grandchildPid > 0 && !pidAlive(grandchildPid), String(grandchildPid));
   if (grandchildPid > 0 && pidAlive(grandchildPid)) spawnSync('taskkill', ['/PID', String(grandchildPid), '/T', '/F'], { encoding: 'utf8' });
+}
+
+// 15d. Force an unavailable process-table probe without changing production APIs.
+// Real local children still spawn and stop. Clearing the test host's exitCode
+// after its exit event forces the teardown-result path, simulating a race; it
+// is not a claim about normal OS delivery or a real DSH execution.
+for (const required of [false, true]) {
+  const originalSpawn = childProcess.spawn;
+  const originalSpawnSync = childProcess.spawnSync;
+  let probesBlocked = 0;
+  childProcess.spawnSync = (command, args, options) => {
+    if (command === 'powershell.exe' && args?.some(arg => String(arg).includes('Get-CimInstance Win32_Process'))) {
+      probesBlocked += 1;
+      return { status: 1, signal: null };
+    }
+    return originalSpawnSync(command, args, options);
+  };
+  childProcess.spawn = (...args) => {
+    const child = originalSpawn(...args);
+    if (args[1]?.includes(join(scripts, 'host.mjs'))) child.once('exit', () => { child.exitCode = null; });
+    return child;
+  };
+  syncBuiltinESMExports();
+  try {
+    const s = await spec({ requireTreeProof: required });
+    const summary = await runExperiment(s, { graceMs: 100, killMs: 100 });
+    const host = summary.teardown.find(entry => entry.role === 'host');
+    check('unavailable enumeration is exercised (' + required + ')', process.platform !== 'win32' || probesBlocked > 0, String(probesBlocked));
+    check('the raw unavailable proof is preserved (' + required + ')', host?.descendantsProof === 'unavailable', JSON.stringify(host));
+    check('the summary does not upgrade unavailable proof (' + required + ')', summary.treeProof === 'descendants-unverified', String(summary.treeProof));
+    check('tree-proof requirement controls completed status (' + required + ')', summary.status === (required ? 'cleanup-anomaly' : 'completed'), summary.status);
+    check('missing evidence does not invent a primary execution failure (' + required + ')', summary.primaryFailure === null, JSON.stringify(summary.primaryFailure));
+    check('local children are gone after unavailable enumeration (' + required + ')', summary.owned.every(entry => entry.pid === null || !pidAlive(entry.pid)));
+    check('ports are free after unavailable enumeration (' + required + ')', (await portFree(s.gatePort)) && (await portFree(s.upstreamPort)));
+  } finally {
+    childProcess.spawn = originalSpawn;
+    childProcess.spawnSync = originalSpawnSync;
+    syncBuiltinESMExports();
+  }
 }
 
 // 16. an exception mid-run still tears the run down
