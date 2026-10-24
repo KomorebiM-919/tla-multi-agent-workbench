@@ -60,3 +60,7 @@ orchestration/interceptor-plugin/** -text
 /tools/lib/launch-receipts.mjs text eol=lf
 /tools/lib/trace-output.mjs text eol=lf
 /tools/inspect-tool-trace.mjs text eol=lf
+
+# This handoff manifest hashes physical LF bytes, including autocrlf checkouts.
+/docs/handoffs/v0.2-m1b-release-prep-2026-10-24/README.md text eol=lf
+/docs/handoffs/v0.2-m1b-release-prep-2026-10-24/MANIFEST.json text eol=lf

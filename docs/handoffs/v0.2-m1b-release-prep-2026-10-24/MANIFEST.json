@@ -1,0 +1,91 @@
+{
+  "schema": "tla.m1b-release-preparation/v1",
+  "date": "2026-10-24",
+  "status": "offline-preparation-only",
+  "reviewedCodeTip": "eafffeab793661d7d7e0fe0c5dfa794f5139738a",
+  "packageSourceBase": "9cb81bbf760df94a4d3847701e519a72a92ff7a6",
+  "packageDigest": "dc68af4508722c8452e84f4538dc215126c649771ea49d479f10be948e16f619",
+  "candidateRange": {
+    "base": "21729f63d9a1c09234a96d1d958b94d6b75d7af4",
+    "tip": "eafffeab793661d7d7e0fe0c5dfa794f5139738a",
+    "commitCount": 9,
+    "commits": [
+      {
+        "sha": "05920ebdc075c68fde3e0175676c8bd1daba8ef0",
+        "subject": "docs: prepare M1B install scope and supervised wiring contract"
+      },
+      {
+        "sha": "6c20b4e39740c88c096b596188f9ac5cbe8fe419",
+        "subject": "feat: add M1B observer envelope and mount probe"
+      },
+      {
+        "sha": "3979febb6e9fd3141a9baae758b80dd81bb21ca4",
+        "subject": "docs: record M1B offline envelope and approval packet"
+      },
+      {
+        "sha": "9cb81bbf760df94a4d3847701e519a72a92ff7a6",
+        "subject": "fix(package): pin envelope root package line endings"
+      },
+      {
+        "sha": "fc583aac0934bef8826828353931fc3f7ad87a59",
+        "subject": "fix: consume real mount-probe evidence and pin M1B envelope"
+      },
+      {
+        "sha": "ef1381e51110ddda3523d77d9c5a41b3ca889912",
+        "subject": "fix: reject incomplete mount-probe evidence"
+      },
+      {
+        "sha": "d05e9c088df4977f444740fd349ba8878deeee10",
+        "subject": "fix: require success evidence in mount probe"
+      },
+      {
+        "sha": "b4e9cb6c40ea4a7fba9a6e690030338c691ef3b7",
+        "subject": "fix: validate complete runner teardown evidence"
+      },
+      {
+        "sha": "eafffeab793661d7d7e0fe0c5dfa794f5139738a",
+        "subject": "fix: preserve unverified host descendant evidence"
+      }
+    ]
+  },
+  "remoteObservation": {
+    "method": "unauthenticated public GitHub API; normalized fields, not raw response archive",
+    "repository": "https://github.com/KomorebiM-919/tla-multi-agent-workbench",
+    "branches": {
+      "fix/v0.2-core-acceptance": "21729f63d9a1c09234a96d1d958b94d6b75d7af4",
+      "feat/v0.2-component-reuse": "518979508f1838fe07342d0f4700d2e6f9477a7b",
+      "main": "2f019920c8667378065fee947eeaa8636ca49bf4"
+    },
+    "allStatePullRequestCounts": {
+      "fix/v0.2-core-acceptance": 0,
+      "feat/v0.2-component-reuse": 0
+    },
+    "mustRefreshBeforePublication": true
+  },
+  "relationships": {
+    "mergeBaseWithFeature": "afead09bdbc996b4d428dbf95fc01dcf002f3e1f",
+    "featureOnly": 9,
+    "codeOnlyVsFeature": 52,
+    "mainOnly": 0,
+    "codeOnlyVsMain": 192
+  },
+  "authorization": {
+    "push": false,
+    "installation": false,
+    "hostStartsRemaining": 0
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 12214,
+      "sha256": "7452fc3444155e3245ee7818e4bc52b909dec1656999ad085e7b735d37da4ab6"
+    }
+  ],
+  "notes": [
+    "Manifest covers README bytes, not itself; no self-referential hash.",
+    "The candidateRange ends at reviewed code, excluding this later documentation commit.",
+    "Runtime implementation and historical package/handoff manifests are unchanged.",
+    "Research links are candidates only; no dependencies installed and no native/job API executed.",
+    "Two new handoff paths are LF-pinned; no historical file rule or runtime source is changed."
+  ]
+}
