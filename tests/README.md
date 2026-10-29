@@ -587,3 +587,23 @@ Upstream remains a single-process case. The 131-check runner suite forces the
 unavailable-enumeration path with local-child/builtin-module instrumentation;
 it does not start DSH or add a production injection option. See implementation
 correction round 5 for the new conservative treeProof values and scope.
+
+### Runtime observer watch (correction round 6)
+
+`node tests/v02-observer-watch.test.mjs` covers the supervisor-side journal
+prefix reader (`tools/lib/observer-journal.mjs`): pending/attached/stopped/failed,
+identity mismatch, structural contradiction, torn trailing line, the cross-check
+against the envelope's own `readLifecycle`, and the bounded attach wait —
+including a record landing exactly on the window boundary, `host-exited`, abort on
+a contradiction without spending the window, and a window that never crosses the
+host deadline. It reads bytes only; no host, no run directory, no model.
+
+`node tests/v02-gate.test.mjs` scenario `launcher observer watch` runs the real
+launcher with a stub host that writes `runDir/observer/lifecycle.jsonl`: complete
+(exit 0, `observer.status=stopped`), never attached (`observer-not-attached`,
+exit 3, host terminated, no upstream request), foreign `launchId`
+(`observer-identity-failed`, exit 3), failed mid-run (`observer-failed`, exit 4),
+and no terminal phase (`observer-incomplete`, exit 3). The 12-file envelope is
+mounted in the isolated launcher home so the reviewed identity check runs at real
+bytes. This is still a stub; it does not start DSH and does not set
+`hostVerified`.

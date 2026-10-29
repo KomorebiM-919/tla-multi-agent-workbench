@@ -41,6 +41,7 @@ import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { createBudgetGate } from '../orchestration/gate/gate.mjs';
 import { observerPlanPaths, readObserverPlan, renderObserverPatch } from './lib/observer-plan.mjs';
+import { OBSERVER_ATTACH_WINDOW_MS, awaitObserverAttachment, evaluateObserverJournal } from './lib/observer-journal.mjs';
 import {
   checkBaseUrl,
   checkProtectionHeartbeat,
@@ -145,6 +146,7 @@ export function parseArgs(argv) {
       case '--receipt-launch-id': options.receiptLaunchId = next('receipt-launch-id'); break;
       case '--receipt-file': options.receiptFile = next('receipt-file'); break;
       case '--observer-plan': options.observerPlan = next('observer-plan'); break;
+      case '--observer-attach-ms': options.observerAttachMs = Number(next('observer-attach-ms')); break;
       default: throw new UsageError('unknown argument: ' + arg);
     }
   }
@@ -156,6 +158,10 @@ export function parseArgs(argv) {
   if (present === receiptValues.length) {
     if (!isId(options.receiptRunnerId)) throw new UsageError('receipt runner id is invalid');
     if (!isUuid(options.receiptLaunchId)) throw new UsageError('receipt launch id is not a canonical UUID');
+  }
+  if (options.observerAttachMs !== undefined) {
+    // 审批契约把 attached 等待上限定在 10 秒，且必须落在整体宿主超时之内。
+    requireIntWithin('observer-attach-ms', options.observerAttachMs, 1, OBSERVER_ATTACH_WINDOW_MS);
   }
   return options;
 }
@@ -582,6 +588,7 @@ async function main() {
   }
 
   let observerPatchPath = null;
+  let observerLifecycleFile = null;
   if (options.observerPlan !== undefined) {
     if (options.receiptFile === undefined) {
       fail('--observer-plan requires both B0 launch receipts');
@@ -615,12 +622,14 @@ async function main() {
       writeFileSync(paths.patchPath, rendered.patch, 'utf8');
       options.patches.push(paths.patchPath);
       observerPatchPath = paths.patchPath;
+      observerLifecycleFile = paths.lifecycleFile;
     } catch (error) {
       fail('observer plan could not be rendered: ' + String(error instanceof Error ? error.message : error));
       return;
     }
   }
 
+  const observerAttachMs = options.observerAttachMs === undefined ? OBSERVER_ATTACH_WINDOW_MS : options.observerAttachMs;
   const gateLog = options.gateLog || join(runDir, 'gate-events.jsonl');
   const summaryPath = options.summary || join(runDir, 'gate-summary.json');
   const record = {
@@ -632,7 +641,17 @@ async function main() {
     timeoutMs: options.timeoutMs,
     heartbeatMaxAgeMs: options.heartbeatMaxAgeMs,
     leaseTtlMs: options.leaseTtlMs,
-    observer: observerPatchPath === null ? null : { patchPath: observerPatchPath }
+    observer: observerPatchPath === null ? null : {
+      patchPath: observerPatchPath,
+      attachWindowMs: observerAttachMs,
+      status: 'pending',
+      attachStatus: null,
+      attachWaitedMs: null,
+      attachPolls: null,
+      attachDetail: null,
+      finalStatus: null,
+      failure: null
+    }
   };
 
   const patchChecks = options.patches.map((patch) => ({ name: basename(patch), ...sha256OfFile(patch) }));
@@ -803,7 +822,64 @@ async function main() {
     });
 
     // ---- 步骤 5：等本次 runId 的 mount + 心跳（超时即终止） ----
-    const deadline = Date.now() + options.timeoutMs;
+    const hostDeadline = Date.now() + options.timeoutMs;
+    const observerExpected = observerLifecycleFile === null ? null : {
+      runnerRunId: options.receiptRunnerId,
+      launchId: options.receiptLaunchId,
+      gateRunId: options.runId,
+      budgetRunId: options.runId
+    };
+    const readObserverJournal = () => {
+      try {
+        return readFileSync(observerLifecycleFile);
+      } catch (error) {
+        if (error && error.code === 'ENOENT') return null;
+        throw error;
+      }
+    };
+
+    // ---- 步骤 4b：观察者 attached 的有界等待 ----
+    // "刚 spawn 还没写"不算失败：在窗口内等待 attached；窗口到点或身份不符则立刻停宿主。
+    if (observerLifecycleFile !== null) {
+      const attach = await awaitObserverAttachment({
+        read: readObserverJournal,
+        expected: observerExpected,
+        windowMs: observerAttachMs,
+        deadline: hostDeadline,
+        stillRunning: () => hostExited !== true
+      });
+      record.observer.status = attach.state;
+      record.observer.attachStatus = attach.state;
+      record.observer.attachWaitedMs = attach.waitedMs;
+      record.observer.attachPolls = attach.polls;
+      record.observer.attachDetail = attach.detail;
+      if (attach.state !== 'attached' && attach.state !== 'stopped') {
+        const identityFailure = attach.state === 'mismatch' || attach.state === 'invalid' || attach.state === 'failed';
+        record.result = identityFailure ? 'observer-identity-failed' : 'observer-not-attached';
+        record.observer.failure = attach.state;
+        record.decision = {
+          allow: false,
+          blockers: [{
+            code: identityFailure ? (attach.state === 'failed' ? 'OBSERVER_FAILED' : 'OBSERVER_IDENTITY_MISMATCH') : 'OBSERVER_NOT_ATTACHED',
+            detail: attach.detail,
+            attachState: attach.state
+          }],
+          effectiveBaseUrl,
+          gateBaseUrl: baseUrl,
+        };
+        if (hostExited !== true) {
+          record.termination = await terminateHost(child, { pseudo: { exitCode: null } });
+          hostExited = record.termination.exited === true;
+        }
+        record.gate = gate.status();
+        record.exitCode = hostExitCode;
+        writeFileSync(summaryPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
+        process.stderr.write('gated-run: observer NOT attached (' + attach.state + '); host stopped before the lease\n');
+        return EXIT_PROTECTION_UNVERIFIED;
+      }
+    }
+
+    const deadline = hostDeadline;
     let heartbeat = checkProtectionHeartbeat({ eventLog: options.heartbeatFile, runId: options.runId, now: Date.now(), maxAgeMs: options.heartbeatMaxAgeMs });
     while (heartbeat.ok !== true && hostExited !== true && Date.now() < deadline) {
       await new Promise((done) => setTimeout(done, 100));
@@ -852,6 +928,18 @@ async function main() {
       if (stopped) return;
       // 宿主已经退出时心跳自然停止，这不是"保护丢失"，而是运行结束。
       if (hostExited) return;
+      if (observerLifecycleFile !== null) {
+        const view = evaluateObserverJournal(readObserverJournal(), observerExpected);
+        record.observer.status = view.state;
+        if (view.state === 'failed' || view.state === 'mismatch' || view.state === 'invalid') {
+          lost = true;
+          lossReason.value = 'OBSERVER_' + view.state.toUpperCase();
+          record.observer.failure = view.detail;
+          gate.revoke('OBSERVER_FAILED');
+          appendFileSync(gateLog, JSON.stringify({ event: 'observer-failed', at: new Date().toISOString(), state: view.state, detail: view.detail }) + '\n', 'utf8');
+          return;
+        }
+      }
       const current = checkProtectionHeartbeat({ eventLog: options.heartbeatFile, runId: options.runId, now: Date.now(), maxAgeMs: options.heartbeatMaxAgeMs });
       if (current.ok === true) {
         const renewed = gate.heartbeat(lease.id);
@@ -874,7 +962,9 @@ async function main() {
     renewTimer = null;
 
     if (lost === true) {
-      record.result = 'protection-lost';
+      // 观察者在运行中失效与心跳丢失同属"保护失效"，但结论要能区分来源。
+      const observerLost = typeof lossReason.value === 'string' && lossReason.value.startsWith('OBSERVER_');
+      record.result = observerLost ? 'observer-failed' : 'protection-lost';
       record.lossReason = lossReason.value;
       record.termination = await terminateHost(child, { pseudo: { exitCode: firstExit.kind === 'exit' ? firstExit.code : null } });
       record.exitCode = firstExit.kind === 'exit' ? firstExit.code : null;
@@ -900,6 +990,23 @@ async function main() {
       record.gate = gate.status();
       writeFileSync(summaryPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
       return EXIT_ENVIRONMENT;
+    }
+
+    // 观察者没有干净收尾（未停止/已失败/身份不符）时，即使宿主退出码为 0，
+    // 这次 trial 也不完整：观察结果不能当作成功证据。
+    if (observerLifecycleFile !== null) {
+      const view = evaluateObserverJournal(readObserverJournal(), observerExpected);
+      record.observer.status = view.state;
+      record.observer.finalStatus = view.state;
+      if (view.state !== 'stopped') {
+        record.result = 'observer-incomplete';
+        record.observer.failure = view.detail;
+        record.exitCode = firstExit.code;
+        record.gate = gate.status();
+        writeFileSync(summaryPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
+        process.stderr.write('gated-run: observer did not stop cleanly (' + view.state + '); trial is incomplete\n');
+        return EXIT_PROTECTION_UNVERIFIED;
+      }
     }
 
     record.result = firstExit.code === 0 ? 'host-ok' : 'host-failed';

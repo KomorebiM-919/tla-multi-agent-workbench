@@ -23,8 +23,9 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createBudgetGate, GateError } from '../orchestration/gate/gate.mjs';
 import {
   checkBaseUrl,
@@ -39,7 +40,7 @@ import {
   verifyInstalledPlugin,
   verifyPluginAgainst,
 } from '../orchestration/gate/preflight.mjs';
-import { parseArgs, UsageError, EXIT_OK, EXIT_PROTECTION_UNVERIFIED, terminateHost } from '../tools/gated-run.mjs';
+import { parseArgs, UsageError, EXIT_OK, EXIT_PROTECTION_LOST, EXIT_PROTECTION_UNVERIFIED, terminateHost } from '../tools/gated-run.mjs';
 
 const failures = [];
 let checks = 0;
@@ -60,6 +61,31 @@ mkdirSync(join(launcherPluginDir, 'lib'), { recursive: true });
 for (const rel of ['package.json', 'index.js', 'lib/budget.mjs']) {
   writeFileSync(join(launcherPluginDir, rel), readFileSync(resolve('orchestration/interceptor-plugin', rel)));
 }
+// 观察者信封（12 文件）按 M1B 清单的相对路径装进同一个 profile：指纹只对
+// "相对路径 + 内容"求值，所以只有路径逐字一致的副本才会命中已审查的 buildDigest。
+// 这样下面这些场景走的是启动器的真实身份核对路径，而不是绕过它。
+const OBSERVER_ENVELOPE = [
+  'package.json',
+  'orchestration/tool-observer/host-plugin/index.js',
+  'orchestration/tool-observer/host-plugin/package.json',
+  'orchestration/tool-observer/plugin/index.js',
+  'orchestration/tool-observer/plugin/package.json',
+  'orchestration/tool-observer/context-subscription.mjs',
+  'orchestration/tool-observer/host-bridge.mjs',
+  'orchestration/tool-observer/writer.mjs',
+  'orchestration/tool-observer/lifecycle.mjs',
+  'tools/lib/tool-trace-contracts.mjs',
+  'tools/lib/trace-output.mjs',
+  'tools/lib/launch-receipts.mjs',
+];
+const observerPkgDir = join(launcherHome, 'profiles', 'stage1', 'node_modules', 'tla-tool-observer');
+for (const rel of OBSERVER_ENVELOPE) {
+  const target = join(observerPkgDir, rel);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, readFileSync(resolve(rel)));
+}
+const observerFixtureIdentity = verifyInstalledPlugin({ name: 'tla-tool-observer', pkgDir: observerPkgDir });
+check(observerFixtureIdentity.status === 'verified', 'observer watch: fixture profile matches the reviewed 12-file identity', observerFixtureIdentity);
 function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8');
 }
@@ -135,7 +161,7 @@ async function postControl(baseUrl, path, method = 'POST') {
 // 事件里的 runId 从启动器写的 ./gate.json 读——这样"证明"绑定的是**本次**运行。
 // ---------------------------------------------------------------------------
 const STUB_HOST = `
-import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 const argv = process.argv.slice(2);
 const dumpMode = process.env.STUB_DUMP_MODE || 'file';
@@ -152,6 +178,36 @@ const gate = JSON.parse(readFileSync(join(runDir, 'gate.json'), 'utf8'));
 const mode = process.env.STUB_EVENTS_MODE || 'ok';
 const events = process.env.STUB_EVENTS;
 const writeEvent = (entry) => appendFileSync(events, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\\n', 'utf8');
+// M1B 观察者替身：按 STUB_OBSERVER 写本次运行的 lifecycle journal。
+// 身份字段全部来自启动器本次运行（gate.json + 显式 env），所以"伪造另一条运行"是显式的、可测的。
+const observerMode = process.env.STUB_OBSERVER || 'none';
+const journal = join(runDir, 'observer', 'lifecycle.jsonl');
+const writeJournal = (seq, phase, code = null) => {
+  appendFileSync(journal, JSON.stringify({
+    schema: 'tla.observer-lifecycle/v1',
+    seq,
+    phase,
+    traceId: process.env.STUB_TRACE_ID,
+    origin: 'host-notification',
+    runnerRunId: process.env.STUB_RUNNER_ID,
+    launchId: process.env.STUB_LAUNCH_ID,
+    gateRunId: gate.runId,
+    budgetRunId: gate.runId,
+    observerPid: process.pid,
+    code,
+    health: phase === 'stopped' ? { writerOk: true, cleanupState: 'settled', ownershipUncertain: false } : null
+  }) + '\\n', 'utf8');
+};
+if (observerMode !== 'none') {
+  mkdirSync(join(runDir, 'observer'), { recursive: true });
+  writeJournal(1, 'preparing');
+  if (observerMode !== 'unattached') writeJournal(2, 'attached');
+  if (observerMode === 'fail-after') setTimeout(() => writeJournal(3, 'failed', 'WRITE_FAILED'), 400);
+}
+// 未挂载模式必须活过附着的等待窗口，否则测到的是"宿主先退出"而不是"窗口到点"。
+if (observerMode === 'unattached') await new Promise((d) => setTimeout(d, 2500));
+// attached 之后停一小会儿，让监视器确实读到 attached 而不是一步走到 stopped。
+if (observerMode === 'complete' || observerMode === 'attached-only') await new Promise((d) => setTimeout(d, 120));
 if (mode === 'ok') { writeEvent({ event: 'mounted', runId: gate.runId }); writeEvent({ event: 'heartbeat', runId: gate.runId }); }
 if (mode === 'probe-leak') { writeEvent({ event: 'mounted', runId: gate.runId + '-probe' }); writeEvent({ event: 'heartbeat', runId: gate.runId + '-probe' }); }
 if (mode === 'foreign') writeEvent({ event: 'mounted', runId: 'other-run' });
@@ -163,11 +219,13 @@ if (process.env.STUB_IGNORE_SIGTERM === '1') process.on('SIGTERM', () => {});
 const beat = setInterval(() => { if (mode === 'ok') writeEvent({ event: 'heartbeat', runId: gate.runId }); }, 200);
 if (typeof beat.unref === 'function') beat.unref();
 if (mode === 'silent-long' || mode === 'ignore-sigterm') { await new Promise((d) => setTimeout(d, 20000)); process.exit(0); }
+if (observerMode === 'fail-after') await new Promise((d) => setTimeout(d, 1200));
 const results = [];
 for (let i = 0; i < 5; i += 1) {
   const res = await fetch(gate.baseUrl + '/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   results.push(res.status);
 }
+if (observerMode === 'complete') { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }
 writeFileSync(join(runDir, 'host-results.json'), JSON.stringify({ results }) + '\\n', 'utf8');
 process.exit(0);
 `;
@@ -993,6 +1051,106 @@ async function scenarioLauncherWithoutProof() {
   await upstream.close();
 }
 
+// M1B 观察者运行期监视：journal 身份必须对应本次运行，attached 等待有界，
+// 运行中失效要撤销租约并终止宿主，缺终态收尾不得算成功。
+// 这里的 journal 由 stub 写，仍然只是离线替身——不启动真实宿主，也不改 hostVerified。
+async function scenarioLauncherObserverWatch() {
+  const upstream = await startUpstream();
+  const reviewed = REVIEWED_PLUGIN_EVIDENCE['tla-tool-observer'];
+  const traceId = randomUUID();
+
+  const runObserverCase = async ({ name, mode, attachMs = 500, leaseTtlMs = null, foreignLaunch = false }) => {
+    const runDir = join(scratch, name);
+    mkdirSync(runDir, { recursive: true });
+    const patch = join(runDir, 'overlay.yml');
+    writeFileSync(patch, '- insert:\n    - id: tla-prelaunch-budget\n      name: tla-prelaunch-budget\n      config: {}\n', 'utf8');
+    writeJson(join(runDir, 'observer-plan.json'), {
+      schema: 'tla.observer-plan/v1',
+      plugin: 'tla-tool-observer',
+      packageRoot: resolve('.'),
+      version: reviewed.version,
+      fileCount: reviewed.fileCount,
+      digest: reviewed.buildDigest,
+      limits: { maxBytes: 131072, maxObservations: 10, maxPending: 2 },
+      cleanupTimeoutMs: 100,
+    });
+    const port = await freePort();
+    const dumpFile = writeDumpYaml(join(runDir, 'dump.yml'), [
+      { id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek-api-key', config: { baseURL: 'http://127.0.0.1:' + port } },
+    ]);
+    const runnerRunId = 'tla-run-watch-' + name.replace(/[^a-z0-9]+/gi, '-');
+    const launchId = randomUUID();
+    const extra = [
+      '--gate-port', String(port),
+      '--receipt-file', join(runDir, 'gate-receipt.json'),
+      '--receipt-runner-id', runnerRunId,
+      '--receipt-launch-id', launchId,
+      '--observer-plan', join(runDir, 'observer-plan.json'),
+      '--observer-attach-ms', String(attachMs),
+    ];
+    if (leaseTtlMs !== null) extra.push('--lease-ttl-ms', String(leaseTtlMs));
+    const hitsBefore = upstream.hits.length;
+    const result = await runLauncher(
+      baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile, patch, extra }),
+      {
+        env: {
+          STUB_DUMP_FILE: dumpFile,
+          STUB_EVENTS: join(runDir, 'plugin-events.jsonl'),
+          STUB_EVENTS_MODE: 'ok',
+          STUB_OBSERVER: mode,
+          STUB_TRACE_ID: traceId,
+          STUB_RUNNER_ID: runnerRunId,
+          STUB_LAUNCH_ID: foreignLaunch ? randomUUID() : launchId,
+        },
+        timeoutMs: 40000,
+      },
+    );
+    const summary = JSON.parse(readFileSync(join(runDir, 'gate-summary.json'), 'utf8'));
+    return { result, summary, hitsBefore, runDir };
+  };
+
+  // N1：正常路径——preparing→attached→…→stopping→stopped，租约正常发放。
+  const complete = await runObserverCase({ name: 'watch-complete', mode: 'complete' });
+  const hitsAfterComplete = upstream.hits.length;
+  check(complete.result.code === EXIT_OK, 'observer watch: attached run exits 0', complete.result.code);
+  check(complete.summary.result === 'host-ok', 'observer watch: attached run is host-ok', complete.summary.result);
+  check(complete.summary.observer && complete.summary.observer.attachStatus === 'attached', 'observer watch: attach recorded', complete.summary.observer);
+  check(complete.summary.observer && complete.summary.observer.finalStatus === 'stopped', 'observer watch: terminal journal state recorded', complete.summary.observer);
+  check(hitsAfterComplete - complete.hitsBefore === 2, 'observer watch: attached run forwards exactly the budgeted requests', hitsAfterComplete - complete.hitsBefore);
+
+  // N2：只写 preparing、从不 attached → 在有限窗口内停止宿主，且从未授权。
+  const unattached = await runObserverCase({ name: 'watch-unattached', mode: 'unattached', attachMs: 400 });
+  check(unattached.result.code === EXIT_PROTECTION_UNVERIFIED, 'observer watch: missing attachment -> exit 3', unattached.result.code);
+  check(unattached.result.elapsedMs < 15000, 'observer watch: attach wait is bounded', unattached.result.elapsedMs);
+  check(unattached.summary.result === 'observer-not-attached', 'observer watch: summary names observer-not-attached', unattached.summary.result);
+  check(unattached.summary.observer && unattached.summary.observer.status === 'timeout', 'observer watch: timeout state recorded', unattached.summary.observer);
+  check(unattached.summary.termination && unattached.summary.termination.exited === true, 'observer watch: unattached host terminated', unattached.summary.termination);
+  check(upstream.hits.length === hitsAfterComplete, 'observer watch: unattached run forwarded nothing', upstream.hits.length - hitsAfterComplete);
+
+  // N3：journal 属于另一条运行（launchId 不同）→ 身份矛盾，立即停止且不授权。
+  const foreign = await runObserverCase({ name: 'watch-foreign', mode: 'complete', foreignLaunch: true });
+  check(foreign.result.code === EXIT_PROTECTION_UNVERIFIED, 'observer watch: foreign journal -> exit 3', foreign.result.code);
+  check(foreign.summary.result === 'observer-identity-failed', 'observer watch: summary names observer-identity-failed', foreign.summary.result);
+  check(foreign.summary.observer && foreign.summary.observer.status === 'mismatch', 'observer watch: mismatch state recorded', foreign.summary.observer);
+  check(foreign.summary.termination && foreign.summary.termination.exited === true, 'observer watch: mismatched host terminated', foreign.summary.termination);
+  check(upstream.hits.length === hitsAfterComplete, 'observer watch: mismatched run forwarded nothing', upstream.hits.length - hitsAfterComplete);
+
+  // N4：attached 之后写 failed → 运行中撤销租约并终止宿主。
+  const failedMidRun = await runObserverCase({ name: 'watch-failed', mode: 'fail-after', leaseTtlMs: 300 });
+  check(failedMidRun.result.code === EXIT_PROTECTION_LOST, 'observer watch: mid-run failure -> exit 4', failedMidRun.result.code);
+  check(failedMidRun.summary.result === 'observer-failed', 'observer watch: summary names observer-failed', failedMidRun.summary.result);
+  check(failedMidRun.summary.observer && failedMidRun.summary.observer.status === 'failed', 'observer watch: failure state recorded', failedMidRun.summary.observer);
+  check(failedMidRun.summary.termination && failedMidRun.summary.termination.exited === true, 'observer watch: failed host terminated', failedMidRun.summary.termination);
+
+  // N5：宿主正常退出但 journal 停在 attached（没有 stopping/stopped）→ 收尾不完整，不得算成功。
+  const incomplete = await runObserverCase({ name: 'watch-incomplete', mode: 'attached-only' });
+  check(incomplete.result.code === EXIT_PROTECTION_UNVERIFIED, 'observer watch: missing terminal phase -> exit 3', incomplete.result.code);
+  check(incomplete.summary.result === 'observer-incomplete', 'observer watch: summary names observer-incomplete', incomplete.summary.result);
+  check(incomplete.summary.observer && incomplete.summary.observer.finalStatus === 'attached', 'observer watch: open journal recorded as unattached-terminal', incomplete.summary.observer);
+
+  await upstream.close();
+}
+
 /** K：终止升级逻辑本身（平台无关）。真实宿主在 Windows 上观察不到"忽略 SIGTERM"。 */
 async function scenarioTerminationEscalation() {
   const stubborn = simulateChild({ exitOn: 'SIGKILL' });
@@ -1261,6 +1419,7 @@ async function main() {
     ['launcher config binding', scenarioLauncherConfigBinding],
     ['launcher normal run', scenarioLauncherLeased],
     ['launcher without proof', scenarioLauncherWithoutProof],
+    ['launcher observer watch', scenarioLauncherObserverWatch],
     ['launcher rejects foreign proof', scenarioLauncherForeignProof],
     ['termination escalation', scenarioTerminationEscalation],
     ['reviewed plugin evidence', scenarioReviewedPluginEvidence],

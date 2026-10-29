@@ -302,3 +302,13 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   treeProof. Unavailable enumeration remains descendants-unverified; strict
   tree-proof mode rejects completion without known cleanup proof. Upstream
   keeps its single-process semantics. No real-host acceptance is claimed.
+- The gate now performs the approval §6 runtime observer watch: a bounded
+  `attached` wait (default 10 s, never past the host deadline, `--observer-attach-ms`
+  clamped to 1..10000), journal identity validation against the B0 receipts and
+  the gate run ID, revoke-and-stop on a mid-run failure, and a required `stopped`
+  terminal before `host-ok`. New outcomes: `observer-not-attached` and
+  `observer-identity-failed` (exit 3, before the lease), `observer-failed`
+  (exit 4, after the lease), `observer-incomplete` (exit 3, host exited cleanly
+  but the journal never stopped). This is tested with a stub host only; the
+  descendant-evidence blocker for a real experiment is unchanged, and no
+  installation or live start is authorized by it.
