@@ -41,7 +41,13 @@ import { homedir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { createBudgetGate } from '../orchestration/gate/gate.mjs';
 import { observerPlanPaths, readObserverPlan, renderObserverPatch } from './lib/observer-plan.mjs';
-import { OBSERVER_ATTACH_WINDOW_MS, awaitObserverAttachment, evaluateObserverJournal } from './lib/observer-journal.mjs';
+import {
+  OBSERVER_ATTACH_WINDOW_MS,
+  awaitObserverAttachment,
+  awaitObserverStop,
+  evaluateObserverJournal,
+  observerRuntimeFailure
+} from './lib/observer-journal.mjs';
 import {
   checkBaseUrl,
   checkProtectionHeartbeat,
@@ -589,6 +595,7 @@ async function main() {
 
   let observerPatchPath = null;
   let observerLifecycleFile = null;
+  let observerCleanupTimeoutMs = null;
   if (options.observerPlan !== undefined) {
     if (options.receiptFile === undefined) {
       fail('--observer-plan requires both B0 launch receipts');
@@ -623,6 +630,8 @@ async function main() {
       options.patches.push(paths.patchPath);
       observerPatchPath = paths.patchPath;
       observerLifecycleFile = paths.lifecycleFile;
+      // 收尾竞态的宽限只借用 plan 已有的清理上限，不引入新的时间参数。
+      observerCleanupTimeoutMs = plan.cleanupTimeoutMs;
     } catch (error) {
       fail('observer plan could not be rendered: ' + String(error instanceof Error ? error.message : error));
       return;
@@ -650,7 +659,8 @@ async function main() {
       attachPolls: null,
       attachDetail: null,
       finalStatus: null,
-      failure: null
+      failure: null,
+      detail: null
     }
   };
 
@@ -853,14 +863,16 @@ async function main() {
       record.observer.attachWaitedMs = attach.waitedMs;
       record.observer.attachPolls = attach.polls;
       record.observer.attachDetail = attach.detail;
-      if (attach.state !== 'attached' && attach.state !== 'stopped') {
+      if (attach.state !== 'attached') {
+        // 观察器在授权前就收尾，说明"停止契约"被提前触发：不授权，也不把它当正常。
+        const stoppedEarly = attach.state === 'stopped';
         const identityFailure = attach.state === 'mismatch' || attach.state === 'invalid' || attach.state === 'failed';
-        record.result = identityFailure ? 'observer-identity-failed' : 'observer-not-attached';
-        record.observer.failure = attach.state;
+        record.result = stoppedEarly ? 'observer-stopped-early' : (identityFailure ? 'observer-identity-failed' : 'observer-not-attached');
+        record.observer.failure = stoppedEarly ? 'OBSERVER_STOPPED_EARLY' : attach.state;
         record.decision = {
           allow: false,
           blockers: [{
-            code: identityFailure ? (attach.state === 'failed' ? 'OBSERVER_FAILED' : 'OBSERVER_IDENTITY_MISMATCH') : 'OBSERVER_NOT_ATTACHED',
+            code: stoppedEarly ? 'OBSERVER_STOPPED_EARLY' : (identityFailure ? (attach.state === 'failed' ? 'OBSERVER_FAILED' : 'OBSERVER_IDENTITY_MISMATCH') : 'OBSERVER_NOT_ATTACHED'),
             detail: attach.detail,
             attachState: attach.state
           }],
@@ -921,22 +933,57 @@ async function main() {
       heartbeat: { ok: true, lastEvent: heartbeat.lastEvent },
     };
 
-    // ---- 步骤 7：续期；心跳丢失即撤销并终止宿主（有上限，不无限等） ----
+    // ---- 步骤 7：续期；心跳丢失/观察者失效即撤销并终止宿主（有上限，不无限等） ----
     let lost = false;
     const lossReason = { value: null };
+    let earlyStopTimer = null;
+    let resolveLoss = null;
+    const lossSignal = new Promise((done) => { resolveLoss = done; });
+    const markLost = (code) => {
+      if (lost === true) return;
+      lost = true;
+      lossReason.value = code;
+      resolveLoss();
+    };
+    const markObserverLost = (code, detail) => {
+      if (lost === true) return;
+      record.observer.failure = code;
+      record.observer.detail = detail === undefined ? null : detail;
+      gate.revoke(code);
+      appendFileSync(gateLog, JSON.stringify({ event: 'observer-lost', at: new Date().toISOString(), code, detail: record.observer.detail }) + '\n', 'utf8');
+      markLost(code);
+    };
     renewTimer = setInterval(() => {
       if (stopped) return;
       // 宿主已经退出时心跳自然停止，这不是"保护丢失"，而是运行结束。
       if (hostExited) return;
       if (observerLifecycleFile !== null) {
-        const view = evaluateObserverJournal(readObserverJournal(), observerExpected);
+        let view;
+        try {
+          view = evaluateObserverJournal(readObserverJournal(), observerExpected);
+        } catch (error) {
+          // 路径变成目录、权限变化等读取异常必须就地收敛，不能从定时回调里冒出去成未捕获异常。
+          record.observer.status = 'unreadable';
+          markObserverLost('OBSERVER_READ_FAILED', String(error && error.message ? error.message : error));
+          return;
+        }
         record.observer.status = view.state;
-        if (view.state === 'failed' || view.state === 'mismatch' || view.state === 'invalid') {
-          lost = true;
-          lossReason.value = 'OBSERVER_' + view.state.toUpperCase();
-          record.observer.failure = view.detail;
-          gate.revoke('OBSERVER_FAILED');
-          appendFileSync(gateLog, JSON.stringify({ event: 'observer-failed', at: new Date().toISOString(), state: view.state, detail: view.detail }) + '\n', 'utf8');
+        if (view.state === 'stopped') {
+          // 正常收尾与观察器停止存在竞态：先停止续租，再给一个由 plan cleanupTimeoutMs 限定的宽限；
+          // 宽限内宿主自己退出即正常收尾，宽限到点仍在运行才按"提前停止"收敛。
+          if (earlyStopTimer === null) {
+            earlyStopTimer = setTimeout(() => {
+              earlyStopTimer = null;
+              if (stopped === true || hostExited === true) return;
+              markObserverLost('OBSERVER_STOPPED_EARLY', view.detail);
+            }, Math.max(0, observerCleanupTimeoutMs === null ? 0 : observerCleanupTimeoutMs));
+            if (typeof earlyStopTimer.unref === 'function') earlyStopTimer.unref();
+          }
+          return;
+        }
+        const failure = observerRuntimeFailure(view.state);
+        if (failure !== null) {
+          markObserverLost(failure, view.detail);
           return;
         }
       }
@@ -944,27 +991,36 @@ async function main() {
       if (current.ok === true) {
         const renewed = gate.heartbeat(lease.id);
         if (renewed.ok !== true) {
-          lost = true;
-          lossReason.value = renewed.reason;
           gate.revoke('LEASE_RENEWAL_FAILED');
+          markLost(renewed.reason);
         }
         return;
       }
-      lost = true;
-      lossReason.value = current.reason;
       gate.revoke('HEARTBEAT_LOST');
-      appendFileSync(join(runDir, 'gate-events.jsonl'), JSON.stringify({ event: 'protection-lost', at: new Date().toISOString(), reason: current.reason }) + '\n', 'utf8');
+      appendFileSync(gateLog, JSON.stringify({ event: 'protection-lost', at: new Date().toISOString(), reason: current.reason }) + '\n', 'utf8');
+      markLost(current.reason);
     }, Math.max(50, Math.floor(options.leaseTtlMs / 3)));
 
-    const firstExit = await Promise.race([exited.then((code) => ({ kind: 'exit', code })), new Promise((done) => setTimeout(() => done({ kind: 'still-running' }), Math.max(100, options.timeoutMs)))]);
+    // 失效后立即收敛：不再等满运行窗口，直接进入既有的有界终止/收尾路径。
+    const firstExit = await Promise.race([
+      exited.then((code) => ({ kind: 'exit', code })),
+      new Promise((done) => setTimeout(() => done({ kind: 'still-running' }), Math.max(100, options.timeoutMs))),
+      lossSignal.then(() => ({ kind: 'loss' })),
+    ]);
     stopped = true;
     clearInterval(renewTimer);
     renewTimer = null;
+    if (earlyStopTimer !== null) {
+      clearTimeout(earlyStopTimer);
+      earlyStopTimer = null;
+    }
 
     if (lost === true) {
       // 观察者在运行中失效与心跳丢失同属"保护失效"，但结论要能区分来源。
       const observerLost = typeof lossReason.value === 'string' && lossReason.value.startsWith('OBSERVER_');
-      record.result = observerLost ? 'observer-failed' : 'protection-lost';
+      record.result = lossReason.value === 'OBSERVER_STOPPED_EARLY'
+        ? 'observer-stopped-early'
+        : (observerLost ? 'observer-failed' : 'protection-lost');
       record.lossReason = lossReason.value;
       record.termination = await terminateHost(child, { pseudo: { exitCode: firstExit.kind === 'exit' ? firstExit.code : null } });
       record.exitCode = firstExit.kind === 'exit' ? firstExit.code : null;
@@ -994,17 +1050,25 @@ async function main() {
 
     // 观察者没有干净收尾（未停止/已失败/身份不符）时，即使宿主退出码为 0，
     // 这次 trial 也不完整：观察结果不能当作成功证据。
+    // 最终判定用信封自己的严格完整读取（readLifecycle）：尾部半行、非法 UTF-8、
+    // 终态之后的记录都不能被前缀读取忽略掉再记成成功。
     if (observerLifecycleFile !== null) {
-      const view = evaluateObserverJournal(readObserverJournal(), observerExpected);
-      record.observer.status = view.state;
-      record.observer.finalStatus = view.state;
-      if (view.state !== 'stopped') {
+      const stopView = await awaitObserverStop({
+        read: readObserverJournal,
+        expected: observerExpected,
+        budgetMs: observerCleanupTimeoutMs === null ? 0 : observerCleanupTimeoutMs,
+      });
+      // status 保留运行期最后一次观察；finalStatus 是收尾判定的结论。
+      record.observer.finalStatus = stopView.state;
+      record.observer.stopWaitedMs = stopView.waitedMs;
+      record.observer.stopPolls = stopView.polls;
+      if (stopView.ok !== true) {
         record.result = 'observer-incomplete';
-        record.observer.failure = view.detail;
+        record.observer.failure = stopView.state + (stopView.detail === undefined ? '' : ': ' + stopView.detail);
         record.exitCode = firstExit.code;
         record.gate = gate.status();
         writeFileSync(summaryPath, JSON.stringify(record, null, 2) + '\n', 'utf8');
-        process.stderr.write('gated-run: observer did not stop cleanly (' + view.state + '); trial is incomplete\n');
+        process.stderr.write('gated-run: observer did not stop cleanly (' + stopView.state + '); trial is incomplete\n');
         return EXIT_PROTECTION_UNVERIFIED;
       }
     }

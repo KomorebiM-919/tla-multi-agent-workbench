@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { TRACE_ORIGINS, TraceError } from './tool-trace-contracts.mjs';
 import { isId, isUuid } from './launch-receipts.mjs';
+import { readLifecycle } from '../../orchestration/tool-observer/lifecycle.mjs';
 
 export const OBSERVER_ATTACH_WINDOW_MS = 10_000;
 export const OBSERVER_WATCH_POLL_MS = 50;
@@ -249,6 +250,101 @@ export async function awaitObserverAttachment({
   if (view.state === 'pending') {
     if (stillRunning() !== true) view = { state: 'host-exited', detail: 'host exited before the observer attached' };
     else if (now() >= limit) view = { state: 'timeout', detail: 'no attached record within ' + (limit - startedAt) + ' ms' };
+  }
+  return { ...view, waitedMs: Math.max(0, now() - startedAt), polls };
+}
+
+const RUNTIME_FAILURES = Object.freeze({
+  stopped: 'OBSERVER_STOPPED_EARLY',
+  pending: 'OBSERVER_REGRESSED',
+  failed: 'OBSERVER_FAILED',
+  mismatch: 'OBSERVER_IDENTITY_MISMATCH',
+  invalid: 'OBSERVER_INVALID',
+});
+
+/**
+ * 已 attached 之后的运行期监视判据：返回 null 表示可以继续放行，
+ * 返回错误码表示必须立即撤销租约并按有界收尾终止宿主。
+ * stopped 单独成码——观察器在宿主还活着时收尾，说明"停止契约"被提前触发；
+ * 是否算失败由调用方用它自己的有界宽限期判定（正常退出与观察器收尾存在竞态）。
+ */
+export function observerRuntimeFailure(state) {
+  // attached 是唯一"可以继续放行"的状态；其余都必须收敛，未知状态按 invalid 处理。
+  if (state === 'attached') return null;
+  return RUNTIME_FAILURES[state] ?? 'OBSERVER_INVALID';
+}
+
+function reasonOf(error) {
+  return String(error && error.message ? error.message : error);
+}
+
+/**
+ * 最终判定：先看前缀知道"大概走到哪"，再用信封自己的严格读取器
+ * （readLifecycle：完整 UTF-8、无半行、无终态后记录、身份一致）确认。
+ * 前缀只负责"还没结束"的快速判断，绝不单独给出成功结论。
+ */
+export function evaluateFinalObserverJournal(bytes, expected) {
+  let prefix;
+  try {
+    prefix = readJournalPrefix(bytes);
+  } catch (error) {
+    return { ok: false, state: 'invalid', detail: reasonOf(error) };
+  }
+  if (bytes === null || bytes === undefined) {
+    return { ok: false, state: 'missing', detail: 'journal file is missing' };
+  }
+  if (prefix.records.length === 0) {
+    return { ok: false, state: prefix.waiting === true ? 'incomplete' : 'missing', detail: 'journal has no complete record' };
+  }
+  const mismatch = describeMismatch(prefix.identity, expected);
+  if (mismatch !== null) return { ok: false, state: 'mismatch', detail: mismatch };
+  if (prefix.phase === 'failed') return { ok: false, state: 'failed', detail: 'journal reported a failed phase' };
+  if (prefix.phase !== 'stopped') {
+    return { ok: false, state: 'incomplete', detail: 'journal has not stopped (last phase: ' + prefix.phase + ')' };
+  }
+  let journal;
+  try {
+    journal = readLifecycle(bytes);
+  } catch (error) {
+    return { ok: false, state: 'invalid', detail: reasonOf(error) };
+  }
+  const strictMismatch = describeMismatch(journal.identity, expected);
+  if (strictMismatch !== null) return { ok: false, state: 'mismatch', detail: strictMismatch };
+  if (journal.phase !== 'stopped') return { ok: false, state: 'invalid', detail: 'journal terminal phase is ' + journal.phase };
+  return { ok: true, state: 'stopped', detail: 'journal reached a clean stopped phase' };
+}
+
+/**
+ * 收尾时的有界等待：宿主正常退出与观察器写 stopped 之间存在极短竞态，
+ * 所以允许在 plan 的 cleanupTimeoutMs 之内重读——但只对"还没结束"重试，
+ * 结构矛盾/身份不符/读取失败立刻定稿，不掩盖问题。
+ */
+export async function awaitObserverStop({
+  read,
+  expected,
+  budgetMs = 0,
+  pollMs = OBSERVER_WATCH_POLL_MS,
+  now = Date.now,
+  pause = defaultPause,
+} = {}) {
+  const startedAt = now();
+  const limit = startedAt + Math.max(0, budgetMs);
+  const observe = () => {
+    let bytes;
+    try {
+      bytes = read();
+    } catch (error) {
+      return { ok: false, state: 'unreadable', detail: reasonOf(error) };
+    }
+    return evaluateFinalObserverJournal(bytes, expected);
+  };
+  let view = observe();
+  let polls = 0;
+  while (view.state === 'missing' || view.state === 'incomplete') {
+    if (now() >= limit) break;
+    await pause(Math.min(pollMs, Math.max(1, limit - now())));
+    view = observe();
+    polls += 1;
   }
   return { ...view, waitedMs: Math.max(0, now() - startedAt), polls };
 }

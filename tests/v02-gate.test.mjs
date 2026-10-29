@@ -161,7 +161,7 @@ async function postControl(baseUrl, path, method = 'POST') {
 // 事件里的 runId 从启动器写的 ./gate.json 读——这样"证明"绑定的是**本次**运行。
 // ---------------------------------------------------------------------------
 const STUB_HOST = `
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 const argv = process.argv.slice(2);
 const dumpMode = process.env.STUB_DUMP_MODE || 'file';
@@ -182,32 +182,40 @@ const writeEvent = (entry) => appendFileSync(events, JSON.stringify({ at: new Da
 // 身份字段全部来自启动器本次运行（gate.json + 显式 env），所以"伪造另一条运行"是显式的、可测的。
 const observerMode = process.env.STUB_OBSERVER || 'none';
 const journal = join(runDir, 'observer', 'lifecycle.jsonl');
+const journalRecord = (seq, phase, code = null) => JSON.stringify({
+  schema: 'tla.observer-lifecycle/v1',
+  seq,
+  phase,
+  traceId: process.env.STUB_TRACE_ID,
+  origin: 'host-notification',
+  runnerRunId: process.env.STUB_RUNNER_ID,
+  launchId: process.env.STUB_LAUNCH_ID,
+  gateRunId: gate.runId,
+  budgetRunId: gate.runId,
+  observerPid: process.pid,
+  code,
+  health: phase === 'stopped' ? { writerOk: true, cleanupState: 'settled', ownershipUncertain: false } : null
+});
 const writeJournal = (seq, phase, code = null) => {
-  appendFileSync(journal, JSON.stringify({
-    schema: 'tla.observer-lifecycle/v1',
-    seq,
-    phase,
-    traceId: process.env.STUB_TRACE_ID,
-    origin: 'host-notification',
-    runnerRunId: process.env.STUB_RUNNER_ID,
-    launchId: process.env.STUB_LAUNCH_ID,
-    gateRunId: gate.runId,
-    budgetRunId: gate.runId,
-    observerPid: process.pid,
-    code,
-    health: phase === 'stopped' ? { writerOk: true, cleanupState: 'settled', ownershipUncertain: false } : null
-  }) + '\\n', 'utf8');
+  appendFileSync(journal, journalRecord(seq, phase, code) + '\\n', 'utf8');
 };
+const dropJournal = () => { try { unlinkSync(journal); } catch (error) { /* journal already gone */ } };
 if (observerMode !== 'none') {
   mkdirSync(join(runDir, 'observer'), { recursive: true });
   writeJournal(1, 'preparing');
   if (observerMode !== 'unattached') writeJournal(2, 'attached');
   if (observerMode === 'fail-after') setTimeout(() => writeJournal(3, 'failed', 'WRITE_FAILED'), 400);
+  // 运行期失效替身：attached 之后把 journal 删掉/清空/退回 preparing/换成目录，或提前进入 stopping+stopped。
+  if (observerMode === 'delete-after') setTimeout(dropJournal, 500);
+  if (observerMode === 'truncate-after') setTimeout(() => { try { writeFileSync(journal, ''); } catch (error) { /* gone */ } }, 500);
+  if (observerMode === 'regress-after') setTimeout(() => { try { writeFileSync(journal, journalRecord(1, 'preparing') + '\\n'); } catch (error) { /* gone */ } }, 500);
+  if (observerMode === 'dir-after') setTimeout(() => { dropJournal(); try { mkdirSync(journal); } catch (error) { /* exists */ } }, 500);
+  if (observerMode === 'stop-early') setTimeout(() => { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }, 500);
 }
 // 未挂载模式必须活过附着的等待窗口，否则测到的是"宿主先退出"而不是"窗口到点"。
 if (observerMode === 'unattached') await new Promise((d) => setTimeout(d, 2500));
 // attached 之后停一小会儿，让监视器确实读到 attached 而不是一步走到 stopped。
-if (observerMode === 'complete' || observerMode === 'attached-only') await new Promise((d) => setTimeout(d, 120));
+if (observerMode !== 'none' && observerMode !== 'unattached') await new Promise((d) => setTimeout(d, 120));
 if (mode === 'ok') { writeEvent({ event: 'mounted', runId: gate.runId }); writeEvent({ event: 'heartbeat', runId: gate.runId }); }
 if (mode === 'probe-leak') { writeEvent({ event: 'mounted', runId: gate.runId + '-probe' }); writeEvent({ event: 'heartbeat', runId: gate.runId + '-probe' }); }
 if (mode === 'foreign') writeEvent({ event: 'mounted', runId: 'other-run' });
@@ -222,10 +230,17 @@ if (mode === 'silent-long' || mode === 'ignore-sigterm') { await new Promise((d)
 if (observerMode === 'fail-after') await new Promise((d) => setTimeout(d, 1200));
 const results = [];
 for (let i = 0; i < 5; i += 1) {
+  if (i > 0 && process.env.STUB_SLOW_REQUESTS === '1') await new Promise((d) => setTimeout(d, 200));
   const res = await fetch(gate.baseUrl + '/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   results.push(res.status);
 }
 if (observerMode === 'complete') { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }
+// 完整 stopped 之后再写半行：最终判定若只看前缀会把它当成功。
+if (observerMode === 'tail-garbage') {
+  writeJournal(3, 'stopping');
+  writeJournal(4, 'stopped');
+  appendFileSync(journal, '{"schema":"tla.observer-', 'utf8');
+}
 writeFileSync(join(runDir, 'host-results.json'), JSON.stringify({ results }) + '\\n', 'utf8');
 process.exit(0);
 `;
@@ -1059,7 +1074,7 @@ async function scenarioLauncherObserverWatch() {
   const reviewed = REVIEWED_PLUGIN_EVIDENCE['tla-tool-observer'];
   const traceId = randomUUID();
 
-  const runObserverCase = async ({ name, mode, attachMs = 500, leaseTtlMs = null, foreignLaunch = false }) => {
+  const runObserverCase = async ({ name, mode, attachMs = 500, leaseTtlMs = null, foreignLaunch = false, hostTimeoutMs = null, slowRequests = false }) => {
     const runDir = join(scratch, name);
     mkdirSync(runDir, { recursive: true });
     const patch = join(runDir, 'overlay.yml');
@@ -1089,6 +1104,8 @@ async function scenarioLauncherObserverWatch() {
       '--observer-attach-ms', String(attachMs),
     ];
     if (leaseTtlMs !== null) extra.push('--lease-ttl-ms', String(leaseTtlMs));
+    // 失效用例把宿主超时放大，这样"等满超时"与"及时终止"在耗时上可区分。
+    if (hostTimeoutMs !== null) extra.push('--timeout-ms', String(hostTimeoutMs));
     const hitsBefore = upstream.hits.length;
     const result = await runLauncher(
       baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile, patch, extra }),
@@ -1101,6 +1118,7 @@ async function scenarioLauncherObserverWatch() {
           STUB_TRACE_ID: traceId,
           STUB_RUNNER_ID: runnerRunId,
           STUB_LAUNCH_ID: foreignLaunch ? randomUUID() : launchId,
+          ...(slowRequests ? { STUB_SLOW_REQUESTS: '1' } : {}),
         },
         timeoutMs: 40000,
       },
@@ -1146,7 +1164,57 @@ async function scenarioLauncherObserverWatch() {
   const incomplete = await runObserverCase({ name: 'watch-incomplete', mode: 'attached-only' });
   check(incomplete.result.code === EXIT_PROTECTION_UNVERIFIED, 'observer watch: missing terminal phase -> exit 3', incomplete.result.code);
   check(incomplete.summary.result === 'observer-incomplete', 'observer watch: summary names observer-incomplete', incomplete.summary.result);
-  check(incomplete.summary.observer && incomplete.summary.observer.finalStatus === 'attached', 'observer watch: open journal recorded as unattached-terminal', incomplete.summary.observer);
+  check(incomplete.summary.observer && incomplete.summary.observer.finalStatus === 'incomplete', 'observer watch: open journal recorded as unattached-terminal', incomplete.summary.observer);
+
+  // N6-N9：attached 之后 journal 消失/清空/退回 preparing/变成目录 →
+  // 立即撤销租约并按既有有界终止路径收敛，不等到宿主运行超时。
+  const lossCases = [
+    { name: 'watch-delete', mode: 'delete-after', failure: 'OBSERVER_REGRESSED' },
+    { name: 'watch-truncate', mode: 'truncate-after', failure: 'OBSERVER_REGRESSED' },
+    { name: 'watch-regress', mode: 'regress-after', failure: 'OBSERVER_REGRESSED' },
+    { name: 'watch-dir', mode: 'dir-after', failure: 'OBSERVER_READ_FAILED' },
+  ];
+  for (const item of lossCases) {
+    const loss = await runObserverCase({
+      name: item.name,
+      mode: item.mode,
+      leaseTtlMs: 300,
+      hostTimeoutMs: 20000,
+      slowRequests: true,
+    });
+    const hitsAtReturn = upstream.hits.length;
+    await sleep(600);
+    check(loss.result.code === EXIT_PROTECTION_LOST, `observer watch: ${item.name} -> exit 4`, loss.result.code);
+    check(loss.summary.result === 'observer-failed', `observer watch: ${item.name} names observer-failed`, loss.summary.result);
+    check(loss.summary.observer && loss.summary.observer.failure === item.failure, `observer watch: ${item.name} records the failure code`, loss.summary.observer);
+    check(loss.summary.termination && loss.summary.termination.exited === true, `observer watch: ${item.name} terminates the host`, loss.summary.termination);
+    check(loss.result.elapsedMs < 6000, `observer watch: ${item.name} stops without waiting for the host timeout`, loss.result.elapsedMs);
+    check(hitsAtReturn - loss.hitsBefore < 5, `observer watch: ${item.name} cuts the request stream`, hitsAtReturn - loss.hitsBefore);
+    check(upstream.hits.length === hitsAtReturn, `observer watch: ${item.name} forwards nothing after the loss`, upstream.hits.length - hitsAtReturn);
+  }
+
+  // N10：观察器在宿主仍运行时提前 stopping+stopped → 撤销租约、按停止契约收敛，不得继续授权。
+  const stopEarly = await runObserverCase({
+    name: 'watch-stop-early',
+    mode: 'stop-early',
+    leaseTtlMs: 300,
+    hostTimeoutMs: 20000,
+    slowRequests: true,
+  });
+  const hitsAtStop = upstream.hits.length;
+  await sleep(600);
+  check(stopEarly.result.code === EXIT_PROTECTION_LOST, 'observer watch: early stop -> exit 4', stopEarly.result.code);
+  check(stopEarly.summary.result === 'observer-stopped-early', 'observer watch: summary names observer-stopped-early', stopEarly.summary.result);
+  check(stopEarly.summary.observer && stopEarly.summary.observer.failure === 'OBSERVER_STOPPED_EARLY', 'observer watch: early stop failure recorded', stopEarly.summary.observer);
+  check(stopEarly.summary.termination && stopEarly.summary.termination.exited === true, 'observer watch: early stop terminates the host', stopEarly.summary.termination);
+  check(stopEarly.result.elapsedMs < 6000, 'observer watch: early stop does not wait for the host timeout', stopEarly.result.elapsedMs);
+  check(upstream.hits.length === hitsAtStop, 'observer watch: early stop forwards nothing afterwards', upstream.hits.length - hitsAtStop);
+
+  // N11：完整 stopped 之后追加半行 → 最终判定用严格读取，不能记为成功。
+  const tail = await runObserverCase({ name: 'watch-tail', mode: 'tail-garbage' });
+  check(tail.result.code === EXIT_PROTECTION_UNVERIFIED, 'observer watch: corrupt tail -> exit 3', tail.result.code);
+  check(tail.summary.result === 'observer-incomplete', 'observer watch: corrupt tail is not a success', tail.summary.result);
+  check(tail.summary.observer && tail.summary.observer.finalStatus === 'invalid', 'observer watch: corrupt tail recorded as invalid', tail.summary.observer);
 
   await upstream.close();
 }

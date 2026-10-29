@@ -312,3 +312,13 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   but the journal never stopped). This is tested with a stub host only; the
   descendant-evidence blocker for a real experiment is unchanged, and no
   installation or live start is authorized by it.
+- Correction round 7 closes the gaps that review found in that watch. A journal
+  that disappears, is emptied or regresses to `preparing` after `attached`, a
+  read that starts failing (`OBSERVER_READ_FAILED`), and an observer that stops
+  while the host is still running (`observer-stopped-early`) now revoke the lease
+  and take the existing bounded termination path immediately instead of waiting
+  for the host timeout; the early-stop verdict reuses the plan's
+  `cleanupTimeoutMs` as a grace so ordinary teardown is not mislabelled. The
+  success verdict now uses the envelope's strict `readLifecycle`, so a torn
+  trailing line, invalid UTF-8 or a record after the terminal phase is
+  `observer-incomplete` and can never close a trial. Still stub-level only.

@@ -9,7 +9,10 @@ import { randomUUID } from 'node:crypto'
 import {
   OBSERVER_ATTACH_WINDOW_MS,
   awaitObserverAttachment,
+  awaitObserverStop,
+  evaluateFinalObserverJournal,
   evaluateObserverJournal,
+  observerRuntimeFailure,
   readJournalPrefix
 } from '../tools/lib/observer-journal.mjs'
 import { readLifecycle } from '../orchestration/tool-observer/lifecycle.mjs'
@@ -223,4 +226,126 @@ test('the attach window never exceeds the overall host timeout', async () => {
   })
   assert.equal(view.state, 'timeout')
   assert.equal(view.waitedMs, 1_500)
+})
+
+// 以下用例针对 Codex 审查指出的运行期缺口：attached 之后 journal 消失/回退、
+// 观察器提前停止、读取异常，以及"尾部半行/终态后记录仍被记为成功"的最终判定。
+
+test('the runtime watch classifies the loss of an attached journal', () => {
+  assert.equal(observerRuntimeFailure('attached'), null)
+  assert.equal(observerRuntimeFailure('stopped'), 'OBSERVER_STOPPED_EARLY')
+  assert.equal(observerRuntimeFailure('pending'), 'OBSERVER_REGRESSED')
+  assert.equal(observerRuntimeFailure('failed'), 'OBSERVER_FAILED')
+  assert.equal(observerRuntimeFailure('mismatch'), 'OBSERVER_IDENTITY_MISMATCH')
+  assert.equal(observerRuntimeFailure('invalid'), 'OBSERVER_INVALID')
+})
+
+test('a complete lifecycle journal passes the final evaluation', () => {
+  const id = identity()
+  const view = evaluateFinalObserverJournal(
+    bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id), record(4, 'stopped', id)]),
+    expectedOf(id)
+  )
+  assert.equal(view.ok, true)
+  assert.equal(view.state, 'stopped')
+})
+
+test('a trailing half line after stopped cannot be recorded as success', () => {
+  const id = identity()
+  const complete = bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id), record(4, 'stopped', id)])
+  const view = evaluateFinalObserverJournal(Buffer.concat([complete, Buffer.from('{"schema":"tla.observer-', 'utf8')]), expectedOf(id))
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'invalid')
+})
+
+test('a record after the terminal phase cannot be recorded as success', () => {
+  const id = identity()
+  const view = evaluateFinalObserverJournal(
+    bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id), record(4, 'stopped', id), record(5, 'stopping', id)]),
+    expectedOf(id)
+  )
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'invalid')
+})
+
+test('invalid UTF-8 in the final journal cannot be recorded as success', () => {
+  const id = identity()
+  const complete = bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id), record(4, 'stopped', id)])
+  const view = evaluateFinalObserverJournal(Buffer.concat([complete, Buffer.from([0xff])]), expectedOf(id))
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'invalid')
+})
+
+test('a missing final journal is reported as missing, not as success', () => {
+  const id = identity()
+  assert.equal(evaluateFinalObserverJournal(null, expectedOf(id)).state, 'missing')
+  assert.equal(evaluateFinalObserverJournal(null, expectedOf(id)).ok, false)
+})
+
+test('a foreign final journal is a mismatch', () => {
+  const id = identity()
+  const other = identity({ launchId: randomUUID() })
+  const view = evaluateFinalObserverJournal(
+    bytes([record(1, 'preparing', other), record(2, 'attached', other), record(3, 'stopping', other), record(4, 'stopped', other)]),
+    expectedOf(id)
+  )
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'mismatch')
+})
+
+test('a journal that never reached a terminal phase is incomplete', () => {
+  const id = identity()
+  const view = evaluateFinalObserverJournal(bytes([record(1, 'preparing', id), record(2, 'attached', id)]), expectedOf(id))
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'incomplete')
+})
+
+test('a failed phase is never a successful final state', () => {
+  const id = identity()
+  const view = evaluateFinalObserverJournal(bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'failed', id)]), expectedOf(id))
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'failed')
+})
+
+test('the bounded stop wait retries while the journal is still writing', async () => {
+  const id = identity()
+  let clock = 0
+  const complete = bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id), record(4, 'stopped', id)])
+  const view = await awaitObserverStop({
+    read: () => (clock < 120 ? bytes([record(1, 'preparing', id), record(2, 'attached', id)]) : complete),
+    expected: expectedOf(id),
+    budgetMs: 1_000,
+    now: () => clock,
+    pause: async (ms) => { clock += ms }
+  })
+  assert.equal(view.ok, true)
+  assert.ok(clock >= 120)
+})
+
+test('the bounded stop wait gives up instead of hanging', async () => {
+  const id = identity()
+  let clock = 0
+  const view = await awaitObserverStop({
+    read: () => bytes([record(1, 'preparing', id), record(2, 'attached', id)]),
+    expected: expectedOf(id),
+    budgetMs: 300,
+    now: () => clock,
+    pause: async (ms) => { clock += ms }
+  })
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'incomplete')
+  assert.ok(clock >= 300)
+})
+
+test('a read error during the bounded stop wait is reported, not thrown', async () => {
+  const id = identity()
+  const view = await awaitObserverStop({
+    read: () => { const error = new Error('EISDIR: illegal operation on a directory'); error.code = 'EISDIR'; throw error },
+    expected: expectedOf(id),
+    budgetMs: 100,
+    now: () => 0,
+    pause: async () => {}
+  })
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'unreadable')
 })

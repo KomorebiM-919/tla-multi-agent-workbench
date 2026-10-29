@@ -607,3 +607,27 @@ and no terminal phase (`observer-incomplete`, exit 3). The 12-file envelope is
 mounted in the isolated launcher home so the reviewed identity check runs at real
 bytes. This is still a stub; it does not start DSH and does not set
 `hostVerified`.
+
+### Runtime observer watch (correction round 7)
+
+The round-6 tests missed the loss of an already-attached journal and trusted the
+prefix reader for the final verdict. Round 7 adds, in
+`tests/v02-observer-watch.test.mjs`, the runtime classification table
+(`observerRuntimeFailure`), the strict final evaluation (`evaluateFinalObserverJournal`:
+complete journal passes; trailing half line, record after terminal, invalid UTF-8,
+missing file, foreign identity, no terminal phase and a `failed` phase all fail),
+and the bounded stop wait (`awaitObserverStop`: retries while the journal is still
+being written, gives up at the budget instead of hanging, reports a read error as
+`unreadable` instead of throwing).
+
+In `node tests/v02-gate.test.mjs` the same scenario now also runs six loss cases
+against the real launcher: journal deleted, truncated, or regressed to
+`preparing` after `attached` (`observer-failed`, exit 4, lease revoked, host
+terminated promptly, request stream cut and nothing forwarded afterwards), the
+journal path replaced by a directory (`observer-failed` with
+`failure=OBSERVER_READ_FAILED` instead of an uncaught timer exception), the
+observer entering `stopping`+`stopped` while the host is still running
+(`observer-stopped-early`, exit 4), and a complete `stopped` journal with a torn
+line appended (`observer-incomplete` with `finalStatus=invalid`, exit 3). The
+host timeout in these cases is set to 20 s so "converged promptly" and "waited
+out the window" are distinguishable by elapsed time.
