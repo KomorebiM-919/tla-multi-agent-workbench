@@ -46,6 +46,7 @@ import {
   awaitObserverAttachment,
   awaitObserverStop,
   evaluateObserverJournal,
+  isObserverStopRequest,
   observerRuntimeFailure
 } from './lib/observer-journal.mjs';
 import {
@@ -660,7 +661,11 @@ async function main() {
       attachDetail: null,
       finalStatus: null,
       failure: null,
-      detail: null
+      detail: null,
+      // 停止窗口：停止被检测到的时点、请求权限被撤销的时点、以及复用的宽限上限。
+      stoppingObservedAtMs: null,
+      revokedAtMs: null,
+      stopGraceMs: observerCleanupTimeoutMs
     }
   };
 
@@ -864,11 +869,13 @@ async function main() {
       record.observer.attachPolls = attach.polls;
       record.observer.attachDetail = attach.detail;
       if (attach.state !== 'attached') {
-        // 观察器在授权前就收尾，说明"停止契约"被提前触发：不授权，也不把它当正常。
-        const stoppedEarly = attach.state === 'stopped';
+        // 观察器在授权前就收尾（stopping 或 stopped），说明"停止契约"被提前触发：
+        // 不授权，也不把它当正常——一次租约都不会发放。
+        const stoppedEarly = isObserverStopRequest(attach.state);
         const identityFailure = attach.state === 'mismatch' || attach.state === 'invalid' || attach.state === 'failed';
         record.result = stoppedEarly ? 'observer-stopped-early' : (identityFailure ? 'observer-identity-failed' : 'observer-not-attached');
         record.observer.failure = stoppedEarly ? 'OBSERVER_STOPPED_EARLY' : attach.state;
+        if (stoppedEarly) record.observer.stoppingObservedAtMs = Date.now();
         record.decision = {
           allow: false,
           blockers: [{
@@ -968,9 +975,17 @@ async function main() {
           return;
         }
         record.observer.status = view.state;
-        if (view.state === 'stopped') {
-          // 正常收尾与观察器停止存在竞态：先停止续租，再给一个由 plan cleanupTimeoutMs 限定的宽限；
-          // 宽限内宿主自己退出即正常收尾，宽限到点仍在运行才按"提前停止"收敛。
+        if (isObserverStopRequest(view.state)) {
+          // 停止窗口：stopping/stopped 一出现就关掉授权窗口（撤销租约、不再续租），
+          // 但"宿主异常"要等宽限期结束才判——正常收尾与观察器停止之间存在竞态。
+          // 宽限只用 plan 已有的 cleanupTimeoutMs，不引入新的时间参数。
+          const detectedAtMs = Date.now();
+          if (record.observer.stoppingObservedAtMs === null) record.observer.stoppingObservedAtMs = detectedAtMs;
+          if (record.observer.revokedAtMs === null) {
+            gate.revoke('OBSERVER_STOPPING');
+            record.observer.revokedAtMs = detectedAtMs;
+            appendFileSync(gateLog, JSON.stringify({ event: 'observer-stop-revoke', at: new Date(detectedAtMs).toISOString(), state: view.state }) + '\n', 'utf8');
+          }
           if (earlyStopTimer === null) {
             earlyStopTimer = setTimeout(() => {
               earlyStopTimer = null;

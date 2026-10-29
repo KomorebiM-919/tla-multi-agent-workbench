@@ -204,6 +204,8 @@ if (observerMode !== 'none') {
   mkdirSync(join(runDir, 'observer'), { recursive: true });
   writeJournal(1, 'preparing');
   if (observerMode !== 'unattached') writeJournal(2, 'attached');
+  // 首次授权前就收尾：attached 之后立刻 stopping+stopped，启动器还没来得及发租约就看到了停止。
+  if (observerMode === 'stop-before-attach') { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }
   if (observerMode === 'fail-after') setTimeout(() => writeJournal(3, 'failed', 'WRITE_FAILED'), 400);
   // 运行期失效替身：attached 之后把 journal 删掉/清空/退回 preparing/换成目录，或提前进入 stopping+stopped。
   if (observerMode === 'delete-after') setTimeout(dropJournal, 500);
@@ -211,6 +213,10 @@ if (observerMode !== 'none') {
   if (observerMode === 'regress-after') setTimeout(() => { try { writeFileSync(journal, journalRecord(1, 'preparing') + '\\n'); } catch (error) { /* gone */ } }, 500);
   if (observerMode === 'dir-after') setTimeout(() => { dropJournal(); try { mkdirSync(journal); } catch (error) { /* exists */ } }, 500);
   if (observerMode === 'stop-early') setTimeout(() => { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }, 500);
+  // 停止窗口替身：观察器先 stopping 并停在那儿，或直接走到 stopped，宿主继续持续请求。
+  // 授权窗口的判据只能在宿主还活着时取，所以这些替身都必须活过宽限期。
+  if (observerMode === 'stop-dwell') setTimeout(() => writeJournal(3, 'stopping'), 400);
+  if (observerMode === 'stop-direct') setTimeout(() => { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }, 400);
 }
 // 未挂载模式必须活过附着的等待窗口，否则测到的是"宿主先退出"而不是"窗口到点"。
 if (observerMode === 'unattached') await new Promise((d) => setTimeout(d, 2500));
@@ -228,6 +234,30 @@ const beat = setInterval(() => { if (mode === 'ok') writeEvent({ event: 'heartbe
 if (typeof beat.unref === 'function') beat.unref();
 if (mode === 'silent-long' || mode === 'ignore-sigterm') { await new Promise((d) => setTimeout(d, 20000)); process.exit(0); }
 if (observerMode === 'fail-after') await new Promise((d) => setTimeout(d, 1200));
+// 正常关闭竞态：stopping+stopped 之后宿主自己退出（仍在宽限期内），撤销请求权限但不得误判失败。
+if (observerMode === 'stop-race') {
+  setTimeout(() => { writeJournal(3, 'stopping'); writeJournal(4, 'stopped'); }, 400);
+  setTimeout(() => process.exit(0), 900);
+}
+// 持续请求替身：每 120 ms 一次，逐条把 {i,status,startMs,endMs} 追加到 requests.jsonl，
+// 这样"撤销之后开始的请求被拒绝"可以在启动器返回之前取到证据。
+if (process.env.STUB_STREAM === '1') {
+  const streamFile = join(runDir, 'requests.jsonl');
+  for (let i = 0; i < 60; i += 1) {
+    if (i > 0) await new Promise((d) => setTimeout(d, 120));
+    const startMs = Date.now();
+    let status = 'error';
+    try {
+      const res = await fetch(gate.baseUrl + '/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      status = res.status;
+    } catch (error) {
+      status = 'error';
+    }
+    appendFileSync(streamFile, JSON.stringify({ i, status, startMs, endMs: Date.now() }) + '\\n', 'utf8');
+    if (status === 'error') break;
+  }
+  process.exit(0);
+}
 const results = [];
 for (let i = 0; i < 5; i += 1) {
   if (i > 0 && process.env.STUB_SLOW_REQUESTS === '1') await new Promise((d) => setTimeout(d, 200));
@@ -1074,7 +1104,7 @@ async function scenarioLauncherObserverWatch() {
   const reviewed = REVIEWED_PLUGIN_EVIDENCE['tla-tool-observer'];
   const traceId = randomUUID();
 
-  const runObserverCase = async ({ name, mode, attachMs = 500, leaseTtlMs = null, foreignLaunch = false, hostTimeoutMs = null, slowRequests = false }) => {
+  const runObserverCase = async ({ name, mode, attachMs = 500, leaseTtlMs = null, foreignLaunch = false, hostTimeoutMs = null, slowRequests = false, stream = false, cleanupTimeoutMs = 100, modelRequests = 2 }) => {
     const runDir = join(scratch, name);
     mkdirSync(runDir, { recursive: true });
     const patch = join(runDir, 'overlay.yml');
@@ -1087,7 +1117,7 @@ async function scenarioLauncherObserverWatch() {
       fileCount: reviewed.fileCount,
       digest: reviewed.buildDigest,
       limits: { maxBytes: 131072, maxObservations: 10, maxPending: 2 },
-      cleanupTimeoutMs: 100,
+      cleanupTimeoutMs,
     });
     const port = await freePort();
     const dumpFile = writeDumpYaml(join(runDir, 'dump.yml'), [
@@ -1108,7 +1138,7 @@ async function scenarioLauncherObserverWatch() {
     if (hostTimeoutMs !== null) extra.push('--timeout-ms', String(hostTimeoutMs));
     const hitsBefore = upstream.hits.length;
     const result = await runLauncher(
-      baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests: 2, dumpFile, patch, extra }),
+      baseLauncherArgs({ upstream: upstream.url, runDir, modelRequests, dumpFile, patch, extra }),
       {
         env: {
           STUB_DUMP_FILE: dumpFile,
@@ -1119,6 +1149,7 @@ async function scenarioLauncherObserverWatch() {
           STUB_RUNNER_ID: runnerRunId,
           STUB_LAUNCH_ID: foreignLaunch ? randomUUID() : launchId,
           ...(slowRequests ? { STUB_SLOW_REQUESTS: '1' } : {}),
+          ...(stream ? { STUB_STREAM: '1' } : {}),
         },
         timeoutMs: 40000,
       },
@@ -1209,6 +1240,81 @@ async function scenarioLauncherObserverWatch() {
   check(stopEarly.summary.termination && stopEarly.summary.termination.exited === true, 'observer watch: early stop terminates the host', stopEarly.summary.termination);
   check(stopEarly.result.elapsedMs < 6000, 'observer watch: early stop does not wait for the host timeout', stopEarly.result.elapsedMs);
   check(upstream.hits.length === hitsAtStop, 'observer watch: early stop forwards nothing afterwards', upstream.hits.length - hitsAtStop);
+
+  // N12-N15：停止阶段的授权窗口。观察器进入 stopping（停在那儿）或直接 stopped，
+  // 宿主继续持续请求。判据只在宿主还活着时取：撤销之后**开始**的请求必须是 403，
+  // 上游只收到被放行的那些。在途请求（撤销前开始、撤销后结束）单列记录，
+  // 不用它替代"新请求被拒绝"。
+  const readRequests = (dir) => {
+    const file = join(dir, 'requests.jsonl');
+    if (!existsSync(file)) return [];
+    return readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line));
+  };
+  for (const item of [{ name: 'watch-stop-dwell', mode: 'stop-dwell' }, { name: 'watch-stop-direct', mode: 'stop-direct' }]) {
+    const hitsBefore = upstream.hits.length;
+    const run = await runObserverCase({
+      name: item.name,
+      mode: item.mode,
+      leaseTtlMs: 300,
+      hostTimeoutMs: 20000,
+      stream: true,
+      modelRequests: 200,
+      cleanupTimeoutMs: 2000,
+    });
+    const requests = readRequests(run.runDir);
+    const revokedAtMs = run.summary.observer && run.summary.observer.revokedAtMs;
+    const postRevoke = requests.filter((r) => typeof revokedAtMs === 'number' && r.startMs >= revokedAtMs);
+    const inFlight = requests.filter((r) => typeof revokedAtMs === 'number' && r.startMs < revokedAtMs && r.endMs > revokedAtMs);
+    const allowed = requests.filter((r) => r.status === 200);
+    const newHits = upstream.hits.length - hitsBefore;
+    check(run.result.code === EXIT_PROTECTION_LOST, `stop window: ${item.name} -> exit 4`, run.result.code);
+    check(run.summary.result === 'observer-stopped-early', `stop window: ${item.name} names observer-stopped-early`, run.summary.result);
+    check(typeof revokedAtMs === 'number' && typeof run.summary.observer.stoppingObservedAtMs === 'number', `stop window: ${item.name} records when the stop was seen and revoked`, run.summary.observer);
+    check(revokedAtMs >= run.summary.observer.stoppingObservedAtMs, `stop window: ${item.name} revokes no earlier than it sees the stop`, [run.summary.observer.stoppingObservedAtMs, revokedAtMs]);
+    check(postRevoke.length >= 2, `stop window: ${item.name} kept requesting after the revoke`, postRevoke.length);
+    check(postRevoke.every((r) => r.status === 403), `stop window: ${item.name} denies every request started after the revoke`, postRevoke.map((r) => r.status));
+    check(allowed.length === newHits, `stop window: ${item.name} forwarded exactly the allowed requests`, [allowed.length, newHits]);
+    check(inFlight.every((r) => r.status === 200 || r.status === 403), `stop window: ${item.name} counts in-flight requests separately`, inFlight.length);
+  }
+
+  // N14：首次授权前就出现 stopping → 不得授权，零上游请求。
+  const beforeAttach = await runObserverCase({
+    name: 'watch-stop-before-attach',
+    mode: 'stop-before-attach',
+    hostTimeoutMs: 20000,
+    stream: true,
+    modelRequests: 200,
+  });
+  check(beforeAttach.result.code === EXIT_PROTECTION_UNVERIFIED, 'stop window: stopping before attach -> exit 3', beforeAttach.result.code);
+  check(beforeAttach.summary.result === 'observer-stopped-early', 'stop window: stopping before attach is never authorised', beforeAttach.summary.result);
+  check(beforeAttach.summary.observer && beforeAttach.summary.observer.stoppingObservedAtMs !== null && beforeAttach.summary.observer.revokedAtMs === null, 'stop window: pre-lease stop records detection without a revoke', beforeAttach.summary.observer);
+  check(upstream.hits.length === beforeAttach.hitsBefore, 'stop window: pre-lease stop forwards nothing upstream', upstream.hits.length - beforeAttach.hitsBefore);
+
+  // N15：正常关闭竞态——观察器 stopping+stopped 后宿主自己退出（仍在宽限期内）：
+  // 请求权限已经撤销，但这次运行必须正常收尾，不能记成失败。
+  const hitsBeforeRace = upstream.hits.length;
+  const race = await runObserverCase({
+    name: 'watch-stop-race',
+    mode: 'stop-race',
+    leaseTtlMs: 300,
+    hostTimeoutMs: 20000,
+    stream: true,
+    modelRequests: 200,
+    cleanupTimeoutMs: 1500,
+  });
+  const raceRequests = readRequests(race.runDir);
+  const raceRevokedAt = race.summary.observer && race.summary.observer.revokedAtMs;
+  const racePost = raceRequests.filter((r) => typeof raceRevokedAt === 'number' && r.startMs >= raceRevokedAt);
+  const raceAllowed = raceRequests.filter((r) => r.status === 200);
+  check(race.result.code === EXIT_OK, 'stop window: normal shutdown inside the grace still exits 0', race.result.code);
+  check(race.summary.result === 'host-ok', 'stop window: normal shutdown is host-ok despite the revoke', race.summary.result);
+  check(race.summary.observer && race.summary.observer.finalStatus === 'stopped' && race.summary.observer.failure === null, 'stop window: race closes with a strict stopped journal and no failure', race.summary.observer);
+  check(typeof raceRevokedAt === 'number' && racePost.length >= 1, 'stop window: the revoke happened while the host was still running', [raceRevokedAt, racePost.length]);
+  check(racePost.every((r) => r.status === 403), 'stop window: the race denies requests started after the revoke', racePost.map((r) => r.status));
+  check(upstream.hits.length - hitsBeforeRace === raceAllowed.length, 'stop window: the race forwards exactly the allowed requests', [upstream.hits.length - hitsBeforeRace, raceAllowed.length]);
 
   // N11：完整 stopped 之后追加半行 → 最终判定用严格读取，不能记为成功。
   const tail = await runObserverCase({ name: 'watch-tail', mode: 'tail-garbage' });

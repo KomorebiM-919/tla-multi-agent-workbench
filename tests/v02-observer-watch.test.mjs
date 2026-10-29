@@ -349,3 +349,36 @@ test('a read error during the bounded stop wait is reported, not thrown', async 
   assert.equal(view.ok, false)
   assert.equal(view.state, 'unreadable')
 })
+
+test('a stopping journal is reported as stopping, not as attached', () => {
+  const id = identity()
+  const view = evaluateObserverJournal(bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id)]), expectedOf(id))
+  assert.equal(view.state, 'stopping')
+})
+
+test('stopping is a stop signal, not a runtime failure by itself', () => {
+  assert.equal(observerRuntimeFailure('stopping'), null)
+  assert.equal(observerRuntimeFailure('attached'), null)
+  assert.equal(observerRuntimeFailure('stopped'), 'OBSERVER_STOPPED_EARLY')
+})
+
+test('the attach wait stops at a stopping journal instead of reporting attached', async () => {
+  const id = identity()
+  let clock = 0
+  const view = await awaitObserverAttachment({
+    read: () => bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id)]),
+    expected: expectedOf(id),
+    windowMs: 5000,
+    now: () => clock,
+    pause: async (ms) => { clock += ms }
+  })
+  assert.equal(view.state, 'stopping')
+  assert.ok(clock < 5000)
+})
+
+test('a journal that only reached stopping is not a clean final state', () => {
+  const id = identity()
+  const view = evaluateFinalObserverJournal(bytes([record(1, 'preparing', id), record(2, 'attached', id), record(3, 'stopping', id)]), expectedOf(id))
+  assert.equal(view.ok, false)
+  assert.equal(view.state, 'incomplete')
+})

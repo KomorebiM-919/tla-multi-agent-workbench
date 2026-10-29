@@ -193,7 +193,10 @@ export function evaluateObserverJournal(bytes, expected) {
   const phase = view.phase;
   if (phase === 'failed') return { state: 'failed', detail: 'journal reported a failed phase' };
   if (phase === 'stopped') return { state: 'stopped', detail: 'journal reached stopped' };
-  if (phase === 'attached' || phase === 'stopping') return { state: 'attached', detail: 'journal reached ' + phase };
+  // stopping 与 attached 必须分开：进入 stopping 就表示观察器已按停止契约收尾，
+  // 授权窗口从这一刻起必须关闭（但"宿主异常"另由调用方的有界宽限判定）。
+  if (phase === 'stopping') return { state: 'stopping', detail: 'journal entered stopping' };
+  if (phase === 'attached') return { state: 'attached', detail: 'journal reached attached' };
   return {
     state: 'pending',
     detail: view.waiting === true ? 'incomplete trailing line; journal has no complete record yet' : 'journal has not reached attached',
@@ -269,9 +272,19 @@ const RUNTIME_FAILURES = Object.freeze({
  * 是否算失败由调用方用它自己的有界宽限期判定（正常退出与观察器收尾存在竞态）。
  */
 export function observerRuntimeFailure(state) {
-  // attached 是唯一"可以继续放行"的状态；其余都必须收敛，未知状态按 invalid 处理。
+  // attached 是唯一"可以继续放行"的状态；stopping/stopped 是停止信号，由调用方的
+  // 停止窗口处理（先撤销请求权限，再用宽限区分正常收尾与提前停止）。其余都必须收敛。
   if (state === 'attached') return null;
+  if (state === 'stopping') return null;
   return RUNTIME_FAILURES[state] ?? 'OBSERVER_INVALID';
+}
+
+/**
+ * 进入停止信号了吗：stopping/stopped 都算。授权窗口在第一次看到它们时关闭，
+ * 但用户可见的"提前停止"结论要等宽限期结束才下。
+ */
+export function isObserverStopRequest(state) {
+  return state === 'stopping' || state === 'stopped';
 }
 
 function reasonOf(error) {

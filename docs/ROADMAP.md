@@ -322,3 +322,14 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   success verdict now uses the envelope's strict `readLifecycle`, so a torn
   trailing line, invalid UTF-8 or a record after the terminal phase is
   `observer-incomplete` and can never close a trial. Still stub-level only.
+- Correction round 8 closes the authorisation window at stop time. `stopping` is
+  its own journal state again (round 6 had folded it into `attached`), and the
+  gate revokes the lease on the first sighting of `stopping` or `stopped`,
+  recording `stoppingObservedAtMs`/`revokedAtMs` and logging an
+  `observer-stop-revoke` event. Revoking request authority stays separate from
+  judging the host: the existing `cleanupTimeoutMs` grace still lets an ordinary
+  shutdown finish through the strict final read, and only a host that outlives
+  the grace is reported as `observer-stopped-early`. A stop seen before the first
+  lease is never authorised. Behaviour is proven by a streaming stub host that
+  keeps requesting after the stop: every request started after the revoke is
+  refused and none reaches upstream. Still stub-level only.

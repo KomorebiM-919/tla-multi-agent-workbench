@@ -631,3 +631,29 @@ observer entering `stopping`+`stopped` while the host is still running
 line appended (`observer-incomplete` with `finalStatus=invalid`, exit 3). The
 host timeout in these cases is set to 20 s so "converged promptly" and "waited
 out the window" are distinguishable by elapsed time.
+
+### Runtime observer watch (correction round 8)
+
+Round 7 still opened the stop window only on `stopped`, so a journal sitting in
+`stopping` — or reaching `stopped` while the host kept requesting — kept renewing
+the lease. The window now opens on either state: the lease is revoked at once
+(`OBSERVER_STOPPING`), `stoppingObservedAtMs` and `revokedAtMs` land in the gate
+summary, and the `cleanupTimeoutMs` grace that separates a normal shutdown from an
+early stop is unchanged.
+
+`tests/v02-observer-watch.test.mjs` adds the state split: `stopping` is reported
+as `stopping` rather than `attached`, is a stop signal rather than a runtime
+failure (`observerRuntimeFailure('stopping')` is null while `('stopped')` is
+`OBSERVER_STOPPED_EARLY`), ends the attach wait without reporting `attached`, and
+is not a clean final state.
+
+`tests/v02-gate.test.mjs` adds four behaviour cases driven by a streaming stub
+host (`STUB_STREAM`): one request every 120 ms, each attempt recorded with its
+status and start/end times. The cases are a journal that enters `stopping` and
+stays there, one that goes straight to `stopped`, one that stops before the attach
+window closed (`observer-stopped-early`, exit 3, no lease ever issued, host
+stopped, `revokedAtMs` null), and the ordinary shutdown race (still `host-ok`,
+`finalStatus=stopped`). After the revoke every request that starts is refused —
+at least two are checked — upstream receives none of them, and requests already in
+flight when the stop was detected are listed separately instead of being inferred
+from "nothing arrived after the return".
