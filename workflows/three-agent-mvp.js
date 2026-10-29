@@ -641,6 +641,57 @@ function testCommandEnvironmentApplied(command, canonical) {
   return value !== '' && value.indexOf(TEST_ENV_PREFIX) === 0 && isAllowedTestCommand(value, canonical);
 }
 
+// 阶段路由（args.routes）：只接这五个阶段键，每项只允许 provider/model 两个非空字符串。
+// 刻意不接受 cwd 与 reasoningEffort：宿主 guest 的 agent 选项白名单里没有它们
+// （cwd 恒为本工作流 run 的工作目录，reasoningEffort 没有工作流入口），静默丢弃会让
+// "以为设了、其实没生效"无法被察觉，所以显式提供就一律拒绝。
+const PHASE_ROUTE_KEYS = ['preflight', 'requirement', 'coding', 'verify', 'review'];
+const PHASE_ROUTE_FIELDS = ['provider', 'model'];
+
+function validatePhaseRoutes(raw) {
+  const errors = [];
+  if (!isObject(raw)) {
+    errors.push('routes 必须是 JSON 对象，键恰好是 ' + PHASE_ROUTE_KEYS.join('/') + '：实际为 ' +
+      (Array.isArray(raw) ? 'array' : (raw === null ? 'null' : typeof raw)));
+    return { routes: null, errors: errors };
+  }
+  const missing = PHASE_ROUTE_KEYS.filter(function (key) { return raw[key] === undefined; });
+  if (missing.length > 0) {
+    errors.push('routes 缺少阶段：' + missing.join(', ') + '（显式提供 routes 时必须五个阶段齐全，省略整个 routes 才回落到父会话继承）');
+  }
+  const unknown = Object.keys(raw).filter(function (key) { return PHASE_ROUTE_KEYS.indexOf(key) === -1; });
+  if (unknown.length > 0) {
+    errors.push('routes 含未知阶段：' + unknown.join(', ') + '（只接受 ' + PHASE_ROUTE_KEYS.join('/') + '）');
+  }
+  const routes = {};
+  PHASE_ROUTE_KEYS.forEach(function (key) {
+    const entry = raw[key];
+    if (entry === undefined) { return; }
+    if (!isObject(entry)) {
+      errors.push('routes.' + key + ' 必须是 { provider, model } 对象：实际为 ' +
+        (Array.isArray(entry) ? 'array' : (entry === null ? 'null' : typeof entry)));
+      return;
+    }
+    const extra = Object.keys(entry).filter(function (field) { return PHASE_ROUTE_FIELDS.indexOf(field) === -1; });
+    if (extra.length > 0) {
+      errors.push('routes.' + key + ' 含不支持的字段：' + extra.join(', ') +
+        '（只接受 provider/model；cwd 由宿主固定为本工作流的工作目录，reasoningEffort 没有工作流入口，不会被静默忽略）');
+    }
+    const provider = asString(entry.provider);
+    const model = asString(entry.model);
+    if (provider === '') {
+      errors.push('routes.' + key + '.provider 必须是非空字符串：' + JSON.stringify(entry.provider));
+    }
+    if (model === '') {
+      errors.push('routes.' + key + '.model 必须是非空字符串：' + JSON.stringify(entry.model));
+    }
+    if (provider !== '' && model !== '') {
+      routes[key] = { provider: provider, model: model };
+    }
+  });
+  return { routes: errors.length === 0 ? routes : null, errors: errors };
+}
+
 /**
  * 校验并归一化运行参数。任何不合法输入都返回结构化错误，不抛异常、不产生空对象访问。
  */
@@ -774,6 +825,14 @@ function validateRunConfig(rawArgs, startupNowMs) {
   }
   const selfCheckRequired = cfg.selfCheckRequired === true;
 
+  // 阶段路由：完全省略时保持父会话继承；显式提供就必须五个阶段齐全且只有 provider/model。
+  let routes = null;
+  if (cfg.routes !== undefined) {
+    const checkedRoutes = validatePhaseRoutes(cfg.routes);
+    checkedRoutes.errors.forEach(function (error) { errors.push(error); });
+    routes = checkedRoutes.routes;
+  }
+
   let runStartedAt = null;
   if (cfg.runStartedAt !== undefined) {
     const parsedStarted = parseIsoTimestamp(cfg.runStartedAt);
@@ -850,7 +909,8 @@ function validateRunConfig(rawArgs, startupNowMs) {
     cacheBaseline: cacheBaseline,
     runStartedAt: runStartedAt,
     selfCheck: selfCheck,
-    selfCheckRequired: selfCheckRequired
+    selfCheckRequired: selfCheckRequired,
+    routes: routes
   };
 
   if (errors.length > 0) { return { ok: false, errors: errors, config: config }; }
@@ -1778,6 +1838,14 @@ if (!validated.ok) {
 }
 const C = validated.config;
 
+// 阶段路由查表：修订轮的 phase 名带了 -revision-N，但路由永远按基础阶段取。
+// C.routes 为 null 时返回空对象，保持父会话继承；非 null 时 validatePhaseRoutes 已保证五键齐全。
+function routeOptions(phaseKey) {
+  if (C.routes === null) { return {}; }
+  const route = C.routes[phaseKey];
+  return { provider: route.provider, model: route.model };
+}
+
 // 内置演示任务（工作流测试样例，不属于 TLA 工作台自身功能）
 // 口径说明：本次需求把上一轮暴露的 AC-12/BC-12（同一调用既要求"不打印"又要求"恰好 4 行"）与
 // BC-03/BC-02（splitlines 语义 vs 行边界集合）两处冲突按"作用域分开规定 + 显式行边界集合"消除，
@@ -1993,7 +2061,8 @@ if (preflightDrift !== null) { return preflightDrift; }
 const preflight = await runBudgetedAgent(preflightPromptText, {
   label: 'Verifier (preflight)',
   phase: 'preflight',
-  schema: PREFLIGHT_SCHEMA
+  schema: PREFLIGHT_SCHEMA,
+  ...routeOptions('preflight')
 });
 if (isBudgetExhausted(preflight)) { return budgetFailure(preflight); }
 
@@ -2143,7 +2212,8 @@ if (requirementDrift !== null) { return requirementDrift; }
 const requirement = await runBudgetedAgent(requirementPromptText, {
   label: 'Requirement Agent',
   phase: 'requirement',
-  schema: REQUIREMENT_SCHEMA
+  schema: REQUIREMENT_SCHEMA,
+  ...routeOptions('requirement')
 });
 if (isBudgetExhausted(requirement)) { return budgetFailure(requirement); }
 
@@ -2200,7 +2270,8 @@ while (attempt <= C.maxCodingAttempts) {
   const codingReport = await runBudgetedAgent(codingPromptText, {
     label: codingLabel,
     phase: 'coding' + (attempt > 1 ? '-revision-' + attempt : ''),
-    schema: CODING_SCHEMA
+    schema: CODING_SCHEMA,
+    ...routeOptions('coding')
   });
   if (isBudgetExhausted(codingReport)) { return budgetFailure(codingReport); }
   const codingOutputValid = isObject(codingReport) && hasItems(codingReport.files_created);
@@ -2233,7 +2304,8 @@ while (attempt <= C.maxCodingAttempts) {
   const verification = await runBudgetedAgent(verifyPromptText, {
     label: verifyLabel,
     phase: 'verify' + (attempt > 1 ? '-revision-' + attempt : ''),
-    schema: VERIFY_SCHEMA
+    schema: VERIFY_SCHEMA,
+    ...routeOptions('verify')
   });
   if (isBudgetExhausted(verification)) { return budgetFailure(verification); }
   const verificationJudge = judgeTestEvidence(verification, C.testCommand);
@@ -2256,7 +2328,8 @@ while (attempt <= C.maxCodingAttempts) {
   const review = await runBudgetedAgent(reviewPromptText, {
     label: reviewLabel,
     phase: 'review' + (attempt > 1 ? '-revision-' + attempt : ''),
-    schema: REVIEW_SCHEMA
+    schema: REVIEW_SCHEMA,
+    ...routeOptions('review')
   });
   if (isBudgetExhausted(review)) { return budgetFailure(review); }
   const reviewNowMs = currentTimeMs();
@@ -2375,6 +2448,16 @@ return {
     unchecked: scriptSelfCheckUnchecked.slice()
   },
   maxCodingAttempts: C.maxCodingAttempts,
+  // 请求的路由与实际生效的路由分开记录：编排层只能证明 provider/model 按宿主接受的形式
+  // 传进了 agent()（guest 白名单 label/phase/schema/provider/model，宿主转成 request.agentOptions）。
+  // 离线替身与静态检查都无法证明模型真的按该路由执行，所以生效一律记为 unverified。
+  routing: {
+    requested: C.routes === null ? null : C.routes,
+    effective: 'unverified',
+    effectiveMeaning: C.routes === null
+      ? '未提供 routes：子代理按宿主规则继承父会话路由，本脚本不作任何覆盖'
+      : 'provider/model 已按 agent(prompt, {provider, model}) 传入；是否真正生效（provider 已注册、模型可用）需要宿主运行时证据'
+  },
   // 调用预算与实际启动记录：预算在每次启动前检查，台账是"实际启动了几次"的权威记录。
   // 这里能强制限制的是"启动多少次子代理"，不能限制单个子代理内部的 token 消耗。
   agentCallBudget: {

@@ -36,6 +36,24 @@ node tests/workflow-logic.test.mjs
   - **非法上限**：`maxAgentCalls` 为 `33` / `0` / `2.5` / `'4'` ⇒ `INVALID_ARGS` 且一次子代理都不启动；
   - **容差边界与证明边界**：mtime 相差正好 5 毫秒 ⇒ `OK`，相差 6 毫秒 ⇒ `BYTECODE_CACHE_WRITTEN`；末条断言 `finalDecision.cacheCoverage.collectsAfterLastAgent === false`、`unobservedWindow` 非空、`note` 含"不可观测"——把"没抓到"与"没发生"分开写进返回值。
 
+### 1k. 工作流阶段路由透传（`args.routes`）
+
+`tests/workflow-routes.test.mjs` 与 `workflow-logic` 用同一套 `workflow-harness.mjs`（`node:vm` 装载真实生产脚本，注入模拟 `agent()`），只是额外记录每次调用实际收到的 `provider`/`model`：
+
+```powershell
+node tests/workflow-routes.test.mjs
+```
+
+当前规模：**15 个场景 / 95 项断言**。覆盖：
+
+- **旧模式兼容**：`args` 里没有 `routes` ⇒ 五个调用都不带 `provider`/`model`（保持父会话继承），返回值 `routing.requested === null`、`routing.effective === 'unverified'`。
+- **五阶段各自生效**：完整 `routes` ⇒ `preflight`/`requirement`/`coding`/`verify`/`review` 每次调用只带本阶段的 `provider`/`model`，且 `label`/`phase`/`schema` 不变。
+- **返工轮沿用**：`review` 首轮 `CHANGES_REQUESTED` 触发第二轮，`coding-revision-2`/`verify-revision-2`/`review-revision-2` 仍用基础阶段的路由（`phase` 的 `-revision-N` 后缀不参与查表）。
+- **拒绝即零启动**：缺少某个阶段、未知阶段键、阶段内出现 `cwd` 或 `reasoningEffort`、`provider` 为空串、`model` 为 `null`、`provider` 不是字符串、阶段值不是对象、`routes` 为 `null` 或数组 ⇒ 一律 `INVALID_ARGS`、`calls 0`，错误文本指名 `routes`/`cwd`/`reasoningEffort`——**不静默丢弃**。
+- **预算与成功判据不退化**：带 `routes` 时 `maxAgentCalls` 仍在启动前拦截（`AGENT_CALL_BUDGET_EXCEEDED`）；一组合法 `routes` 不影响"测试未通过 ⇒ `TEST_NOT_VERIFIED`"。
+
+证据边界：这些断言只证明**参数按宿主接受的形状传进了 `agent()`**。离线替身没有 LLM 层，所以返回值里的 `routing.effective` 恒为 `unverified`；provider 是否注册、模型是否可用要宿主运行时证据。接口依据是安装包内 `@deepseek-ai/dsh-workflow-ptc@0.2.1-rc.3` 的 guest（`WORKFLOW_GUEST_SOURCE`）：`SUPPORTED_AGENT_OPTIONS = {label, phase, schema, provider, model}`，`effort`/`isolation`/`agentType` 是显式 deferred，`cwd` 由宿主固定为工作流工作目录。
+
 ### 1a. 预检认领门禁的集成测试（真实认领工具 + 编排层门禁）
 
 `tests/preflight-claim-integration.test.mjs` 不使用手工拼写的认领结果：它**真的调用** `tools/claim_evidence_dir.py`，把工具打印的 JSON 原样接入编排层预检返回值，再看门禁放行还是拒绝。当前 **6 个场景 / 59 项断言**：

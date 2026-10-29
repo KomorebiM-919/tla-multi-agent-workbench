@@ -285,7 +285,9 @@ export async function runSource(sourceText, plan, args, options) {
     const label = opts && typeof opts.label === 'string' ? opts.label : '(无 label)';
     calls.push(label);
     if (captured !== null) {
-      captured.push({ label: label, phase: opts.phase, prompt: prompt, schema: opts.schema });
+      // provider/model 也要捕获：工作流阶段路由只能证明"按宿主形状传进去了"，
+      // 不能证明模型真的按它执行（离线替身没有 LLM 层）。
+      captured.push({ label: label, phase: opts.phase, provider: opts.provider, model: opts.model, prompt: prompt, schema: opts.schema });
     }
     const key = pickKey(label);
     const responder = plan[key];

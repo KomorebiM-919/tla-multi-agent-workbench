@@ -93,6 +93,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 **已实现（代码在库，离线测试全绿）**
 
 - V0.1 演示流水线（5 角色各 1 次调用；交付测试 97 项；编排层独立复核 28/28）。
+- 工作流阶段路由透传（2026-10-30）：`workflows/three-agent-mvp.js` 的 `args.routes` 接受五个阶段键 `preflight`/`requirement`/`coding`/`verify`/`review`，每项只允许非空字符串 `provider`/`model`；完全省略时保持父会话继承。显式提供时五键必须齐全且有效——缺项、未知阶段、未知字段（包括 `cwd` 与 `reasoningEffort`）、空值、错误类型都在首次 `agent()` 之前拒绝，零子代理启动，不静默丢弃。路由经既有的 `runBudgetedAgent` 集中透传成宿主接受的形状 `agent(prompt, { label, phase, schema, provider, model })`，返工轮按基础阶段复用同一路由；`tests/workflow-routes.test.mjs` 15 个场景 / 95 项断言（含旧模式兼容、返工透传、预算不退化、13 个反例）。接口依据是安装包内的 `@deepseek-ai/dsh-workflow-ptc@0.2.1-rc.3`：guest 的 agent 选项白名单只有 `label/phase/schema/provider/model`，`cwd` 恒为本工作流的工作目录，per-agent effort 属"deferred"。**只证明传参**：结果里 `routing.requested` 是请求的路由，`routing.effective` 恒为 `unverified`。
 - V0.2 离线规划/预算分配/价格查询 CLI（`orchestration/cli.mjs`，价格带 `channel`、含宿主目录核对）。
 - 本地启动闸门 `orchestration/gate/` + 启动器 `tools/gated-run.mjs` + 预算插件 `orchestration/interceptor-plugin/`：租约、挂载证明、心跳、额度、`runId` 绑定、覆盖率校验、插件版本与构建指纹校验。
 - 观察者运行期监视（2026-10-29 补，M1B 契约 round 6）：`tools/lib/observer-journal.mjs` 以生产 `lifecycle.mjs` 的同一套规则读 journal **前缀**（唯一区别：不要求已有终态、末行无换行时丢弃而不是判矛盾），`tools/gated-run.mjs` 在宿主启动后有界等待 `attached`（默认 10 s，永不越过宿主超时，`--observer-attach-ms` 限 1..10000），逐条比对 `runnerRunId`/`launchId`/`gateRunId`/`budgetRunId`，运行中在既有租约续期节拍上复核，并在判定成功前要求 journal 到达 `stopped`。四种新结论：`observer-not-attached` / `observer-identity-failed`（放行前，退出码 3）、`observer-failed`（放行后，退出码 4）、`observer-incomplete`（宿主正常退出但 journal 未停，退出码 3）。round 7 补齐失效收敛与终局判定：`attached` 之后 journal 被删除/截空/退回 `preparing`、读取变成异常（`OBSERVER_READ_FAILED`）或观察器在宿主仍运行时收尾，都会立即撤销租约并走既有有界终止路径（退出码 4，`observer-stopped-early` 单独成码），不再等满宿主超时；提前停止的判定借用 plan 已有的 `cleanupTimeoutMs` 作宽限，正常收尾不会被误判；最终成功判定改用信封自己的严格 `readLifecycle`（尾部半行、非法 UTF-8、终态后记录一律 `observer-incomplete`）。round 8 把 `stopping` 与 `attached` 分开：一旦检测到 stopping 或 stopped 就立即撤销租约、记下 `stoppingObservedAtMs`/`revokedAtMs`，宽限仍用 plan 的 `cleanupTimeoutMs`，宽限内宿主自行退出照旧正常收尾，超时才判 `observer-stopped-early`；首次授权前出现停止同样不授权。**只用替身宿主验证**：未安装、未启动真实宿主，后代证据阻塞未变。
@@ -122,6 +123,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 - **宿主返工闭环未完成**：没有一次"成员改完文件 → 红测试转绿 → 复审拒绝 → 复审通过 → 下游解锁"的真实记录。
 - 成员写**既有实现文件**（本轮只证明了写一个已读过的新建文件）、写后回读、完整返工链。
 - 真实付费多模型协作（真实外部模型调用 **0** 次）、跨 provider 实测、fallback 跨路由共享总额、多会话并发、跨进程预算、按角色配额、手机通道、智能推荐与价格实时化。
+- **工作流阶段路由只证明"把 provider/model 按宿主形状传进了 `agent()`"**：provider 名是否已注册（宿主在请求期才由 LLM 层判 `NO_ADAPTER`）、模型是否可用、路由是否真的生效，都没有宿主运行时证据，`routing.effective` 恒为 `unverified`。`cwd` 与 per-agent `reasoningEffort` 没有工作流入口；plan 里 `roles.<name>.provider/model` 到工作流 `routes` 的自动衔接仍未实现（本轮只做工作流侧接线，不猜 `lead`/`worker`/`reviewer` 的归属）。
 - 闸门是本地实验工具，**不是宿主级强制保护**：把同一 provider 的 `baseURL` 换个回环端点，宿主会直接把请求发给该端点，闸门看不到；保护强度等于"生效配置里每个 provider 实例都指向闸门"这条覆盖率校验。
 - 本轮证明了监督器生命周期、闸门与插件预算在真实宿主上对账（15 = 15 = 15），也证明了成员能真实写盘；第六次运行（run10）进一步证明 0.2.1-rc.2 + 0.1.25 能加载、固定来源/argv/收尾全过，但 `read→write→回读→红→拒绝→修复→绿→复审`的完整闭环仍未在宿主里跑通一次：第五次停在夹具轮询额度，第六次停在夹具工具参数与真实宿主 schema 不一致（均已离线修复，尚未再次启动）。
 
@@ -130,7 +132,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 - 旧结论"读后写契约导致队员写失败"更正为"**夹具漏了 `read`**，宿主拒绝未观察的写是正确行为"，证据与宿主契约行号见 [`docs/V0.2-FS-OBSERVATION.md`](docs/V0.2-FS-OBSERVATION.md)。
 - "唯一缺一次批准、一旦批准即可跑完"**撤回**：用户暂缓运行是授权边界，不是技术失败根因，边界表见 [`docs/V0.2-B1-MATRIX.md`](docs/V0.2-B1-MATRIX.md) §12.1。
 
-**最短复算**：`node tests/v02-orchestration.test.mjs`、`node tests/v02-gate.test.mjs`、`node tests/v02-observer-watch.test.mjs`、`node tests/v02-ledger.test.mjs`、`node tests/v02-reactive-model.test.mjs`、`node tests/v02-repair-rehearsal.test.mjs`、`node tests/v02-repair-loop.test.mjs`、`node tests/v02-repair-protocol.test.mjs`、`node tests/v02-fs-observation.test.mjs`、`node tests/v02-experiment-package.test.mjs`、`node tests/v02-experiment-runner.test.mjs`、`node tests/v02-health-probe.test.mjs`、`node tests/v02-checkout-fidelity.test.mjs`、`node tests/v02-static-preflight.test.mjs`；账本 `node tools/recompute-ledger.mjs --json <run-dir>`。预演与历史回放**不等于**宿主验证。
+**最短复算**：`node tests/workflow-routes.test.mjs`、`node tests/v02-orchestration.test.mjs`、`node tests/v02-gate.test.mjs`、`node tests/v02-observer-watch.test.mjs`、`node tests/v02-ledger.test.mjs`、`node tests/v02-reactive-model.test.mjs`、`node tests/v02-repair-rehearsal.test.mjs`、`node tests/v02-repair-loop.test.mjs`、`node tests/v02-repair-protocol.test.mjs`、`node tests/v02-fs-observation.test.mjs`、`node tests/v02-experiment-package.test.mjs`、`node tests/v02-experiment-runner.test.mjs`、`node tests/v02-health-probe.test.mjs`、`node tests/v02-checkout-fidelity.test.mjs`、`node tests/v02-static-preflight.test.mjs`；账本 `node tools/recompute-ledger.mjs --json <run-dir>`。预演与历史回放**不等于**宿主验证。
 
 ## 目录说明
 

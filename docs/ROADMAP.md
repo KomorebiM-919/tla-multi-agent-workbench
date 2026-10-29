@@ -333,3 +333,20 @@ TLA（Tailored Logic Atelier）多智能体工作台的阶段路线图。每个�
   lease is never authorised. Behaviour is proven by a streaming stub host that
   keeps requesting after the stop: every request started after the revoke is
   refused and none reaches upstream. Still stub-level only.
+- The workflow script now accepts an optional `args.routes` map with exactly five
+  phase keys (`preflight`/`requirement`/`coding`/`verify`/`review`), each allowing
+  only non-empty `provider`/`model`. Omitted means the parent session's route is
+  inherited for every call. When present it must be complete and valid: a missing
+  phase, an unknown phase or field, an empty value, `null` or a wrong type is
+  rejected inside `validateRunConfig`, so the workflow fails with `INVALID_ARGS`
+  before the first `agent()` and no child is started. `cwd` and `reasoningEffort`
+  are rejected explicitly instead of being dropped, because the installed workflow
+  guest (`@deepseek-ai/dsh-workflow-ptc@0.2.1-rc.3`) accepts only
+  `label/phase/schema/provider/model`, pins `cwd` to the workflow run directory and
+  defers per-agent effort. The routes are passed through the existing
+  `runBudgetedAgent`, so the host shape stays
+  `agent(prompt, { label, phase, schema, provider, model })` and revision rounds
+  reuse their phase route. Results now separate `routing.requested` from
+  `routing.effective`, which is always `unverified`: this is wiring, not proof that
+  the model actually ran on the requested route, and the plan's
+  `roles.<name>.provider/model` is still not mapped onto these phases.
