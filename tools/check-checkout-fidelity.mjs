@@ -17,6 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fingerprintPluginDir, REVIEWED_PLUGIN_EVIDENCE } from '../orchestration/gate/preflight.mjs';
 
 export const FIDELITY_SCHEMA = 'tla.checkout-fidelity/v1';
@@ -128,7 +129,11 @@ function main(argv) {
   return report.ok ? 0 : 1;
 }
 
-if (import.meta.url === 'file:///' + process.argv[1].replace(/\\/gu, '/').replace(/^\//u, '')) {
+// Compare against the URL the runtime computed, not a hand-built one: `import.meta.url`
+// percent-encodes characters such as the space in `E:\AI\DSH Workplace\...`, so a string
+// concatenation never matches there and main() would silently never run (exit 0, no output).
+const entryPoint = process.argv[1];
+if (entryPoint !== undefined && import.meta.url === pathToFileURL(resolve(entryPoint)).href) {
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (error) {
