@@ -22,6 +22,7 @@
 
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
@@ -126,12 +127,51 @@ async function startUpstream() {
   };
 }
 
-async function postMessage(baseUrl, path = '/v1/messages') {
-  const response = await fetch(baseUrl + path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'deepseek-flash', messages: [] }),
+// 失败诊断：Node 的 `TypeError: fetch failed` 把真正原因（ECONNREFUSED/ECONNRESET…）藏在
+// `error.cause` 里，默认的 stack 打印看不到它。2026-11-01 全量连跑时只留下一条没有根因的
+// `TypeError: fetch failed`，无法判断是"端口未就绪"还是别的。这里在失败时补上：请求阶段、
+// 回环目标、cause 链，以及"失败当时该端口是否还在监听"（只观测，不重发请求）。
+function describeCause(error, depth = 0) {
+  if (!error || depth > 4) return null;
+  const out = {};
+  for (const key of ['name', 'message', 'code', 'errno', 'syscall', 'address', 'port']) {
+    if (error[key] !== undefined && error[key] !== null) out[key] = error[key];
+  }
+  const inner = describeCause(error.cause, depth + 1);
+  if (inner !== null) out.cause = inner;
+  return out;
+}
+
+function probePort(url) {
+  return new Promise((done) => {
+    const target = new URL(url);
+    const socket = connect({ host: target.hostname, port: Number(target.port), timeout: 1000 }, () => {
+      socket.destroy();
+      done('listening');
+    });
+    socket.on('timeout', () => { socket.destroy(); done('timeout'); });
+    socket.on('error', (error) => { socket.destroy(); done('error:' + (error.code || error.message)); });
   });
+}
+
+async function describeRequestFailure(error, method, url, label) {
+  const portState = await probePort(url);
+  return method + ' ' + url + '（阶段：' + label + '）失败：' +
+    JSON.stringify({ cause: describeCause(error), portState });
+}
+
+async function postMessage(baseUrl, path = '/v1/messages', label = 'postMessage') {
+  const url = baseUrl + path;
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'deepseek-flash', messages: [] }),
+    });
+  } catch (error) {
+    throw new Error(await describeRequestFailure(error, 'POST', url, label));
+  }
   let body = null;
   try {
     body = await response.json();
@@ -141,8 +181,14 @@ async function postMessage(baseUrl, path = '/v1/messages') {
   return { status: response.status, body };
 }
 
-async function postControl(baseUrl, path, method = 'POST') {
-  const response = await fetch(baseUrl + path, { method });
+async function postControl(baseUrl, path, method = 'POST', label = 'postControl') {
+  const url = baseUrl + path;
+  let response;
+  try {
+    response = await fetch(url, { method });
+  } catch (error) {
+    throw new Error(await describeRequestFailure(error, method, url, label));
+  }
   let body = null;
   try {
     body = await response.json();
@@ -508,12 +554,12 @@ async function scenarioMountProofRunBinding() {
 
     // 本次运行的 mounted → 允许一次（共享给后续请求），随后 E：unmounted 终止证明。
     appendEvent(events, { event: 'mounted', runId: 'run-A' });
-    const allowed = await postMessage(baseUrl);
+    const allowed = await postMessage(baseUrl, '/v1/messages', 'mount-binding: 第 1 次请求（mount 刚写入）');
     check(allowed.status === 200, 'mount: fresh run-bound mount authorizes the first request', allowed.status);
-    const second = await postMessage(baseUrl);
+    const second = await postMessage(baseUrl, '/v1/messages', 'mount-binding: 第 2 次请求（同一租约）');
     check(second.status === 200, 'mount: lease continues after mount grant', second.status);
     appendEvent(events, { event: 'unmounted', runId: 'run-A' });
-    const ended = await postMessage(baseUrl);
+    const ended = await postMessage(baseUrl, '/v1/messages', 'mount-binding: 第 3 次请求（unmounted 之后）');
     check(ended.status === 403, 'mount: unmounted ends the proof', ended.status);
     check(upstream.hits.length === 2, 'mount: upstream only saw the two authorized requests', upstream.hits.length);
 
