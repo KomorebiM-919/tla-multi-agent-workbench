@@ -133,6 +133,56 @@ class ClaimEvidenceDirTest(unittest.TestCase):
         self.assertFalse(payload['claim_created'])
         self.assertEqual(self.read_marker_text(), original_text)
 
+    # ---- 受控半写：赢家已排他创建、内容尚未写完 --------------------------------
+    def test_late_claimant_is_refused_while_winner_marker_is_half_written(self):
+        """复现 _read_marker 读到半截 JSON 的真实窗口，但不用并发去撞它。
+
+        生产侧 `_read_marker` 对空/半截文件返回 None，这是"读取当时的诊断快照"，
+        不得为了让 existing_claim 有值而给生产代码加等待或锁。这里自己扮演赢家：
+        用 O_EXCL 建出认领文件、只写前半段 JSON，此时后到者必须拒绝、且一个字节都不动；
+        赢家写完后，最终内容必须是完整记录。
+        """
+        os.makedirs(self.evidence_abs)
+        winner = {
+            'runId': RUN_ID,
+            'runStartedAt': RUN_STARTED_AT,
+            'claimedAt': '2026-10-16T04:00:00.123456+00:00',
+            'claimedBy': 'winner',
+            'claimMode': 'exclusive-create (O_EXCL)',
+            'claimTool': 'tools/claim_evidence_dir.py',
+        }
+        full = json.dumps(winner, ensure_ascii=False, sort_keys=True, indent=2) + '\n'
+        cut = full.index('"claimedBy"')
+        partial = full[:cut]
+
+        with open(self.marker_abs, 'x', encoding='utf-8') as handle:
+            handle.write(partial)
+            handle.flush()
+            before = self.read_marker_text()
+            self.assertEqual(before, partial)
+
+            code, payload, completed = run_tool(
+                self.temp_root, self.evidence_rel, run_id=RUN_ID_LOSER,
+                run_started_at='2026-10-16T04:00:01Z', claimed_by='late')
+            self.assertEqual(code, EXIT_ALREADY_CLAIMED, completed.stderr)
+            self.assertIsNotNone(payload)
+            self.assertFalse(payload['claim_created'])
+            self.assertIsNone(payload['claimed_at'])
+            # 半截文件读不出认领者：诊断只能如实返回 None，不能编造也不能等待
+            self.assertIsNone(payload['existing_claim'])
+            self.assertEqual(payload['claim_exit_code'], EXIT_ALREADY_CLAIMED)
+            self.assertIn('已被认领', payload['reason'])
+            self.assertEqual(self.read_marker_text(), before, '后到者不得改写半写的认领文件')
+            self.assertEqual(sorted(os.listdir(self.evidence_abs)), [MARKER_NAME])
+
+            handle.write(full[cut:])
+
+        self.assertEqual(self.read_marker_text(), full)
+        marker = json.loads(self.read_marker_text())
+        self.assertEqual(marker['runId'], RUN_ID)
+        self.assertEqual(marker['claimedBy'], 'winner')
+        self.assertEqual(sorted(os.listdir(self.evidence_abs)), [MARKER_NAME])
+
     # ---- 真实并发：8 个进程抢同一个证据目录，只能有一个成功 ----------------------
     def test_concurrent_claims_only_one_process_wins(self):
         processes = []
@@ -159,18 +209,30 @@ class ClaimEvidenceDirTest(unittest.TestCase):
         refused = [item for item in results if item[1] in (EXIT_ALREADY_CLAIMED, EXIT_DIR_NOT_EMPTY)]
         self.assertEqual(len(winners), 1, '并发认领必须只有一个成功：%r' % (results,))
         self.assertEqual(len(refused), WORKERS - 1, '其余进程必须被拒绝：%r' % (results,))
-        for _, code, payload, _ in refused:
+        winner_run_id = 'v0.1-test-20261016T0400%02dZ' % winners[0][0]
+        winner_claimed_by = 'worker-%02d' % winners[0][0]
+        for index, code, payload, _ in refused:
+            self.assertIsNotNone(payload, '被拒绝的进程也必须打印结构化诊断：%r' % (index,))
             self.assertFalse(payload['claim_created'])
             self.assertIsNone(payload['claimed_at'])
-            if code == EXIT_ALREADY_CLAIMED:
-                self.assertEqual(payload['existing_claim']['runId'],
-                                 'v0.1-test-20261016T0400%02dZ' % winners[0][0])
+            self.assertEqual(payload['claim_exit_code'], code)
+            existing = payload.get('existing_claim')
+            if existing is not None:
+                # 诊断读到了认领者：身份必须就是赢家，不能是任何别的进程
+                self.assertEqual(existing['runId'], winner_run_id)
+                self.assertEqual(existing['claimedBy'], winner_claimed_by)
+            elif code == EXIT_ALREADY_CLAIMED:
+                # 赢家刚用 O_EXCL 建出 marker、JSON 还没写完时，_read_marker 只能返回 None。
+                # 这是"读取当时"的快照，进程结束也不会追溯补全；断言它非空等于要求生产代码
+                # 在写文件期间加等待或锁——那是给并发安全性质打补丁，本测试不允许这么做。
+                self.assertIn('认领文件', payload['reason'])
             else:
                 self.assertEqual(payload['evidence_dir_state_before'], 'exists')
 
+        # 进程全部结束后，落盘的认领文件必须是完整的赢家记录
         marker = json.loads(self.read_marker_text())
-        self.assertEqual(marker['runId'], 'v0.1-test-20261016T0400%02dZ' % winners[0][0])
-        self.assertEqual(marker['claimedBy'], 'worker-%02d' % winners[0][0])
+        self.assertEqual(marker['runId'], winner_run_id)
+        self.assertEqual(marker['claimedBy'], winner_claimed_by)
         self.assertEqual(len(os.listdir(self.evidence_abs)), 1, '证据目录里只能有认领文件')
 
     # ---- 目录状态：非空但无认领 ⇒ 拒绝；空目录 ⇒ 可认领 ------------------------
