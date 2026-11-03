@@ -12,7 +12,7 @@ V0.1 的验收对象是"这条多 Agent 流水线本身"，因此本目录当前
 node tests/workflow-logic.test.mjs
 ```
 
-- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**114 个场景 / 547 项断言**。
+- 退出码 0 = 全部场景通过；非 0 = 有场景失败（输出会指明场景名与断言）。当前规模：**122 个场景 / 594 项断言**。
 - 时间相关门禁使用**注入的可控时钟**（`FIXED_NOW_MS = Date.parse('2026-10-16T04:00:00Z')`，与夹具 `runId` 的时间戳同秒；由 `workflow-harness.mjs` 的 `setClock()` / `advanceClock()` 驱动，`runWith()` 每个场景开始时重置）。因此"运行起点与编排层时钟相差过大""阶段时间戳晚于当前时间""时钟推进 120 秒跨多个阶段仍成功"这类判定都能离线、确定性地测出来，不需要真实等待；夹具区有一条护栏断言时钟与夹具时间戳一致，防止两者漂移后测试失去意义。
 - 覆盖的场景包括：正常成功；Coding 自述测试失败但 Review 返回 `APPROVED`（⇒ `TEST_NOT_VERIFIED`）；自述成功但独立验证失败（⇒ `INCONSISTENT_EVIDENCE`）；有验收条件未满足但 Review 返回 `APPROVED`（⇒ `CRITERIA_NOT_SATISFIED`）；`criteria_check` 覆盖不全、含未知 ID、含重复 ID（⇒ `CRITERIA_CHECK_INCOMPLETE` / `CRITERIA_CHECK_UNKNOWN_IDS` / `CRITERIA_CHECK_DUPLICATE_IDS`）；Review 自述退出码与原始输出矛盾（⇒ `INCONSISTENT_REVIEW`）；验证前后文件指纹不一致或 Review 未回传复核指纹（⇒ `ARTIFACT_FINGERPRINT_MISMATCH`）；审核不通过后自动修订；达到最大轮次仍不通过（⇒ `MAX_ATTEMPTS_*`）；非法 `targetDir`（路径穿越）；交付目录/证据目录真实路径落在仓库之外、未回报 `realpath`、链接逃逸、未完成证据目录认领（⇒ `TARGET_DIR_OUTSIDE_REPO` / `LINK_ESCAPE` / `EVIDENCE_NOT_CLAIMED`）；非法 `maxCodingAttempts`；非法 `runId`（含缺少 UTC 时间戳后缀、时间戳与 `runStartedAt` 不同秒）；`evidenceDir` 不在 `docs/evidence/` 下或与 `runId` 不一致；任意 shell 测试命令；重复/已存在的 `runId` 不得覆盖历史证据；需求自检报冲突；需求缺验收条件或缺少/重复 ID；编码未返回报告（⇒ `CODING_OUTPUT_INVALID`）；**任一阶段报告未解决需求冲突时不得成功**（Review / Verifier / Coding 各自报告冲突，以及"Coding 报告不可用 + Verifier 报告冲突"时冲突状态优先）；`args` 缺失或为空；Review 的独立复跑命令与规范命令不一致（⇒ `INCONSISTENT_REVIEW`）；Verifier 证据时间戳越出运行窗口（⇒ `INVALID_TIMESTAMP`）。
 - 复审后的第二轮加固新增场景（都是"应当拒绝"）：
@@ -35,6 +35,7 @@ node tests/workflow-logic.test.mjs
   - **预算用完不靠事后算账**：`maxAgentCalls: 8` + 需要 11 次的三轮计划 ⇒ 中止在启动前（账本第 9 项 `started: false`、日志含"拒绝启动第 9 次"），证明拦截点在 `agent()` 之前而不是跑完再统计；
   - **非法上限**：`maxAgentCalls` 为 `33` / `0` / `2.5` / `'4'` ⇒ `INVALID_ARGS` 且一次子代理都不启动；
   - **容差边界与证明边界**：mtime 相差正好 5 毫秒 ⇒ `OK`，相差 6 毫秒 ⇒ `BYTECODE_CACHE_WRITTEN`；末条断言 `finalDecision.cacheCoverage.collectsAfterLastAgent === false`、`unobservedWindow` 非空、`note` 含"不可观测"——把"没抓到"与"没发生"分开写进返回值。
+  - **CRLF 与 LF 等价解析**：Windows 的 `unittest` 输出 `OK\r\n` 不再被误判为缺少 `OK`；LF/CRLF × 末行有/无换行四种组合得到同一判定；CRLF 的 `FAILED`、全部 `skipped`、缺少 `OK`、非 0 退出码仍分别拒绝（对应 2026-11-03 真实运行暴露的判定器假阴性）。
 
 ### 1k. 工作流阶段路由透传（`args.routes`）
 

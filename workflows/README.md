@@ -41,6 +41,7 @@ preflight → requirement → [ coding → verify → review ] × (最多 maxCod
 - Coding 自述**内部自洽**：`test_command` 必须是本次配置的规范命令、`test_exit_code` 必须是非负整数、
   `test_succeeded` 必须与退出码及输出摘录里的 `OK` / `FAILED` 标记一致（`true` + 非 0 退出码等矛盾 ⇒ `CODING_REPORT_INCONSISTENT`）；
 - Verifier（verify）独立复跑的原始输出通过（退出码 0 + `Ran N tests` + `OK` + 无 `FAILED`，且 `N >= 1`）；
+  原始输出按 CRLF 与 LF 等价解析：只在解析用的局部副本上把 CRLF 规范化为 LF，原始证据原样保留，Windows 的 `OK\r\n` 不会被误判成缺少 `OK`；
 - 二者结论一致（自述成功但独立验证失败 ⇒ `INCONSISTENT_EVIDENCE`）；
 - Review 返回 `APPROVED`，且它自己复跑的原始输出也通过，**执行用例数 `N >= 1` 且与 Verifier 对同一规范命令的用例数一致**
   （`Ran 0 tests` 或数量不一致 ⇒ `INCONSISTENT_REVIEW`）；

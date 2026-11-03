@@ -186,7 +186,7 @@ An extensible multi-agent workbench for AI collaboration, task orchestration, an
 ### 运行测试与独立复核
 
 ```powershell
-# 编排逻辑回归测试（模拟子代理返回值，114 个场景 / 547 项断言）
+# 编排逻辑回归测试（模拟子代理返回值，122 个场景 / 594 项断言）
 node tests/workflow-logic.test.mjs
 
 # 预检认领门禁的集成测试（真实调用 tools/claim_evidence_dir.py，6 个场景 / 59 项断言）

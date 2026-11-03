@@ -1044,6 +1044,137 @@ await scenario('内容与 mtime 都没变 → OK，但覆盖范围必须声明�
     }
   });
 
+// ---------------------------------------------------------------- unittest 输出的 CRLF 兼容性（真实运行暴露）
+
+// Windows 上的 unittest 输出使用 CRLF。判定器只能把 CRLF 当作行边界，
+// 不能因为行尾多了一个 \r 就丢掉 OK 标记。这里的 19 个用例对应本次真实运行。
+function unittestOutput19(eol, trailingNewline, options) {
+  const opts = options || {};
+  const marker = opts.failed ? 'FAILED (failures=1)' : (opts.skipped ? 'OK (skipped=19)' : 'OK');
+  const lines = [
+    '...................',
+    '----------------------------------------------------------------------',
+    'Ran 19 tests in 0.021s',
+    '',
+    marker
+  ];
+  const joined = lines.join(eol);
+  return trailingNewline ? joined + eol : joined;
+}
+
+function missingOkOutput19(eol) {
+  return [
+    '...................',
+    '----------------------------------------------------------------------',
+    'Ran 19 tests in 0.021s'
+  ].join(eol);
+}
+
+function planWithOutput(output) {
+  return happyPlan({
+    coding: function () { return codingOk({ test_output_excerpt: output }); },
+    verify: function () { return verifyOk({ raw_output: output, ran_tests: 19, result_marker: 'OK' }); },
+    review: function () { return reviewOk({ independent_test_output: output }); }
+  });
+}
+
+function failedPlanWithOutput(output) {
+  return happyPlan({
+    coding: function () {
+      return codingOk({ test_succeeded: false, test_exit_code: '1', test_output_excerpt: output });
+    },
+    verify: function () {
+      return verifyOk({ exit_code: '1', raw_output: output, ran_tests: 19, result_marker: 'FAILED' });
+    },
+    review: function () {
+      return reviewOk({ independent_test_exit_code: '1', independent_test_output: output });
+    }
+  });
+}
+
+// 63. LF / CRLF 与末行有/无换行必须得到同一判定。
+const lineEndingCases = [
+  { name: 'LF + 末行换行', eol: '\n', trailingNewline: true },
+  { name: 'CRLF + 末行换行', eol: '\r\n', trailingNewline: true },
+  { name: 'LF + 末行无换行', eol: '\n', trailingNewline: false },
+  { name: 'CRLF + 末行无换行', eol: '\r\n', trailingNewline: false }
+];
+for (const lineEndingCase of lineEndingCases) {
+  await scenario('unittest 输出 ' + lineEndingCase.name + ' → 相同解析与判定（OK）',
+    planWithOutput(unittestOutput19(lineEndingCase.eol, lineEndingCase.trailingNewline)),
+    baseArgs({ task: { maxCodingAttempts: 1 } }),
+    {
+      status: 'OK', ok: true, calls: 5,
+      finalFlag: 'testsIndependentlyVerified', finalFlagValue: true,
+      extra: function (result, outcome, expectCheck) {
+        const decision = result.finalDecision || {};
+        expectCheck('Verifier 测试证据无拒绝原因', Array.isArray(decision.testsVerificationReasons) && decision.testsVerificationReasons.length === 0,
+          JSON.stringify(decision.testsVerificationReasons));
+        expectCheck('Review 独立复跑通过', decision.reviewIndependentTestsPassed === true, JSON.stringify(decision.reviewIndependentTestsPassed));
+      }
+    });
+}
+
+// 64. CRLF 的 FAILED 仍然是失败，不能因为换行风格改变结果。
+await scenario('unittest 输出 CRLF + FAILED → TEST_NOT_VERIFIED（不得 ok）',
+  failedPlanWithOutput(unittestOutput19('\r\n', true, { failed: true })),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  { status: 'TEST_NOT_VERIFIED', ok: false, calls: 5 });
+
+// 65. 全部用例被跳过（CRLF）仍然没有真正执行测试，不得通过。
+await scenario('unittest 输出 CRLF + 全部 skipped → INCONSISTENT_EVIDENCE（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ raw_output: unittestOutput19('\r\n', true, { skipped: true }), ran_tests: 19, result_marker: 'OK' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  {
+    status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5,
+    extra: function (result, outcome, expectCheck) {
+      const reasons = (result.finalDecision && result.finalDecision.testsVerificationReasons) || [];
+      expectCheck('拒绝原因指出全部用例被跳过',
+        reasons.some(function (reason) { return reason.indexOf('全部用例被跳过') !== -1; }), JSON.stringify(reasons));
+    }
+  });
+
+// 66. 缺少 OK 标记（CRLF）不得通过。
+await scenario('unittest 输出 CRLF + 缺少 OK → INCONSISTENT_EVIDENCE（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ raw_output: missingOkOutput19('\r\n'), ran_tests: 19, result_marker: 'OK' });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  {
+    status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5,
+    extra: function (result, outcome, expectCheck) {
+      const reasons = (result.finalDecision && result.finalDecision.testsVerificationReasons) || [];
+      expectCheck('拒绝原因指出缺少 OK 标记',
+        reasons.some(function (reason) { return reason.indexOf('OK') !== -1 && reason.indexOf('没有') !== -1; }), JSON.stringify(reasons));
+    }
+  });
+
+// 67. 输出含 OK 但 Verifier 退出码非 0，仍然不得通过。
+await scenario('unittest 输出 CRLF + OK 但退出码非 0 → INCONSISTENT_EVIDENCE（不得 ok）',
+  happyPlan({
+    verify: function () {
+      return verifyOk({ exit_code: '1', raw_output: unittestOutput19('\r\n', true), ran_tests: 19, result_marker: 'OK' });
+    },
+    review: function () {
+      return reviewOk({ independent_test_exit_code: '1', independent_test_output: unittestOutput19('\r\n', true) });
+    }
+  }),
+  baseArgs({ task: { maxCodingAttempts: 1 } }),
+  {
+    status: 'INCONSISTENT_EVIDENCE', ok: false, calls: 5,
+    extra: function (result, outcome, expectCheck) {
+      const reasons = (result.finalDecision && result.finalDecision.testsVerificationReasons) || [];
+      expectCheck('拒绝原因指出退出码非 0',
+        reasons.some(function (reason) { return reason.indexOf('退出码非 0') !== -1; }), JSON.stringify(reasons));
+    }
+  });
+
 // ---------------------------------------------------------------- 结果
 
 runner.finish('编排层逻辑回归测试（模拟子代理返回值）');

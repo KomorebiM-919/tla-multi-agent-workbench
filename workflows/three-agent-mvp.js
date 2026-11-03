@@ -924,7 +924,9 @@ function validateRunConfig(rawArgs, startupNowMs) {
  * 只认文本里的硬事实，不采信任何布尔自述。
  */
 function parseUnittestOutput(raw) {
-  const text = typeof raw === 'string' ? raw : '';
+  // 仅对用于解析的局部副本做 CRLF→LF 规范化：Windows 上 unittest 输出 CRLF，
+  // 不能让行尾的 \r 破坏 `OK` 行的行边界。原始证据（raw_output / 输出摘录）保持原样。
+  const text = (typeof raw === 'string' ? raw : '').replace(/\r\n/g, '\n');
   const ranMatch = /Ran (\d+) tests? in /.exec(text);
   const failedMatch = /(^|\n)FAILED[^\n]*/.exec(text);
   const okMatch = /(^|\n)OK( \([^\n]*\))?(\n|$)/.exec(text);
