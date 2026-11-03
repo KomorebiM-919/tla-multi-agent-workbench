@@ -2,6 +2,14 @@
 
 An extensible multi-agent workbench for AI collaboration, task orchestration, and software development.
 
+> **2026-11-04: minimal-version acceptance completed.** The fixed Python todo workflow completed
+> Coding, independent Verification and Review, followed by outer cache/file checks and a user CLI trial.
+> See [the minimal-version delivery record](docs/releases/V1.0-MINIMAL.md) for the pinned payload,
+> scope, test commands and limitations. This is a local-first workflow foundation, **not** the proposed
+> visual multi-model product. Historical status sections below describe their original dates.
+> “V1.0 minimal” names the acceptance milestone; this upload does not create a semantic version tag
+> or announce the next V0.3 development phase.
+
 **TLA（Tailored Logic Atelier）多智能体工作台**：在 DeepSeek Harness（简称 DSH）之上构建的可扩展多智能体协作开发工作台。目标是由多个 AI 模型（Agent）协同完成需求分析、方案讨论、编码、代码审核和测试，形成一条可人工审批的软件开发流水线。
 
 ## 项目定位
