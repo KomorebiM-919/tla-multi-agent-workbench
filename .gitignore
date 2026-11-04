@@ -119,5 +119,13 @@ examples/docs/
 # 系统临时目录在沙箱/新机器上可能对新建子目录不可写，放在仓库内才能保证测试可复现。
 tests/.scratch/
 
+# ===== V0.3 桌面子工程：工具链、依赖与构建产物均不入库 =====
+# .tools/ 放本地 Node 便携包、npm/electron 缓存与一次性诊断产物；
+# desktop/renderer-dist/ 是 Vite 构建输出，desktop/release/ 是 electron-builder 打包输出。
+# 三者都能由 desktop/README.md 记录的命令重新生成，提交进仓库只会带入数十 MB 二进制。
+.tools/
+desktop/renderer-dist/
+desktop/release/
+
 # ===== 系统文件 =====
 .DS_Store
