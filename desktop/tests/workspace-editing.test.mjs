@@ -128,6 +128,42 @@ test('字段校验与主进程上限一致，超长只报错不截断', () => {
   assert.match(errors.name, new RegExp(String(MAX_NAME_LENGTH)))
 })
 
+test('恢复插入遵守 20 个项目上限：19+1 可插入，20+1 拒绝且不动会话', () => {
+  const makeProject = (id) => ({ id, name: `项目 ${id}`, description: '', taskDraft: '' })
+  const entry = {
+    id: 'from-recovery',
+    name: '恢复稿项目',
+    description: '',
+    taskDraft: '待恢复正文',
+    revision: 1,
+    updatedAt: '2026-11-05T00:00:00.000Z',
+  }
+
+  const nineteen = {
+    schemaVersion: 1,
+    activeProjectId: 'p01',
+    projects: Array.from({ length: 19 }, (_, index) => makeProject(`p${String(index + 1).padStart(2, '0')}`)),
+  }
+  const merged = mergeRecoveryEntry(nineteen, entry)
+  assert.equal(merged.projects.length, 20, '19 个项目时允许插入第 20 个')
+  assert.equal(merged.activeProjectId, 'from-recovery')
+
+  const twenty = {
+    schemaVersion: 1,
+    activeProjectId: 'p01',
+    projects: Array.from({ length: 20 }, (_, index) => makeProject(`p${String(index + 1).padStart(2, '0')}`)),
+  }
+  assert.equal(
+    mergeRecoveryEntry(twenty, entry),
+    null,
+    '已满 20 个时必须拒绝插入，不能静默变成第 21 个',
+  )
+
+  const existing = mergeRecoveryEntry(twenty, { ...entry, id: 'p20' })
+  assert.equal(existing.projects.length, 20, '已有项目恢复不受上限影响')
+  assert.equal(existing.projects[19].taskDraft, '待恢复正文')
+})
+
 test('恢复稿可以插入正式文件里不存在的项目，并成为当前项目', () => {
   const session = workspace()
   const entry = {

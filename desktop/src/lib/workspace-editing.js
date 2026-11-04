@@ -109,6 +109,8 @@ export function recoveryEntryToProject(entry) {
 /**
  * 把一条恢复稿并入编辑会话：已有项目只覆盖正文，尚未正式保存的新项目则插入并选中。
  * 两种情况都不写正式文件，也不改变“是否已正式保存”的判断。
+ * 已满 MAX_PROJECTS 时拒绝插入新项目并返回 null，调用方必须保留候选并提示，
+ * 不能先标成已处理再让正式保存失败。
  */
 export function mergeRecoveryEntry(session, entry) {
   const restored = recoveryEntryToProject(entry)
@@ -121,6 +123,7 @@ export function mergeRecoveryEntry(session, entry) {
       ),
     }
   }
+  if (session.projects.length >= MAX_PROJECTS) return null
   return {
     ...session,
     projects: [...session.projects, restored],

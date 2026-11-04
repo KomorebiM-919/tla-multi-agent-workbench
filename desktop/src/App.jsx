@@ -387,7 +387,16 @@ export default function App() {
       if (!current) return
       const existed = current.projects.some((project) => project.id === entry.id)
       // 已有的项目只覆盖正文；从未正式保存的新项目会插入会话并被选中，仍保持“未保存”身份。
-      applySession(mergeRecoveryEntry(current, entry))
+      const merged = mergeRecoveryEntry(current, entry)
+      if (!merged) {
+        // 已满 20 个项目：拒绝插入，但保留恢复候选，也不能把它标成已处理。
+        setRecoveryActionError({
+          id: entry.id,
+          message: '正式文件最多 20 个项目，这次恢复没有改动会话或正式文件；请先处理现有项目再试，恢复候选会保留。',
+        })
+        return
+      }
+      applySession(merged)
       setSaveStates((states) => ({
         ...states,
         [entry.id]: existed ? { kind: 'idle' } : { kind: 'empty' },
