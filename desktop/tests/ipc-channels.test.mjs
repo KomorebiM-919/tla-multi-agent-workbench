@@ -47,3 +47,52 @@ test('窗口启用隔离与沙箱并禁用 Node 集成', async () => {
   assert.match(main, /will-attach-webview/)
   assert.match(main, /setPermissionRequestHandler/)
 })
+
+test('新窗口一律拒绝，不调用 shell.openExternal', async () => {
+  const main = await readFile(path.join(electronDir, 'main.mjs'), 'utf8')
+  assert.match(main, /setWindowOpenHandler\(\s*\(\{\s*url\s*\}\)\s*=>/)
+  assert.match(main, /return \{ action: 'deny' \}/)
+  assert.equal(main.includes('openExternal'), false, '本批没有外链需求，不得打开系统浏览器')
+  assert.equal(/\bshell\b/.test(main), false, '主进程不应再引入 shell 模块')
+})
+
+test('IPC 来源校验绑定本窗口主 frame 与应用页面', async () => {
+  const main = await readFile(path.join(electronDir, 'main.mjs'), 'utf8')
+  assert.match(main, /from '\.\/security\.mjs'/)
+  assert.match(main, /isTrustedSender\(\{/)
+  assert.match(main, /frame: event\.senderFrame/)
+  assert.match(main, /sender: event\.sender/)
+  assert.match(main, /windowWebContents: mainWindow\?\.webContents/)
+})
+
+test('启动诊断在单实例锁之前就写入日志', async () => {
+  const main = await readFile(path.join(electronDir, 'main.mjs'), 'utf8')
+  const bootstrapAt = main.indexOf("log('bootstrap'")
+  const lockAt = main.indexOf('requestSingleInstanceLock')
+  assert.ok(bootstrapAt > 0 && lockAt > 0)
+  assert.ok(bootstrapAt < lockAt, 'bootstrap 记录必须早于单实例锁判定')
+  for (const step of [
+    'single-instance-lock',
+    'app-ready',
+    'window-created',
+    'did-finish-load',
+    'did-fail-load',
+    'render-process-gone',
+    'uncaught-exception',
+    'unhandled-rejection',
+    'quit',
+  ]) {
+    assert.ok(main.includes(`'${step}'`), `缺少启动诊断步骤：${step}`)
+  }
+})
+
+test('构建脚本只放行已证实的 net use 探测，其余 exec 如实报错', async () => {
+  const script = await readFile(path.join(here, '..', 'scripts', 'build-renderer.mjs'), 'utf8')
+  assert.match(script, /VITE_NETWORK_DRIVE_PROBE\s*=\s*\/\^net\\s\+use\$\//i)
+  assert.match(script, /isNetworkProbe\s*\?[\s\S]{0,40}networkProbeError\(\)\s*:\s*sandboxDeniedError\(command\)/)
+  assert.equal(
+    /done\(null,\s*'',\s*''\)/.test(script),
+    false,
+    '不得用“空输出成功”冒充被拒绝的子进程',
+  )
+})
