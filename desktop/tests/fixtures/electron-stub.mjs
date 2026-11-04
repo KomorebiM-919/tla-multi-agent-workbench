@@ -126,7 +126,21 @@ Object.assign(app, {
 })
 
 const menu = { setApplicationMenu: () => {} }
-const ipcMain = { handle: () => {} }
+const ipcHandlers = new Map()
+const ipcMain = {
+  handle: (channel, handler) => {
+    ipcHandlers.set(channel, handler)
+  },
+}
+/** 测试用：取出主进程注册过的 IPC 处理器，直接以伪造事件调用。 */
+export function getIpcHandler(channel) {
+  return ipcHandlers.get(channel)
+}
+
+/** 测试用：主进程实际注册了哪些通道。 */
+export function listIpcChannels() {
+  return [...ipcHandlers.keys()]
+}
 const session = {
   defaultSession: {
     setPermissionRequestHandler: () => {},

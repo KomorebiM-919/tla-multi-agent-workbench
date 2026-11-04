@@ -10,7 +10,12 @@ const electronDir = path.join(here, '..', 'electron')
 
 test('IPC 白名单只有已审查的通道', () => {
   assert.equal(IPC_CHANNELS.APP_INFO, 'tla:app-info')
-  assert.deepEqual([...IPC_CHANNEL_LIST], ['tla:app-info'])
+  assert.equal(IPC_CHANNELS.WORKSPACE_LOAD, 'tla:workspace-load')
+  assert.equal(IPC_CHANNELS.WORKSPACE_SAVE, 'tla:workspace-save')
+  assert.deepEqual(
+    [...IPC_CHANNEL_LIST],
+    ['tla:app-info', 'tla:workspace-load', 'tla:workspace-save'],
+  )
   assert.ok(Object.isFrozen(IPC_CHANNELS))
   assert.ok(Object.isFrozen(IPC_CHANNEL_LIST))
 })
@@ -25,15 +30,33 @@ test('主进程只注册白名单内的通道', async () => {
   assert.equal(new Set(registered).size, registered.length, '通道不得重复注册')
 })
 
-test('预加载脚本只暴露 getAppInfo 且通道与白名单一致', async () => {
+test('预加载脚本只暴露版本信息与工作区读写，通道与白名单一致', async () => {
   const preload = await readFile(path.join(electronDir, 'preload.cjs'), 'utf8')
   assert.match(preload, /contextBridge\.exposeInMainWorld\('tla'/)
-  assert.match(preload, /getAppInfo/)
-  assert.ok(
-    preload.includes(`'${IPC_CHANNELS.APP_INFO}'`),
-    '预加载脚本的通道字面量必须与 ipc-channels.mjs 一致',
-  )
+  for (const method of ['getAppInfo', 'loadWorkspace', 'saveWorkspace']) {
+    assert.match(preload, new RegExp(`${method}:`), `预加载应暴露 ${method}`)
+  }
+  for (const channel of IPC_CHANNEL_LIST) {
+    assert.ok(
+      preload.includes(`'${channel}'`),
+      `预加载脚本的通道字面量必须与 ipc-channels.mjs 一致：${channel}`,
+    )
+  }
   assert.equal(/ipcRenderer\.(send|sendSync|on)\(/.test(preload), false, '预加载不应暴露双向或事件通道')
+  assert.equal(/require\(['"](?:node:)?(?:fs|path|child_process)['"]\)/.test(preload), false, '预加载不得直接访问文件系统')
+})
+
+test('工作区路径由主进程按源码位置解析，不接受渲染层传入', async () => {
+  const main = await readFile(path.join(electronDir, 'main.mjs'), 'utf8')
+  assert.match(main, /const DESKTOP_ROOT = path\.resolve\(__dirname, '\.\.'\)/)
+  assert.match(main, /resolveWorkspaceFilePath\(DESKTOP_ROOT\)/)
+  assert.equal(main.includes('process.cwd()'), false, '存储路径不得依赖启动时的 cwd')
+  assert.match(main, /workspaceStore\.save\(payload\)/, '保存只接收结构化 payload')
+  assert.equal(
+    /workspaceStore\.save\((?!payload)/.test(main),
+    false,
+    '不得把渲染层传入的路径交给存储层',
+  )
 })
 
 test('窗口启用隔离与沙箱并禁用 Node 集成', async () => {

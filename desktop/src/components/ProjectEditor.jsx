@@ -1,0 +1,114 @@
+import { describeProjectStatus } from '../lib/workspace-editing.js'
+
+function formatClock(iso) {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+export default function ProjectEditor({
+  project,
+  fieldErrors,
+  limits,
+  dirty,
+  saveState,
+  onChange,
+  onSave,
+}) {
+  const status = describeProjectStatus({ dirty, saveState })
+  const saving = saveState?.kind === 'saving'
+  const invalid = Object.keys(fieldErrors).length > 0
+  const saveDisabled = saving || invalid || !dirty
+  const statusText =
+    status.tone === 'saved' && saveState?.savedAt
+      ? `已保存 ${formatClock(saveState.savedAt)}`
+      : status.label
+
+  return (
+    <section className="editor" aria-labelledby="editor-title">
+      <div className="editor-head">
+        <h2 id="editor-title">项目信息</h2>
+        <span className="editor-hint">本地草稿 · 未连接模型</span>
+      </div>
+
+      <label className="field">
+        <span className="field-label">项目名称</span>
+        <input
+          type="text"
+          className={fieldErrors.name ? 'text-input is-invalid' : 'text-input'}
+          value={project.name}
+          aria-invalid={fieldErrors.name ? 'true' : undefined}
+          onChange={(event) => onChange('name', event.target.value)}
+        />
+        <span className="field-meta">
+          <span>
+            {project.name.length} / {limits.name}
+          </span>
+          {fieldErrors.name && <span className="field-error">{fieldErrors.name}</span>}
+        </span>
+      </label>
+
+      <label className="field">
+        <span className="field-label">项目简介</span>
+        <textarea
+          className={fieldErrors.description ? 'text-input is-invalid' : 'text-input'}
+          rows={3}
+          value={project.description}
+          aria-invalid={fieldErrors.description ? 'true' : undefined}
+          onChange={(event) => onChange('description', event.target.value)}
+        />
+        <span className="field-meta">
+          <span>
+            {project.description.length} / {limits.description}
+          </span>
+          {fieldErrors.description && (
+            <span className="field-error">{fieldErrors.description}</span>
+          )}
+        </span>
+      </label>
+
+      <div className="draft">
+        <div className="draft-head">
+          <h3>任务草稿</h3>
+          <span className="field-meta">
+            <span>
+              {project.taskDraft.length} / {limits.taskDraft}
+            </span>
+          </span>
+        </div>
+        <textarea
+          className={fieldErrors.taskDraft ? 'draft-input is-invalid' : 'draft-input'}
+          rows={9}
+          value={project.taskDraft}
+          aria-label="任务草稿"
+          aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
+          placeholder="写下这个项目下一步要做什么。草稿只保存在本机，不会发送给任何模型。"
+          onChange={(event) => onChange('taskDraft', event.target.value)}
+        />
+        {fieldErrors.taskDraft && <p className="field-error">{fieldErrors.taskDraft}</p>}
+
+        <div className="draft-actions">
+          <button
+            type="button"
+            className="primary"
+            onClick={onSave}
+            disabled={saveDisabled}
+            title={dirty ? '保存当前项目的名称、简介与任务草稿' : '没有需要保存的更改'}
+          >
+            {saving ? '保存中…' : '保存草稿'}
+          </button>
+          <span className={`save-status tone-${status.tone}`} role="status">
+            {statusText}
+          </span>
+        </div>
+
+        {saveState?.kind === 'failed' && (
+          <p className="save-error" role="alert">
+            保存失败：{saveState.message}
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}

@@ -5,9 +5,15 @@ import os from 'node:os'
 import { IPC_CHANNELS } from './ipc-channels.mjs'
 import { createDiagnostics } from './diagnostics.mjs'
 import { isAllowedPage, isTrustedSender } from './security.mjs'
+import { createWorkspaceStore, resolveWorkspaceFilePath } from './workspace-store.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DESKTOP_ROOT = path.resolve(__dirname, '..')
 const RENDERER_ENTRY = path.join(__dirname, '..', 'renderer-dist', 'index.html')
+// 业务数据固定落在工作区根目录的 .local/ 下；路径按源码位置解析，与启动时的 cwd 无关，
+// 也不接受渲染层传路径。文件不存在时只返回默认项目，不主动创建。
+const WORKSPACE_FILE = resolveWorkspaceFilePath(DESKTOP_ROOT)
+const workspaceStore = createWorkspaceStore({ filePath: WORKSPACE_FILE })
 const APP_URL = pathToFileURL(RENDERER_ENTRY).href
 const DEV_SERVER_URL = (process.env.TLA_DEV_SERVER_URL ?? '').replace(/\/+$/, '')
 const PAGE_URL = DEV_SERVER_URL || APP_URL
@@ -54,6 +60,7 @@ log('bootstrap', {
   page: PAGE_URL,
   logs: diagnostics.file,
   logsWritable: diagnostics.writable,
+  workspaceFile: WORKSPACE_FILE,
 })
 
 process.on('uncaughtException', (error) => {
@@ -204,25 +211,64 @@ function lockDownContents(contents) {
   })
 }
 
+function assertTrustedSender(event, channel) {
+  const trusted = isTrustedSender({
+    frame: event.senderFrame,
+    sender: event.sender,
+    windowWebContents: mainWindow?.webContents,
+    appUrl: APP_URL,
+    devUrl: DEV_SERVER_URL,
+  })
+  if (!trusted) {
+    log('ipc-rejected', { channel, url: event.senderFrame?.url })
+    throw new Error('untrusted renderer')
+  }
+}
+
+function workspaceErrorInfo(error) {
+  return {
+    code: error?.code ?? 'WORKSPACE_ERROR',
+    message: error instanceof Error ? error.message : String(error),
+  }
+}
+
 function registerIpc() {
   ipcMain.handle(IPC_CHANNELS.APP_INFO, (event) => {
-    const trusted = isTrustedSender({
-      frame: event.senderFrame,
-      sender: event.sender,
-      windowWebContents: mainWindow?.webContents,
-      appUrl: APP_URL,
-      devUrl: DEV_SERVER_URL,
-    })
-    if (!trusted) {
-      log('ipc-rejected', { channel: IPC_CHANNELS.APP_INFO, url: event.senderFrame?.url })
-      throw new Error('untrusted renderer')
-    }
+    assertTrustedSender(event, IPC_CHANNELS.APP_INFO)
     return {
       productName: WINDOW_TITLE,
       productVersion: app.getVersion(),
       electronVersion: process.versions.electron,
       chromiumVersion: process.versions.chrome,
       platform: process.platform,
+    }
+  })
+
+  // 读取失败与校验失败都以 { ok: false, error } 返回：错误码要能穿透 IPC 带到界面，
+  // 直接 throw 只会剩下一条字符串。
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_LOAD, async (event) => {
+    assertTrustedSender(event, IPC_CHANNELS.WORKSPACE_LOAD)
+    try {
+      const { workspace, source, savedAt } = await workspaceStore.load()
+      log('workspace-loaded', { source, projects: workspace.projects.length })
+      return { ok: true, workspace, source, savedAt }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('workspace-load-failed', info)
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SAVE, async (event, payload) => {
+    assertTrustedSender(event, IPC_CHANNELS.WORKSPACE_SAVE)
+    try {
+      const { workspace, savedAt } = await workspaceStore.save(payload)
+      log('workspace-saved', { projects: workspace.projects.length })
+      return { ok: true, workspace, savedAt }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('workspace-save-failed', info)
+      return { ok: false, error: info }
     }
   })
 }

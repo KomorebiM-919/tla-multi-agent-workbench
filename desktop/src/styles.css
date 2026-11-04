@@ -531,6 +531,273 @@ button {
   line-height: 1.6;
 }
 
+/* ===== 项目编辑：名称、简介、任务草稿 ===== */
+.nav-add {
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px dashed var(--accent-line);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: #8d4a26;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-add:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.nav-add:disabled {
+  border-color: var(--line);
+  color: var(--ink-mute);
+  cursor: not-allowed;
+}
+
+.chip-saved {
+  border-color: #c8d2c1;
+  background: var(--human-soft);
+  color: var(--human);
+}
+
+.chip-dirty {
+  border-color: var(--accent-line);
+  background: #fbf1e7;
+  color: #8d4a26;
+}
+
+.chip-saving {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chip-failed {
+  border-color: #e0b4ac;
+  background: #fbeae6;
+  color: #a33d2b;
+}
+
+.chip-empty {
+  background: #f3eee5;
+  color: var(--ink-soft);
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.editor-hint {
+  color: var(--ink-mute);
+  font-size: 11.5px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.text-input,
+.draft-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  resize: vertical;
+  user-select: text;
+}
+
+.text-input:focus,
+.draft-input:focus {
+  border-color: var(--accent-line);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(180, 99, 58, 0.14);
+}
+
+.text-input:disabled,
+.draft-input:disabled {
+  background: #f4efe7;
+  color: var(--ink-mute);
+  cursor: not-allowed;
+}
+
+.text-input.is-invalid,
+.draft-input.is-invalid {
+  border-color: #c4674f;
+}
+
+.field-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--ink-mute);
+  font-size: 11px;
+}
+
+.field-error {
+  color: #a33d2b;
+  font-size: 11.5px;
+}
+
+.draft {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line-soft);
+}
+
+.draft-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.draft-head h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.draft-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.primary {
+  padding: 7px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fffaf3;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary:hover:not(:disabled) {
+  background: #a05732;
+  border-color: #a05732;
+}
+
+.primary:disabled {
+  border-color: var(--line);
+  background: #e9e1d4;
+  color: var(--ink-mute);
+  cursor: not-allowed;
+}
+
+.save-status {
+  font-size: 11.5px;
+  color: var(--ink-mute);
+}
+
+.save-status.tone-saved {
+  color: var(--human);
+}
+
+.save-status.tone-dirty {
+  color: #8d4a26;
+}
+
+.save-status.tone-saving {
+  color: var(--accent);
+}
+
+.save-status.tone-failed {
+  color: #a33d2b;
+}
+
+.save-error {
+  padding: 8px 10px;
+  border: 1px solid #e0b4ac;
+  border-radius: var(--radius-md);
+  background: #fbeae6;
+  color: #a33d2b;
+  font-size: 11.5px;
+}
+
+/* ===== 读取中 / 读取失败 ===== */
+.shell-loading,
+.shell-error {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.loading,
+.load-error {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+  margin: auto;
+  padding: 24px 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.loading h1,
+.load-error h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.loading p,
+.load-error p {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.load-error {
+  border-left: 3px solid #c4674f;
+  align-items: flex-start;
+}
+
+.load-error-code {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: #fbeae6;
+  color: #a33d2b;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11.5px;
+  user-select: text;
+}
+
 /* ===== 滚动条 ===== */
 ::-webkit-scrollbar {
   width: 10px;

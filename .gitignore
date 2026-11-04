@@ -127,5 +127,11 @@ tests/.scratch/
 desktop/renderer-dist/
 desktop/release/
 
+# ===== V0.3 桌面端本地业务数据与测试临时目录 =====
+# .local/tla-desktop/workspace.json 是用户在本机编辑的项目与任务草稿；
+# desktop/tests/.tmp/ 是工作区存储测试现造的 UUID 目录。两者都是本机数据，不入库。
+.local/
+desktop/tests/.tmp/
+
 # ===== 系统文件 =====
 .DS_Store

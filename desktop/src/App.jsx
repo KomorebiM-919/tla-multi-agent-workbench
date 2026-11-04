@@ -1,12 +1,60 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import ProjectNav from './components/ProjectNav.jsx'
+import ProjectEditor from './components/ProjectEditor.jsx'
 import TeamBoard from './components/TeamBoard.jsx'
 import RoleDetail from './components/RoleDetail.jsx'
-import { PROJECTS } from './data/projects.js'
 import { ROLES, TEAM_TEMPLATE_STATE } from './data/team.js'
+import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_PROJECTS,
+  MAX_TASK_DRAFT_LENGTH,
+  cloneSession,
+  createDraftProject,
+  describeProjectStatus,
+  dirtyProjectIds,
+  projectFieldErrors,
+  toWorkspacePayload,
+} from './lib/workspace-editing.js'
+
+const LIMITS = Object.freeze({
+  name: MAX_NAME_LENGTH,
+  description: MAX_DESCRIPTION_LENGTH,
+  taskDraft: MAX_TASK_DRAFT_LENGTH,
+})
+
+/**
+ * 生成一次保存要写入的 payload：只有当前项目取会话里的内容，其他项目取最近一次成功
+ * 保存的版本。这样“保存这个项目”不会顺带把别的项目的未保存草稿写进文件，
+ * 各项目的状态也就不会互相串。
+ */
+function buildSavePayload(session, baseline) {
+  const baselineById = new Map(baseline.projects.map((project) => [project.id, project]))
+  const projects = []
+  for (const project of session.projects) {
+    if (project.id === session.activeProjectId) {
+      projects.push(project)
+      continue
+    }
+    const saved = baselineById.get(project.id)
+    if (saved) projects.push(saved)
+  }
+  return toWorkspacePayload(projects, session.activeProjectId)
+}
+
+function initialSaveStates(workspace, source) {
+  const states = {}
+  for (const project of workspace.projects) {
+    states[project.id] = { kind: source === 'file' ? 'saved' : 'empty' }
+  }
+  return states
+}
 
 export default function App() {
-  const [projectId, setProjectId] = useState(PROJECTS[0].id)
+  const [loadState, setLoadState] = useState({ status: 'loading', error: null })
+  const [session, setSession] = useState(null)
+  const [baseline, setBaseline] = useState(null)
+  const [saveStates, setSaveStates] = useState({})
   const [roleId, setRoleId] = useState(null)
   const [appInfo, setAppInfo] = useState(null)
 
@@ -23,24 +71,185 @@ export default function App() {
     }
   }, [])
 
-  const project = useMemo(() => PROJECTS.find((item) => item.id === projectId) ?? null, [projectId])
+  const loadWorkspace = useCallback(async () => {
+    setLoadState({ status: 'loading', error: null })
+    const api = window.tla?.loadWorkspace
+    if (typeof api !== 'function') {
+      setLoadState({
+        status: 'error',
+        error: { code: 'BRIDGE_UNAVAILABLE', message: '预加载接口不可用，无法读取本地工作区。' },
+      })
+      return
+    }
+    try {
+      const result = await api()
+      if (result?.ok) {
+        const workspace = cloneSession(result.workspace)
+        setSession(workspace)
+        setBaseline(cloneSession(workspace))
+        setSaveStates(initialSaveStates(workspace, result.source))
+        setLoadState({ status: 'ready', error: null })
+        return
+      }
+      setLoadState({
+        status: 'error',
+        error: result?.error ?? { code: 'UNKNOWN', message: '读取本地工作区失败。' },
+      })
+    } catch (error) {
+      setLoadState({
+        status: 'error',
+        error: { code: 'READ_FAILED', message: error instanceof Error ? error.message : String(error) },
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    loadWorkspace()
+  }, [loadWorkspace])
+
+  const activeProject = useMemo(() => {
+    if (!session) return null
+    return session.projects.find((project) => project.id === session.activeProjectId) ?? null
+  }, [session])
+
+  const dirtyIds = useMemo(
+    () => (session && baseline ? new Set(dirtyProjectIds(session, baseline.projects)) : new Set()),
+    [session, baseline],
+  )
+
+  const statusById = useMemo(() => {
+    if (!session) return new Map()
+    return new Map(
+      session.projects.map((project) => [
+        project.id,
+        describeProjectStatus({ dirty: dirtyIds.has(project.id), saveState: saveStates[project.id] }),
+      ]),
+    )
+  }, [session, dirtyIds, saveStates])
+
+  const fieldErrors = useMemo(
+    () => (activeProject ? projectFieldErrors(activeProject) : {}),
+    [activeProject],
+  )
+
   const role = useMemo(() => ROLES.find((item) => item.id === roleId) ?? null, [roleId])
+
+  const updateActiveProject = useCallback((field, value) => {
+    setSession((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        projects: current.projects.map((project) =>
+          project.id === current.activeProjectId ? { ...project, [field]: value } : project,
+        ),
+      }
+    })
+    setSaveStates((states) => {
+      const id = session?.activeProjectId
+      if (!id || states[id]?.kind !== 'failed') return states
+      return { ...states, [id]: { kind: 'idle' } }
+    })
+  }, [session?.activeProjectId])
+
+  const selectProject = useCallback((projectId) => {
+    setSession((current) => (current ? { ...current, activeProjectId: projectId } : current))
+    setRoleId(null)
+  }, [])
+
+  const createProject = useCallback(() => {
+    if (!session || session.projects.length >= MAX_PROJECTS) return
+    const draft = createDraftProject(session.projects)
+    setSaveStates((states) => ({ ...states, [draft.id]: { kind: 'empty' } }))
+    setSession({ activeProjectId: draft.id, projects: [...session.projects, draft] })
+    setRoleId(null)
+  }, [session])
+
+  const saveActiveProject = useCallback(async () => {
+    if (!session || !baseline) return
+    const project = session.projects.find((item) => item.id === session.activeProjectId)
+    if (!project) return
+    const payload = buildSavePayload(session, baseline)
+    setSaveStates((states) => ({ ...states, [project.id]: { kind: 'saving' } }))
+    try {
+      const result = await window.tla?.saveWorkspace?.(payload)
+      if (result?.ok) {
+        setBaseline(cloneSession(result.workspace))
+        setSaveStates((states) => ({
+          ...states,
+          [project.id]: { kind: 'saved', savedAt: result.savedAt },
+        }))
+        return
+      }
+      setSaveStates((states) => ({
+        ...states,
+        [project.id]: {
+          kind: 'failed',
+          message: result?.error?.message ?? '保存请求被拒绝。',
+        },
+      }))
+    } catch (error) {
+      setSaveStates((states) => ({
+        ...states,
+        [project.id]: {
+          kind: 'failed',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }))
+    }
+  }, [session, baseline])
+
+  if (loadState.status === 'error') {
+    return (
+      <div className="shell shell-error">
+        <main className="board" aria-labelledby="load-error-title">
+          <section className="load-error" role="alert">
+            <h1 id="load-error-title">本地工作区读取失败</h1>
+            <p className="load-error-code">
+              {loadState.error.code} · {loadState.error.message}
+            </p>
+            <p>
+              为避免覆盖原文件，本窗口不会写入任何内容。请检查工作区文件后重新读取；文件会被原样保留。
+            </p>
+            <button type="button" className="primary" onClick={loadWorkspace}>
+              重新读取
+            </button>
+          </section>
+        </main>
+      </div>
+    )
+  }
+
+  if (loadState.status === 'loading' || !session) {
+    return (
+      <div className="shell shell-loading">
+        <main className="board" aria-labelledby="loading-title">
+          <section className="loading" role="status">
+            <h1 id="loading-title">正在读取本地项目…</h1>
+            <p>只读取本机工作区文件，不连接网络、仓库或模型。</p>
+          </section>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="shell">
       <ProjectNav
-        projects={PROJECTS}
-        activeId={projectId}
-        onSelect={setProjectId}
+        projects={session.projects}
+        activeId={session.activeProjectId}
+        onSelect={selectProject}
+        onCreate={createProject}
+        canCreate={session.projects.length < MAX_PROJECTS}
+        statusById={statusById}
         appInfo={appInfo}
       />
 
       <main className="board" aria-labelledby="board-title">
         <header className="board-head">
           <div className="board-head-text">
-            <h1 id="board-title">{project ? project.name : '团队模板'}</h1>
+            <h1 id="board-title">{activeProject?.name.trim() || '未命名项目'}</h1>
             <p className="board-sub">
-              首批桌面壳只呈现团队模板与角色职责，所有角色均未接入模型。
+              本地项目与任务草稿只保存在本机，所有角色均未接入模型。
             </p>
           </div>
           <span className="badge badge-template">
@@ -51,10 +260,22 @@ export default function App() {
         <section className="notice" aria-label="当前状态说明">
           <strong>状态说明</strong>
           <p>
-            当前版本不连接任何模型，不产生真实回复、余额或运行状态。卡片上的职责、输入与输出都是模板占位，
-            需要在后续批次另行接入与验证。
+            项目与任务草稿保存在本机工作区的 .local/tla-desktop/workspace.json，不入库、不联网；
+            未保存的修改只在本次会话里保留。当前版本不连接任何模型，卡片上的职责、输入与输出都是模板占位。
           </p>
         </section>
+
+        {activeProject && (
+          <ProjectEditor
+            project={activeProject}
+            fieldErrors={fieldErrors}
+            limits={LIMITS}
+            dirty={dirtyIds.has(activeProject.id)}
+            saveState={saveStates[activeProject.id]}
+            onChange={updateActiveProject}
+            onSave={saveActiveProject}
+          />
+        )}
 
         <TeamBoard roles={ROLES} activeRoleId={roleId} onSelect={setRoleId} />
 
