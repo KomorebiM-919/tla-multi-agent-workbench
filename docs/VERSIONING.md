@@ -13,6 +13,19 @@
 | --- | --- | --- | --- |
 | V0.1 | `feat/v0.1-three-agent-mvp`（`b2b48ab`） | 主仓库工作树 `<repo>`（当前检出该分支） | 未合并；归档标签 `archive/v0.1-verbatim` |
 | V0.2 | `feat/v0.2-component-reuse` | `<repo>\..\workspaces\v0.2-component-reuse` | 开发中，**未验收** |
+| V0.3 | `feat/v0.3-desktop-ui`（基线 `95d4e7d`） | C 盘独立仓库 `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui` | 首批桌面壳开发中，**未验收** |
+
+### 2.1 V0.3 的工作区例外（2026-11-04 人工批准，一次性）
+
+- **基线例外**：V0.3 没有从“已验收的 `main`”起步。C 盘这份独立仓库里不存在 `main` 分支，
+  基线取发布分支 `feat/v0.3-desktop-ui` 的 tip `95d4e7d045a00e172f0deb21e1e2d22c484946bd`
+  （提交信息 `docs: publish accepted minimal workflow baseline`，2026-11-04 02:18:50 +0800）。
+  用户知情并批准了这次一次性例外；它**不**推翻 §3 第 1 条，后续版本仍须回到已验收的 `main`。
+- **C 盘独立仓库**：该工作区自带 `.git`，是独立仓库而不是 `git worktree` 登记项；
+  `origin` 指向 E 盘旧工作区 `E:\AI\DSH Workplace\workspaces\v0.3-desktop-ui`，
+  该远端只用于取证与对齐，不是长期共享的开发工作区。
+- **E 盘旧工作区保留**：`E:\AI\DSH Workplace\workspaces\v0.3-desktop-ui` 原样保留，
+  本批不迁移、不删除、不改写其工作树；两处不并发开发。
 
 - 主要版本各用独立分支（`feat/vX.Y-<feature>`）、**并列**工作区、新 DSH 会话；不同版本不共享工作区，
   也不并发使用同一工作区。
@@ -50,6 +63,16 @@
 - 允许的表述：V0.1 未合并、`main` 未更新、V0.2 处于待收口的过渡状态。
   不允许的表述：`main` 已包含 V0.1、V0.2 已从 V0.1 发布基线起步。
 - 归档标签 `archive/v0.1-verbatim` 保留，不改写、不移动。
+
+### 4.1 V0.3 工作区实测（2026-11-04）
+
+- C 盘独立仓库 `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui`：`HEAD` = `95d4e7d`，
+  当前分支 `feat/v0.3-desktop-ui`，与 `origin/feat/v0.3-desktop-ui` 一致。
+- 该仓库**没有** `main`；`origin/HEAD` 指向 `feat/v0.3-desktop-ui`，因此“从已验收 main 起步”在本仓库不可执行，
+  只能按 §2.1 登记为例外。
+- `git worktree list` 只有一条登记项（就是本工作区），E 盘旧工作区不在本仓库的 worktree 列表里。
+- 允许的表述：V0.3 从发布分支基线起步、`main` 尚未参与本版本。
+  不允许的表述：V0.3 已从已验收 `main` 起步、V0.3 已合并或已验收。
 
 ## 5. 每个版本的交付清单
 
