@@ -13,13 +13,14 @@
 | --- | --- | --- | --- |
 | V0.1 | `feat/v0.1-three-agent-mvp`（`b2b48ab`） | 主仓库工作树 `<repo>`（当前检出该分支） | 未合并；归档标签 `archive/v0.1-verbatim` |
 | V0.2 | `feat/v0.2-component-reuse` | `<repo>\..\workspaces\v0.2-component-reuse` | 开发中，**未验收** |
-| V0.3 | `feat/v0.3-desktop-ui`（基线 `95d4e7d`） | 独立仓库 `<active-workspace>`（旧 C 盘仓库保留，不再开发） | 首批桌面壳开发中，**未验收**；桌面入口待用户反馈 |
+| V0.3 | `feat/v0.3-desktop-ui`（基线 `release/v1.0-minimal`，`95d4e7d`） | 独立仓库 `<active-workspace>`（旧 C 盘仓库保留，不再开发） | 首批桌面壳 + 本地项目/任务草稿开发中，完整 V0.3 **未验收** |
 
 ### 2.1 V0.3 的工作区例外与迁移（2026-11-04 人工批准，一次性）
 
-- **基线例外**：V0.3 没有从“已验收的 `main`”起步。该独立仓库本地只检出 `feat/v0.3-desktop-ui`，没有 `main` 分支，
-  基线取发布分支 `feat/v0.3-desktop-ui` 的 tip `95d4e7d045a00e172f0deb21e1e2d22c484946bd`
-  （提交信息 `docs: publish accepted minimal workflow baseline`，2026-11-04 02:18:50 +0800）。
+- **基线例外**：V0.3 没有从“已验收的 `main`”起步。已验收的发布分支是 `release/v1.0-minimal`，
+  其 tip 为 `95d4e7d045a00e172f0deb21e1e2d22c484946bd`
+  （提交信息 `docs: publish accepted minimal workflow baseline`，2026-11-04 02:18:50 +0800）；
+  `feat/v0.3-desktop-ui` 是基于该提交建立的开发分支。该独立仓库本地只检出这个开发分支，没有 `main`。
   用户知情并批准了这次一次性例外；它**不**推翻 §3 第 1 条，后续版本仍须回到已验收的 `main`。
 - **独立仓库，不是 worktree**：`<active-workspace>` 自带 `.git`，`git worktree list` 只有它自己一条登记项；
   `origin` 指向既有 GitHub 仓库（本批未 fetch，`refs/remotes` 为空）。
@@ -61,8 +62,9 @@
   而迁移出的运行目录没有该标签。再把它登记成工作区，等于把问题搬回来。
 - **权限/ACL 修复脚本本批不执行。** 后续权限一旦再变化，`PurgeAccessRules` 不能无条件当作
   “只删除本次新增 ACE”的精确回滚——重跑前必须先比对当时的 ACL 快照，否则可能连带删掉别人的 ACE。
-- 该入口是“独立运行时 + 源码目录”的开发式启动，**不等于** `npm start` 或打包 `TLA.exe` 已永久修复；
-  在取得用户桌面端启动反馈之前，不得写成“E 盘入口已验收”。
+- 该入口是“独立运行时 + 源码目录”的开发式启动，**不等于** `npm start` 或打包 `TLA.exe` 已永久修复。
+- 2026-11-04 用户已确认该入口能打开窗口并显示角色卡与对应详情——入口本身可用；但这**不等于**完整 V0.3、
+  原 `npm start` 或旧打包 `TLA.exe` 已通过验收，文档不得据此写成整体验收完成。
 
 ## 3. 起点与兼容
 
@@ -85,9 +87,10 @@
 
 ### 4.1 V0.3 工作区实测（2026-11-04）
 
-- 活动仓库 `<active-workspace>`：`HEAD` = `b8c5f27`
+- 活动仓库 `<active-workspace>`：迁移时 `HEAD` = `b8c5f27`
   （`fix(desktop): make startup failures visible and log them`），当前分支 `feat/v0.3-desktop-ui`，
-  `git worktree list` 只有这一条，`refs/remotes` 为空（本批未 fetch）。
+  `git worktree list` 只有这一条，`refs/remotes` 为空（本批未 fetch）；此后本地提交了 `3f8837d`
+  （迁移文档）与本地项目/任务草稿批次，最新提交以 `git log` 为准。
 - 迁移前的旧 C 盘仓库 `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui` 停在同一个 `HEAD`，
   工作树干净、领先 `origin` 3 个尚未推送的本地提交；现在只作旧现场保留。
 - 本地**没有** `main` 分支（只检出 `feat/v0.3-desktop-ui`）；远端 refs 未 fetch，`origin/HEAD` 未核对。
