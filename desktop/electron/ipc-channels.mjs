@@ -5,6 +5,19 @@ export const IPC_CHANNELS = Object.freeze({
   APP_INFO: 'tla:app-info',
   WORKSPACE_LOAD: 'tla:workspace-load',
   WORKSPACE_SAVE: 'tla:workspace-save',
+  RECOVERY_LOAD: 'tla:recovery-load',
+  RECOVERY_SAVE: 'tla:recovery-save',
+  RECOVERY_DISCARD: 'tla:recovery-discard',
+  CLOSE_CONFIRM: 'tla:close-confirm',
+  CLOSE_FORCE: 'tla:close-force',
+  // 主进程 → 渲染层的关闭请求；不注册 handler，只作为事件通道。
+  CLOSE_REQUEST: 'tla:close-request',
 })
 
-export const IPC_CHANNEL_LIST = Object.freeze(Object.values(IPC_CHANNELS))
+/** 主进程实际注册 handler 的通道（不含事件通道）。 */
+export const IPC_CHANNEL_LIST = Object.freeze(
+  Object.values(IPC_CHANNELS).filter((channel) => channel !== IPC_CHANNELS.CLOSE_REQUEST),
+)
+
+/** 允许由主进程主动发送到渲染层的事件通道。 */
+export const IPC_EVENT_CHANNELS = Object.freeze([IPC_CHANNELS.CLOSE_REQUEST])

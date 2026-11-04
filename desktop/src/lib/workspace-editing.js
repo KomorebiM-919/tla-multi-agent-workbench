@@ -79,16 +79,26 @@ export function buildSavePayload(session, baseline) {
   return toWorkspacePayload(projects, session.activeProjectId)
 }
 
+/** 新建草稿项目的默认名称；改名时据此判断是否需要确认取消。 */
+export const DRAFT_PROJECT_NAME = '新建项目'
+
 /** 新建一个只在本次会话里存在的草稿项目；默认名称在会话内保持可区分。 */
 export function createDraftProject(existingProjects) {
   const usedNames = new Set(existingProjects.map((project) => project.name))
-  let name = '新建项目'
+  let name = DRAFT_PROJECT_NAME
   let index = 2
   while (usedNames.has(name)) {
-    name = `新建项目 ${index}`
+    name = `${DRAFT_PROJECT_NAME} ${index}`
     index += 1
   }
   return { id: newProjectId(), name, description: '', taskDraft: '' }
+}
+
+/** 用户已经在未保存项目里填过文字或改过名：取消前需要再确认一次。 */
+export function needsCancelConfirmation(project) {
+  if (!project) return false
+  if (project.description !== '' || project.taskDraft !== '') return true
+  return project.name.trim() !== '' && project.name.trim() !== DRAFT_PROJECT_NAME
 }
 
 /** 与基线逐字段比较；基线里没有这个项目（尚未保存过）时视为有未保存更改。 */

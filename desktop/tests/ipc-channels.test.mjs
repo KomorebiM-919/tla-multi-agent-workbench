@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { IPC_CHANNELS, IPC_CHANNEL_LIST } from '../electron/ipc-channels.mjs'
+import { IPC_CHANNELS, IPC_CHANNEL_LIST, IPC_EVENT_CHANNELS } from '../electron/ipc-channels.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const electronDir = path.join(here, '..', 'electron')
@@ -12,12 +12,32 @@ test('IPC 白名单只有已审查的通道', () => {
   assert.equal(IPC_CHANNELS.APP_INFO, 'tla:app-info')
   assert.equal(IPC_CHANNELS.WORKSPACE_LOAD, 'tla:workspace-load')
   assert.equal(IPC_CHANNELS.WORKSPACE_SAVE, 'tla:workspace-save')
+  assert.equal(IPC_CHANNELS.RECOVERY_LOAD, 'tla:recovery-load')
+  assert.equal(IPC_CHANNELS.RECOVERY_SAVE, 'tla:recovery-save')
+  assert.equal(IPC_CHANNELS.RECOVERY_DISCARD, 'tla:recovery-discard')
+  assert.equal(IPC_CHANNELS.CLOSE_CONFIRM, 'tla:close-confirm')
+  assert.equal(IPC_CHANNELS.CLOSE_FORCE, 'tla:close-force')
+  assert.equal(IPC_CHANNELS.CLOSE_REQUEST, 'tla:close-request')
   assert.deepEqual(
     [...IPC_CHANNEL_LIST],
-    ['tla:app-info', 'tla:workspace-load', 'tla:workspace-save'],
+    [
+      'tla:app-info',
+      'tla:workspace-load',
+      'tla:workspace-save',
+      'tla:recovery-load',
+      'tla:recovery-save',
+      'tla:recovery-discard',
+      'tla:close-confirm',
+      'tla:close-force',
+    ],
   )
+  assert.deepEqual([...IPC_EVENT_CHANNELS], ['tla:close-request'])
+  for (const channel of IPC_EVENT_CHANNELS) {
+    assert.equal(IPC_CHANNEL_LIST.includes(channel), false, '主→渲染事件不得注册为 handler 通道')
+  }
   assert.ok(Object.isFrozen(IPC_CHANNELS))
   assert.ok(Object.isFrozen(IPC_CHANNEL_LIST))
+  assert.ok(Object.isFrozen(IPC_EVENT_CHANNELS))
 })
 
 test('主进程只注册白名单内的通道', async () => {
@@ -30,20 +50,42 @@ test('主进程只注册白名单内的通道', async () => {
   assert.equal(new Set(registered).size, registered.length, '通道不得重复注册')
 })
 
-test('预加载脚本只暴露版本信息与工作区读写，通道与白名单一致', async () => {
+test('预加载脚本只暴露版本信息、工作区与恢复稿读写以及关闭握手', async () => {
   const preload = await readFile(path.join(electronDir, 'preload.cjs'), 'utf8')
   assert.match(preload, /contextBridge\.exposeInMainWorld\('tla'/)
-  for (const method of ['getAppInfo', 'loadWorkspace', 'saveWorkspace']) {
+  for (const method of [
+    'getAppInfo',
+    'loadWorkspace',
+    'saveWorkspace',
+    'loadRecovery',
+    'saveRecovery',
+    'discardRecovery',
+    'confirmClose',
+    'forceClose',
+  ]) {
     assert.match(preload, new RegExp(`${method}:`), `预加载应暴露 ${method}`)
   }
-  for (const channel of IPC_CHANNEL_LIST) {
+  for (const channel of [...IPC_CHANNEL_LIST, ...IPC_EVENT_CHANNELS]) {
     assert.ok(
       preload.includes(`'${channel}'`),
       `预加载脚本的通道字面量必须与 ipc-channels.mjs 一致：${channel}`,
     )
   }
-  assert.equal(/ipcRenderer\.(send|sendSync|on)\(/.test(preload), false, '预加载不应暴露双向或事件通道')
-  assert.equal(/require\(['"](?:node:)?(?:fs|path|child_process)['"]\)/.test(preload), false, '预加载不得直接访问文件系统')
+  assert.equal(
+    /ipcRenderer\.(send|sendSync)\(/.test(preload),
+    false,
+    '预加载不应暴露双向或单向发送通道',
+  )
+  assert.equal(
+    /ipcRenderer\.on\((?!CLOSE_REQUEST_CHANNEL)/.test(preload),
+    false,
+    '只允许订阅关闭请求事件，不暴露通用事件通道',
+  )
+  assert.equal(
+    /require\(['"](?:node:)?(?:fs|path|child_process)['"]\)/.test(preload),
+    false,
+    '预加载不得直接访问文件系统',
+  )
 })
 
 test('工作区路径由主进程按源码位置解析，不接受渲染层传入', async () => {
@@ -56,6 +98,13 @@ test('工作区路径由主进程按源码位置解析，不接受渲染层传�
     /workspaceStore\.save\((?!payload)/.test(main),
     false,
     '不得把渲染层传入的路径交给存储层',
+  )
+  assert.match(main, /resolveRecoveryFilePath\(DESKTOP_ROOT\)/, '恢复稿路径同样由源码位置解析')
+  assert.match(main, /recoveryStore\.save\(snapshot\)/)
+  assert.equal(
+    /recoveryStore\.save\((?!snapshot)/.test(main),
+    false,
+    '不得把渲染层传入的路径交给恢复稿存储层',
   )
 })
 

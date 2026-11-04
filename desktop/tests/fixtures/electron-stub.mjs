@@ -28,10 +28,15 @@ class FakeWebContents extends EventEmitter {
     this.window = window
     this.preload = preload
     this.url = ''
+    this.sentMessages = []
   }
 
   getURL() {
     return this.url
+  }
+
+  send(channel, payload) {
+    this.sentMessages.push({ channel, payload })
   }
 
   setWindowOpenHandler(handler) {
@@ -83,6 +88,19 @@ class FakeBrowserWindow extends EventEmitter {
   focus() {}
 
   close() {
+    // 真实 BrowserWindow 的 close 事件可被 preventDefault 拦下；只有没被拦下才真正销毁。
+    const event = {
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true
+      },
+    }
+    this.emit('close', event)
+    if (!event.defaultPrevented) this.destroy()
+  }
+
+  destroy() {
+    if (this.destroyed) return
     this.destroyed = true
     this.emit('closed')
   }

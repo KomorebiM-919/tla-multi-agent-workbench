@@ -12,19 +12,21 @@ desktop/
     diagnostics.mjs     # 同步追加的启动日志（%APPDATA%\TLA\logs\main.log）
     security.mjs        # 页面地址与 IPC 调用方的信任判定（纯函数，可单测）
     workspace-store.mjs # 工作区文件的校验、读取与原子保存（不依赖 Electron，可真实文件测试）
-    preload.cjs         # 沙箱预加载：只有 tla.getAppInfo / loadWorkspace / saveWorkspace
-    ipc-channels.mjs    # 主进程使用的 IPC 白名单（三个通道）
+    recovery-store.mjs  # 恢复稿 recovery.json 的校验、保存、放弃与版本水位（同样可真实文件测试）
+    preload.cjs         # 沙箱预加载：只有 tla.getAppInfo / loadWorkspace / saveWorkspace / 恢复稿与关闭握手
+    ipc-channels.mjs    # 主进程使用的 IPC 白名单（八个 handler 通道 + 一个关闭请求事件）
   scripts/
     build-renderer.mjs  # 渲染层构建（含受限沙箱下的 exec 兼容）
     before-build.cjs    # 告知 electron-builder：依赖树由外部处理
   src/
-    App.jsx             # 三栏骨架、工作区读取/保存状态机
+    App.jsx             # 三栏骨架、工作区读取/保存、恢复稿提示与关闭握手
     lib/workspace-editing.js # 会话副本、dirty 判定、状态与字段校验（纯函数）
     lib/workspace-saver.js   # 保存协调：单请求在途、baseline 同步更新、失败释放
+    lib/recovery-drafts.js   # 恢复稿协调：防抖、写入顺序、清理与放弃（定时器可注入）
     components/         # 项目导航、项目编辑、团队卡片、角色详情
     data/team.js        # 初始团队模板（唯一数据源）
     styles.css          # 暖白简洁样式
-  tests/                # node:test 单元测试（工作区存储、IPC、角色数据、诊断、安全边界、启动流程）
+  tests/                # node:test 单元测试（工作区与恢复稿存储、IPC、角色数据、诊断、安全边界、启动流程）
   index.html
   vite.config.mjs
   package.json          # 精确版本依赖 + electron-builder 配置
@@ -60,7 +62,7 @@ $env:electron_config_cache = '<workspace>\.tools\electron-cache'
 ```powershell
 npm ci --no-audit --no-fund --foreground-scripts   # 按 package-lock.json 复现，不改依赖版本
 npm run build:renderer                             # 渲染层构建到 renderer-dist/
-npm test                                           # 工作区存储/编辑模型、IPC 边界、角色数据、诊断、安全边界、启动流程
+npm test                                           # 工作区/恢复稿存储、编辑模型、IPC 边界、角色数据、诊断、安全边界、启动流程
 npm start                                          # 用本机 electron 启动（需先 build:renderer）
 npm run pack:dir                                   # 构建 + Windows dir 便携打包到 release/
 ```
@@ -105,6 +107,28 @@ node -e "console.log(require('electron'))"   # 打印 dist\electron.exe 的绝�
   避免拿过期快照把刚写进去的内容覆盖掉。
 - **界面状态**：每个项目标注“未保存 / 保存中 / 已保存（时间）/ 保存失败”，新建项目在首次保存前显示“尚未保存”；
   切换项目时未保存的修改留在本次会话里，重开窗口后回到最近一次成功保存的内容。
+
+### 恢复稿与取消新建
+
+正式保存是显式动作，恢复稿只负责“别让没保存的内容丢掉”，两者分开：
+
+- **位置**：同一 `.local\tla-desktop\` 下的 `recovery.json`，结构
+  `{ schemaVersion: 1, projects: [{ id, name, description, taskDraft, revision, updatedAt }] }`。
+  每个项目只保留最新一份快照，不存历史；`.local/` 已整体加入 `.gitignore`。
+- **何时写**：编辑时按 400 ms 防抖备份；名称被临时清空、只剩正文等中间态也会备份。界面显示
+  “恢复稿备份中 / 恢复稿已备份（时间）/ 备份失败”，与正式保存的“已保存”明确区分，不会把备份说成保存成功。
+- **顺序与身份**：写入按项目串行，`revision` 单调递增；磁盘上已有更高版本的请求会被拒绝（`STALE_SNAPSHOT`）。
+  放弃/取消后记录内存水位，迟到的旧备份不会覆盖新稿，也不会让已放弃的项目重新出现（`DISCARDED`）。
+- **重开**：读到恢复稿时提示“发现未保存内容”，逐个项目提供“恢复 / 放弃”。恢复只装入本次编辑会话，
+  不自动改写 `workspace.json`；放弃只删该项目的恢复稿，正式文件保持原样；未处理的恢复稿会跨多次重开保留。
+- **正式保存与恢复稿**：保存成功后，只有恢复稿内容正好等于刚保存的内容、且没有更新的编辑时才清理；
+  保存期间继续输入的内容、其他项目的恢复稿都保留。保存失败不清理恢复稿。
+- **关闭窗口**：主进程先拦下 close，请渲染层把防抖中的最新编辑写完再确认；等待有界（2 秒），
+  超时退回正常状态而不会假称已备份。刷新失败时窗口不关闭，界面提示“返回继续编辑 / 仍然关闭”，
+  不会自动把失败当作成功。
+- **取消新建**：只对从未成功写入 `workspace.json` 的项目显示。空项目直接移除；已经填了文字或改过名时先确认。
+  取消会删除该条目与对应恢复稿，不删除磁盘上的项目目录，也不影响已保存项目；取消失败会保留项目并明确报错。
+  是否“已保存”以实际成功落盘为准，缺文件时的默认内存项目不算。
 
 ## 启动与验证
 
@@ -174,13 +198,16 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 ## 安全边界
 
 - `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`、`webviewTag: false`。
-- 预加载脚本只暴露冻结的 `window.tla.getAppInfo()`、`loadWorkspace()`、`saveWorkspace(workspace)`；
-  不暴露 `ipcRenderer`、任意文件读写或 shell。
-- 主进程只注册 `tla:app-info`、`tla:workspace-load`、`tla:workspace-save` 三个通道，每个都先用
-  `electron/security.mjs` 校验：调用方必须是主窗口的 `webContents`、主 frame，且页面地址与应用页面
-  （或开发服务器地址）完全相等。
-- 工作区写入固定在主进程解析出的路径，渲染层只能提交符合契约的数据；路径、版本、字段、数量、长度与文件大小
-  全部由主进程复验，非法输入被拒绝而不是截断。
+- 预加载脚本只暴露冻结的 `window.tla.getAppInfo()`、`loadWorkspace()`、`saveWorkspace(workspace)`，
+  以及 `loadRecovery()`、`saveRecovery(snapshot)`、`discardRecovery({ projectId, revision })`、
+  `onCloseRequest(callback)`、`confirmClose(result)`、`forceClose()`；不暴露 `ipcRenderer` 本体、
+  通用 `on` / `send`、任意文件读写或 shell。
+- 主进程只注册八个 handler 通道（`tla:app-info`、`tla:workspace-load`、`tla:workspace-save`、
+  `tla:recovery-load`、`tla:recovery-save`、`tla:recovery-discard`、`tla:close-confirm`、`tla:close-force`），
+  主→渲染事件只有关闭请求 `tla:close-request`。每个 handler 都先用 `electron/security.mjs` 校验：
+  调用方必须是主窗口的 `webContents`、主 frame，且页面地址与应用页面（或开发服务器地址）完全相等。
+- 工作区与恢复稿的写入固定在主进程解析出的路径，渲染层只能提交符合契约的数据；路径、版本、字段、数量、
+  长度、文件大小与快照 revision 全部由主进程复验，非法输入被拒绝而不是截断。
 - 拒绝所有新窗口（不调用 `shell.openExternal`，不交给系统浏览器）、外部导航与 `<webview>` 挂载；
   拒绝所有权限申请（摄像头、麦克风、通知等）。
 - 渲染层带 CSP：`default-src 'self'`，脚本仅允许同源文件。
@@ -188,5 +215,6 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 ## 首批不做的事
 
 聊天、智能分工、API 接入、自动替补、余额/用量展示、真实仓库读取、登录与审批流均未实现；
-项目管理也只做了本机新建、改名与草稿保存——不删除、不导入导出、不编辑角色、不绑定模型，也没有自动保存或云端同步。
+项目管理也只做了本机新建、改名、切换与草稿保存——不删除已保存项目（只能取消从未落盘的新建项目）、
+不导入导出、不编辑角色、不绑定模型，也没有自动保存或云端同步。
 界面上不出现任何伪造的回复、余额或“运行中”状态。

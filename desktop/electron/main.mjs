@@ -6,6 +6,7 @@ import { IPC_CHANNELS } from './ipc-channels.mjs'
 import { createDiagnostics } from './diagnostics.mjs'
 import { isAllowedPage, isTrustedSender } from './security.mjs'
 import { createWorkspaceStore, resolveWorkspaceFilePath } from './workspace-store.mjs'
+import { createRecoveryStore, resolveRecoveryFilePath } from './recovery-store.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DESKTOP_ROOT = path.resolve(__dirname, '..')
@@ -14,6 +15,9 @@ const RENDERER_ENTRY = path.join(__dirname, '..', 'renderer-dist', 'index.html')
 // 也不接受渲染层传路径。文件不存在时只返回默认项目，不主动创建。
 const WORKSPACE_FILE = resolveWorkspaceFilePath(DESKTOP_ROOT)
 const workspaceStore = createWorkspaceStore({ filePath: WORKSPACE_FILE })
+// 恢复稿与正式工作区同目录但完全分开：正式保存失败或还没保存时，编辑内容仍能留一份。
+const RECOVERY_FILE = resolveRecoveryFilePath(DESKTOP_ROOT)
+const recoveryStore = createRecoveryStore({ filePath: RECOVERY_FILE })
 const APP_URL = pathToFileURL(RENDERER_ENTRY).href
 const DEV_SERVER_URL = (process.env.TLA_DEV_SERVER_URL ?? '').replace(/\/+$/, '')
 const PAGE_URL = DEV_SERVER_URL || APP_URL
@@ -24,6 +28,8 @@ const APP_ID = 'com.tailoredlogic.tla.workbench'
 // 窗口默认隐藏以避免白屏闪烁；若 ready-to-show 因渲染器异常始终不来，
 // 这个兜底必须让窗口出现，否则用户看到的就是“双击没反应”。
 const SHOW_FALLBACK_DELAY_MS = 2500
+// 关闭前给渲染层写完恢复稿的时间上限；超时只放弃这次关闭请求，不假装已经备份。
+const CLOSE_FLUSH_TIMEOUT_MS = 2000
 
 /**
  * 诊断日志目录：固定为 %APPDATA%\\TLA\\logs，与 app.getName() 无关，方便用户按固定
@@ -50,6 +56,8 @@ if (!diagnostics.writable) {
 const log = (step, detail) => diagnostics.record(step, detail)
 
 let mainWindow = null
+let closeHandshake = 'idle'
+let closeTimer = null
 
 log('bootstrap', {
   version: app.getVersion(),
@@ -61,6 +69,7 @@ log('bootstrap', {
   logs: diagnostics.file,
   logsWritable: diagnostics.writable,
   workspaceFile: WORKSPACE_FILE,
+  recoveryFile: RECOVERY_FILE,
 })
 
 process.on('uncaughtException', (error) => {
@@ -271,6 +280,126 @@ function registerIpc() {
       return { ok: false, error: info }
     }
   })
+
+  // 恢复稿只暴露“读、按项目写一份、按项目删除”三个动作；日志只记 ID 与版本，
+  // 不记名称、简介或草稿正文。
+  ipcMain.handle(IPC_CHANNELS.RECOVERY_LOAD, async (event) => {
+    assertTrustedSender(event, IPC_CHANNELS.RECOVERY_LOAD)
+    try {
+      const { entries, source, savedAt } = await recoveryStore.load()
+      log('recovery-loaded', { entries: entries.length, source })
+      return { ok: true, entries, source, savedAt }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('recovery-load-failed', info)
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.RECOVERY_SAVE, async (event, snapshot) => {
+    assertTrustedSender(event, IPC_CHANNELS.RECOVERY_SAVE)
+    try {
+      const { entry } = await recoveryStore.save(snapshot)
+      log('recovery-saved', { projectId: entry.id, revision: entry.revision })
+      return { ok: true, entry }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('recovery-save-failed', {
+        projectId: snapshot?.id,
+        revision: snapshot?.revision,
+        code: info.code,
+      })
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.RECOVERY_DISCARD, async (event, request) => {
+    assertTrustedSender(event, IPC_CHANNELS.RECOVERY_DISCARD)
+    try {
+      const { removed } = await recoveryStore.discard(request)
+      log('recovery-discarded', {
+        projectId: request?.projectId,
+        revision: request?.revision,
+        removed,
+      })
+      return { ok: true, removed }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('recovery-discard-failed', { projectId: request?.projectId, code: info.code })
+      return { ok: false, error: info }
+    }
+  })
+
+  // —— 关闭握手：渲染层写完恢复稿后确认；失败则明确中止，由界面给出返回 / 仍然关闭。
+
+  ipcMain.handle(IPC_CHANNELS.CLOSE_CONFIRM, (event, result) => {
+    assertTrustedSender(event, IPC_CHANNELS.CLOSE_CONFIRM)
+    clearCloseTimer()
+    if (closeHandshake !== 'pending') {
+      log('close-confirm-ignored', { state: closeHandshake })
+      return {
+        ok: false,
+        error: { code: 'NO_CLOSE_REQUEST', message: '当前没有待处理的关闭请求。' },
+      }
+    }
+    if (result?.ok) {
+      closeHandshake = 'allowed'
+      log('close-flushed', {})
+      mainWindow?.close()
+      return { ok: true }
+    }
+    closeHandshake = 'idle'
+    const info = result?.error ?? { code: 'CLOSE_FLUSH_FAILED', message: '恢复稿没有写完。' }
+    log('close-flush-failed', info)
+    return { ok: true, aborted: true }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.CLOSE_FORCE, (event) => {
+    assertTrustedSender(event, IPC_CHANNELS.CLOSE_FORCE)
+    clearCloseTimer()
+    closeHandshake = 'allowed'
+    log('close-forced', {})
+    mainWindow?.close()
+    return { ok: true }
+  })
+}
+
+function clearCloseTimer() {
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
+}
+
+/**
+ * 最小关闭握手：拦下第一次 close，请渲染层把防抖中的恢复稿写完再确认。
+ * 等待有界；超时或失败都退回 idle，绝不把“没写完”当成已经备份。
+ */
+function attachCloseHandshake(win) {
+  win.on('close', (event) => {
+    if (closeHandshake === 'allowed') return
+    event.preventDefault()
+    if (closeHandshake === 'pending') return
+    closeHandshake = 'pending'
+    log('close-requested', {})
+    try {
+      win.webContents.send(IPC_CHANNELS.CLOSE_REQUEST)
+    } catch (error) {
+      closeHandshake = 'idle'
+      log('close-request-failed', { message: error?.message })
+      return
+    }
+    closeTimer = setTimeout(() => {
+      closeTimer = null
+      if (closeHandshake !== 'pending') return
+      closeHandshake = 'idle'
+      log('close-flush-timeout', {})
+    }, CLOSE_FLUSH_TIMEOUT_MS)
+  })
+  win.once('closed', () => {
+    clearCloseTimer()
+    closeHandshake = 'idle'
+  })
 }
 
 function attachWindowDiagnostics(win) {
@@ -347,6 +476,7 @@ async function createWindow() {
   mainWindow = win
   log('window-created', { id: win.id })
 
+  attachCloseHandshake(win)
   attachWindowDiagnostics(win)
 
   try {

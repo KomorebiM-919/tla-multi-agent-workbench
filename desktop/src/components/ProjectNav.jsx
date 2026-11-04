@@ -5,6 +5,7 @@ export default function ProjectNav({
   onCreate,
   canCreate,
   statusById,
+  backupById,
   appInfo,
 }) {
   return (
@@ -25,6 +26,15 @@ export default function ProjectNav({
           {projects.map((project) => {
             const active = project.id === activeId
             const status = statusById.get(project.id) ?? { tone: 'saved', label: '已保存' }
+            const backup = backupById?.[project.id]
+            const backupText =
+              backup?.kind === 'saving'
+                ? '备份中'
+                : backup?.kind === 'failed'
+                  ? '备份失败'
+                  : backup?.kind === 'saved'
+                    ? '已备份'
+                    : ''
             return (
               <li key={project.id}>
                 <button
@@ -37,6 +47,11 @@ export default function ProjectNav({
                   <span className="nav-item-meta">
                     <span className={`chip chip-${status.tone}`}>{status.label}</span>
                     {status.tone === 'dirty' && <span className="nav-item-note">仅本次会话</span>}
+                    {backupText && (
+                      <span className={`backup backup-${backup.kind}`} title="恢复稿备份状态">
+                        {backupText}
+                      </span>
+                    )}
                   </span>
                 </button>
               </li>

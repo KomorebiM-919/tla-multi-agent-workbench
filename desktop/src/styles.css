@@ -807,6 +807,198 @@ button {
   user-select: text;
 }
 
+/* ===== 恢复稿：备份状态、重开提示、取消新建、关闭失败 ===== */
+.backup-status {
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+
+.backup-status.backup-saving {
+  color: var(--accent);
+}
+
+.backup-status.backup-failed {
+  color: #a33d2b;
+}
+
+.backup {
+  font-size: 10.5px;
+  color: var(--ink-mute);
+}
+
+.backup-saved {
+  color: var(--human);
+}
+
+.backup-saving {
+  color: var(--accent);
+}
+
+.backup-failed {
+  color: #a33d2b;
+}
+
+.notice-warn {
+  border-color: #e0b4ac;
+  background: #fdf1ec;
+}
+
+.notice-warn strong {
+  color: #a33d2b;
+}
+
+.recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid #e3c9a8;
+  border-radius: var(--radius-lg);
+  background: #fdf7ea;
+}
+
+.recovery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recovery-head h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.recovery-lead {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.recovery-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+}
+
+.recovery-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.recovery-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recovery-meta span {
+  color: var(--ink-mute);
+  font-size: 11px;
+}
+
+.recovery-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ghost {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ghost:disabled {
+  color: var(--ink-mute);
+  cursor: not-allowed;
+}
+
+.ghost.danger {
+  color: #a33d2b;
+}
+
+.ghost.danger:hover:not(:disabled) {
+  border-color: #a33d2b;
+  color: #8c2f21;
+}
+
+.cancel-new {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.cancel-hint {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.cancel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(59, 51, 44, 0.38);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, 100%);
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.modal h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal p {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
 /* ===== 滚动条 ===== */
 ::-webkit-scrollbar {
   width: 10px;

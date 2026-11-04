@@ -7,15 +7,29 @@ function formatClock(iso) {
   return date.toLocaleTimeString('zh-CN', { hour12: false })
 }
 
+function backupLabel(backupState) {
+  if (!backupState || backupState.kind === 'idle') return ''
+  if (backupState.kind === 'saving') return '恢复稿备份中…'
+  if (backupState.kind === 'failed') return `备份失败：${backupState.message}`
+  return backupState.backedUpAt ? `恢复稿已备份 ${formatClock(backupState.backedUpAt)}` : '恢复稿已备份'
+}
+
 export default function ProjectEditor({
   project,
   fieldErrors,
   limits,
   dirty,
   saveState,
+  backupState,
   blockedByOtherSave,
+  canCancel,
+  cancelConfirm,
+  cancelError,
   onChange,
   onSave,
+  onCancel,
+  onCancelConfirm,
+  onCancelDismiss,
 }) {
   const status = describeProjectStatus({ dirty, saveState })
   const saving = saveState?.kind === 'saving'
@@ -108,6 +122,11 @@ export default function ProjectEditor({
           <span className={`save-status tone-${status.tone}`} role="status">
             {statusText}
           </span>
+          {backupLabel(backupState) && (
+            <span className={`backup-status backup-${backupState.kind}`} role="status">
+              {backupLabel(backupState)}
+            </span>
+          )}
         </div>
 
         {blockedByOtherSave && (
@@ -119,6 +138,35 @@ export default function ProjectEditor({
           <p className="save-error" role="alert">
             保存失败：{saveState.message}
           </p>
+        )}
+
+        {canCancel && (
+          <div className="cancel-new">
+            {cancelConfirm ? (
+              <>
+                <p className="cancel-hint">
+                  这个项目还没有正式保存到 workspace.json，取消会移除条目与对应恢复稿；磁盘上的项目目录和已保存项目不受影响。
+                </p>
+                <div className="cancel-actions">
+                  <button type="button" className="ghost danger" onClick={onCancelConfirm}>
+                    确认取消
+                  </button>
+                  <button type="button" className="ghost" onClick={onCancelDismiss}>
+                    保留项目
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button type="button" className="ghost" onClick={onCancel}>
+                取消新建
+              </button>
+            )}
+            {cancelError && (
+              <p className="save-error" role="alert">
+                取消失败：{cancelError}
+              </p>
+            )}
+          </div>
         )}
       </div>
     </section>
