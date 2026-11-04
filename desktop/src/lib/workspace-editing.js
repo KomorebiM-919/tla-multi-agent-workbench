@@ -57,6 +57,28 @@ export function toWorkspacePayload(projects, activeProjectId) {
   }
 }
 
+/**
+ * 生成一次保存要写入的 payload：只有当前项目取会话里的内容，其他项目取最近一次成功
+ * 保存的版本。这样“保存这个项目”不会顺带把别的项目的未保存草稿写进文件，
+ * 各项目的状态也就不会互相串。
+ *
+ * 注意：baseline 必须是调用这一刻最新的成功版本；如果上一次保存还在途，
+ * 应先等它完成并更新 baseline，再构造下一次 payload（见 workspace-saver.js）。
+ */
+export function buildSavePayload(session, baseline) {
+  const baselineById = new Map(baseline.projects.map((project) => [project.id, project]))
+  const projects = []
+  for (const project of session.projects) {
+    if (project.id === session.activeProjectId) {
+      projects.push(project)
+      continue
+    }
+    const saved = baselineById.get(project.id)
+    if (saved) projects.push(saved)
+  }
+  return toWorkspacePayload(projects, session.activeProjectId)
+}
+
 /** 新建一个只在本次会话里存在的草稿项目；默认名称在会话内保持可区分。 */
 export function createDraftProject(existingProjects) {
   const usedNames = new Set(existingProjects.map((project) => project.name))

@@ -13,13 +13,14 @@ export default function ProjectEditor({
   limits,
   dirty,
   saveState,
+  blockedByOtherSave,
   onChange,
   onSave,
 }) {
   const status = describeProjectStatus({ dirty, saveState })
   const saving = saveState?.kind === 'saving'
   const invalid = Object.keys(fieldErrors).length > 0
-  const saveDisabled = saving || invalid || !dirty
+  const saveDisabled = saving || blockedByOtherSave || invalid || !dirty
   const statusText =
     status.tone === 'saved' && saveState?.savedAt
       ? `已保存 ${formatClock(saveState.savedAt)}`
@@ -94,7 +95,13 @@ export default function ProjectEditor({
             className="primary"
             onClick={onSave}
             disabled={saveDisabled}
-            title={dirty ? '保存当前项目的名称、简介与任务草稿' : '没有需要保存的更改'}
+            title={
+              blockedByOtherSave
+                ? '另一个项目正在保存，完成后再保存这个项目'
+                : dirty
+                  ? '保存当前项目的名称、简介与任务草稿'
+                  : '没有需要保存的更改'
+            }
           >
             {saving ? '保存中…' : '保存草稿'}
           </button>
@@ -103,6 +110,11 @@ export default function ProjectEditor({
           </span>
         </div>
 
+        {blockedByOtherSave && (
+          <p className="save-blocked" role="status">
+            另一个项目正在保存，完成后再保存这个项目；当前编辑不会丢失。
+          </p>
+        )}
         {saveState?.kind === 'failed' && (
           <p className="save-error" role="alert">
             保存失败：{saveState.message}

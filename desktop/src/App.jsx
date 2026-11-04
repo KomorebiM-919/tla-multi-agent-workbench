@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProjectNav from './components/ProjectNav.jsx'
 import ProjectEditor from './components/ProjectEditor.jsx'
 import TeamBoard from './components/TeamBoard.jsx'
@@ -14,33 +14,14 @@ import {
   describeProjectStatus,
   dirtyProjectIds,
   projectFieldErrors,
-  toWorkspacePayload,
 } from './lib/workspace-editing.js'
+import { createWorkspaceSaver } from './lib/workspace-saver.js'
 
 const LIMITS = Object.freeze({
   name: MAX_NAME_LENGTH,
   description: MAX_DESCRIPTION_LENGTH,
   taskDraft: MAX_TASK_DRAFT_LENGTH,
 })
-
-/**
- * 生成一次保存要写入的 payload：只有当前项目取会话里的内容，其他项目取最近一次成功
- * 保存的版本。这样“保存这个项目”不会顺带把别的项目的未保存草稿写进文件，
- * 各项目的状态也就不会互相串。
- */
-function buildSavePayload(session, baseline) {
-  const baselineById = new Map(baseline.projects.map((project) => [project.id, project]))
-  const projects = []
-  for (const project of session.projects) {
-    if (project.id === session.activeProjectId) {
-      projects.push(project)
-      continue
-    }
-    const saved = baselineById.get(project.id)
-    if (saved) projects.push(saved)
-  }
-  return toWorkspacePayload(projects, session.activeProjectId)
-}
 
 function initialSaveStates(workspace, source) {
   const states = {}
@@ -57,6 +38,31 @@ export default function App() {
   const [saveStates, setSaveStates] = useState({})
   const [roleId, setRoleId] = useState(null)
   const [appInfo, setAppInfo] = useState(null)
+  const [savingProjectId, setSavingProjectId] = useState(null)
+  const saverRef = useRef(null)
+  if (!saverRef.current) {
+    saverRef.current = createWorkspaceSaver({
+      save: (payload) => window.tla?.saveWorkspace?.(payload),
+      onStart: (projectId) => {
+        setSavingProjectId(projectId)
+        setSaveStates((states) => ({ ...states, [projectId]: { kind: 'saving' } }))
+      },
+      onSaved: (result, projectId) => {
+        setBaseline(cloneSession(result.workspace))
+        setSaveStates((states) => ({
+          ...states,
+          [projectId]: { kind: 'saved', savedAt: result.savedAt },
+        }))
+      },
+      onFailed: (error, projectId) => {
+        setSaveStates((states) => ({
+          ...states,
+          [projectId]: { kind: 'failed', message: error.message },
+        }))
+      },
+      onFinish: () => setSavingProjectId(null),
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -85,6 +91,7 @@ export default function App() {
       const result = await api()
       if (result?.ok) {
         const workspace = cloneSession(result.workspace)
+        saverRef.current.reset(workspace)
         setSession(workspace)
         setBaseline(cloneSession(workspace))
         setSaveStates(initialSaveStates(workspace, result.source))
@@ -165,38 +172,11 @@ export default function App() {
   }, [session])
 
   const saveActiveProject = useCallback(async () => {
-    if (!session || !baseline) return
-    const project = session.projects.find((item) => item.id === session.activeProjectId)
-    if (!project) return
-    const payload = buildSavePayload(session, baseline)
-    setSaveStates((states) => ({ ...states, [project.id]: { kind: 'saving' } }))
-    try {
-      const result = await window.tla?.saveWorkspace?.(payload)
-      if (result?.ok) {
-        setBaseline(cloneSession(result.workspace))
-        setSaveStates((states) => ({
-          ...states,
-          [project.id]: { kind: 'saved', savedAt: result.savedAt },
-        }))
-        return
-      }
-      setSaveStates((states) => ({
-        ...states,
-        [project.id]: {
-          kind: 'failed',
-          message: result?.error?.message ?? '保存请求被拒绝。',
-        },
-      }))
-    } catch (error) {
-      setSaveStates((states) => ({
-        ...states,
-        [project.id]: {
-          kind: 'failed',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      }))
-    }
-  }, [session, baseline])
+    if (!session || !activeProject) return
+    // 同步防重入在 saver 内部：它在第一次 await 之前就把 inFlight 置位，
+    // 因此连续点击、或还没轮到按钮重新渲染时再点，都拿不到第二份快照。
+    await saverRef.current.save(session, activeProject)
+  }, [session, activeProject])
 
   if (loadState.status === 'error') {
     return (
@@ -272,6 +252,7 @@ export default function App() {
             limits={LIMITS}
             dirty={dirtyIds.has(activeProject.id)}
             saveState={saveStates[activeProject.id]}
+            blockedByOtherSave={savingProjectId !== null && savingProjectId !== activeProject.id}
             onChange={updateActiveProject}
             onSave={saveActiveProject}
           />
