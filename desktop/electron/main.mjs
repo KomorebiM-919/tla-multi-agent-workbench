@@ -58,6 +58,10 @@ const log = (step, detail) => diagnostics.record(step, detail)
 let mainWindow = null
 let closeHandshake = 'idle'
 let closeTimer = null
+// 每个关闭请求一个单调递增的编号：超时后旧请求的迟到确认必须被拒绝，
+// 不能误关掉之后新发出的关闭请求。
+let closeRequestId = 0
+let activeCloseRequestId = 0
 
 log('bootstrap', {
   version: app.getVersion(),
@@ -334,14 +338,16 @@ function registerIpc() {
 
   ipcMain.handle(IPC_CHANNELS.CLOSE_CONFIRM, (event, result) => {
     assertTrustedSender(event, IPC_CHANNELS.CLOSE_CONFIRM)
-    clearCloseTimer()
-    if (closeHandshake !== 'pending') {
-      log('close-confirm-ignored', { state: closeHandshake })
+    const requestId = result?.requestId
+    if (closeHandshake !== 'pending' || requestId !== activeCloseRequestId) {
+      // 超时或上一轮请求的迟到确认：既不关闭窗口，也不影响新的关闭请求。
+      log('close-confirm-stale', { state: closeHandshake, requestId })
       return {
         ok: false,
-        error: { code: 'NO_CLOSE_REQUEST', message: '当前没有待处理的关闭请求。' },
+        error: { code: 'STALE_CLOSE_REQUEST', message: '这次关闭请求已经失效。' },
       }
     }
+    clearCloseTimer()
     if (result?.ok) {
       closeHandshake = 'allowed'
       log('close-flushed', {})
@@ -381,9 +387,13 @@ function attachCloseHandshake(win) {
     event.preventDefault()
     if (closeHandshake === 'pending') return
     closeHandshake = 'pending'
-    log('close-requested', {})
+    closeRequestId += 1
+    activeCloseRequestId = closeRequestId
+    log('close-requested', { requestId: activeCloseRequestId })
     try {
-      win.webContents.send(IPC_CHANNELS.CLOSE_REQUEST)
+      win.webContents.send(IPC_CHANNELS.CLOSE_REQUEST, {
+        requestId: activeCloseRequestId,
+      })
     } catch (error) {
       closeHandshake = 'idle'
       log('close-request-failed', { message: error?.message })
@@ -392,8 +402,18 @@ function attachCloseHandshake(win) {
     closeTimer = setTimeout(() => {
       closeTimer = null
       if (closeHandshake !== 'pending') return
+      const timedOutId = activeCloseRequestId
       closeHandshake = 'idle'
-      log('close-flush-timeout', {})
+      log('close-flush-timeout', { requestId: timedOutId })
+      // 超时不能静默：通知界面给出“返回编辑 / 仍然关闭”，迟到确认随后会被视为失效。
+      try {
+        win.webContents.send(IPC_CHANNELS.CLOSE_TIMEOUT, {
+          requestId: timedOutId,
+          message: '恢复稿备份超过 2 秒仍未完成。',
+        })
+      } catch {
+        // 窗口可能已经不可用；此时用户已经看不到任何界面，只能依赖日志。
+      }
     }, CLOSE_FLUSH_TIMEOUT_MS)
   })
   win.once('closed', () => {

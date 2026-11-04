@@ -101,6 +101,47 @@ export function needsCancelConfirmation(project) {
   return project.name.trim() !== '' && project.name.trim() !== DRAFT_PROJECT_NAME
 }
 
+/** 候选恢复稿只保留契约字段，避免把 revision/updatedAt 带进编辑会话。 */
+export function recoveryEntryToProject(entry) {
+  return pickFields(entry)
+}
+
+/**
+ * 把一条恢复稿并入编辑会话：已有项目只覆盖正文，尚未正式保存的新项目则插入并选中。
+ * 两种情况都不写正式文件，也不改变“是否已正式保存”的判断。
+ */
+export function mergeRecoveryEntry(session, entry) {
+  const restored = recoveryEntryToProject(entry)
+  const exists = session.projects.some((project) => project.id === entry.id)
+  if (exists) {
+    return {
+      ...session,
+      projects: session.projects.map((project) =>
+        project.id === entry.id ? { ...project, ...restored } : project,
+      ),
+    }
+  }
+  return {
+    ...session,
+    projects: [...session.projects, restored],
+    activeProjectId: entry.id,
+  }
+}
+
+/**
+ * 从会话里移除一个未保存项目；移除最后一个时进入空态（activeProjectId 为 null），
+ * 不自动创建替代项目，也不会碰正式文件。
+ */
+export function removeProjectFromSession(session, projectId) {
+  const remaining = session.projects.filter((project) => project.id !== projectId)
+  if (remaining.length === 0) return { projects: [], activeProjectId: null }
+  return {
+    projects: remaining,
+    activeProjectId:
+      session.activeProjectId === projectId ? remaining[0].id : session.activeProjectId,
+  }
+}
+
 /** 与基线逐字段比较；基线里没有这个项目（尚未保存过）时视为有未保存更改。 */
 export function isProjectDirty(project, baselineProject) {
   if (!baselineProject) return true

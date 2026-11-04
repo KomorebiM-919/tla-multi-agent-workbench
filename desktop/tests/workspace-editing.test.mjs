@@ -10,8 +10,12 @@ import {
   describeProjectStatus,
   dirtyProjectIds,
   isProjectDirty,
+  mergeRecoveryEntry,
+  needsCancelConfirmation,
   newProjectId,
   projectFieldErrors,
+  recoveryEntryToProject,
+  removeProjectFromSession,
   toWorkspacePayload,
 } from '../src/lib/workspace-editing.js'
 
@@ -122,4 +126,85 @@ test('字段校验与主进程上限一致，超长只报错不截断', () => {
   const tooLong = 'x'.repeat(MAX_NAME_LENGTH + 1)
   const errors = projectFieldErrors({ ...project, name: tooLong })
   assert.match(errors.name, new RegExp(String(MAX_NAME_LENGTH)))
+})
+
+test('恢复稿可以插入正式文件里不存在的项目，并成为当前项目', () => {
+  const session = workspace()
+  const entry = {
+    id: 'gamma',
+    name: '新建但没保存',
+    description: '',
+    taskDraft: '恢复出来的正文',
+    revision: 3,
+    updatedAt: '2026-11-05T00:00:00.000Z',
+  }
+
+  const merged = mergeRecoveryEntry(session, entry)
+  assert.equal(merged.activeProjectId, 'gamma')
+  assert.equal(merged.projects.length, 3)
+  assert.deepEqual(merged.projects[2], recoveryEntryToProject(entry))
+  assert.deepEqual(merged.projects[2], {
+    id: 'gamma',
+    name: '新建但没保存',
+    description: '',
+    taskDraft: '恢复出来的正文',
+  })
+  assert.equal(entry.revision, 3, '不应把恢复稿元数据写进编辑项目')
+  assert.equal(session.projects.length, 2, '原会话不被修改')
+  assert.equal(merged.schemaVersion, 1)
+})
+
+test('已有项目的恢复稿只覆盖正文，不改变项目顺序与选中项', () => {
+  const session = workspace()
+  const merged = mergeRecoveryEntry(session, {
+    id: 'beta',
+    name: '乙项目（恢复）',
+    description: '恢复的简介',
+    taskDraft: '恢复的草稿',
+    revision: 4,
+    updatedAt: '2026-11-05T00:00:00.000Z',
+  })
+  assert.equal(merged.activeProjectId, 'alpha')
+  assert.deepEqual(merged.projects.map((item) => item.id), ['alpha', 'beta'])
+  assert.deepEqual(merged.projects[1], {
+    id: 'beta',
+    name: '乙项目（恢复）',
+    description: '恢复的简介',
+    taskDraft: '恢复的草稿',
+  })
+  assert.equal(merged.projects[0], session.projects[0])
+})
+
+test('取消可以移除最后一个项目：会话进入空态，不自动补充替代项目', () => {
+  const only = {
+    schemaVersion: 1,
+    activeProjectId: 'alpha',
+    projects: [workspace().projects[0]],
+  }
+  const empty = removeProjectFromSession(only, 'alpha')
+  assert.deepEqual(empty, { projects: [], activeProjectId: null })
+
+  const session = workspace()
+  const remaining = removeProjectFromSession(session, 'beta')
+  assert.deepEqual(remaining.projects.map((item) => item.id), ['alpha'])
+  assert.equal(remaining.activeProjectId, 'alpha')
+
+  const untouched = removeProjectFromSession(session, 'missing')
+  assert.deepEqual(untouched, { projects: session.projects, activeProjectId: 'alpha' })
+})
+
+test('取消新建的确认规则：默认空项目直接取消，有内容或改过名才确认', () => {
+  const draft = createDraftProject([])
+  assert.equal(needsCancelConfirmation(draft), false)
+  assert.equal(
+    needsCancelConfirmation({ ...draft, taskDraft: '写了几个字' }),
+    true,
+    '填写过正文必须先确认',
+  )
+  assert.equal(needsCancelConfirmation({ ...draft, name: '改过的名字' }), true, '改过名必须先确认')
+  assert.equal(
+    needsCancelConfirmation({ ...draft, name: '' }),
+    false,
+    '名称中间态被清空但正文也为空时不算有内容',
+  )
 })

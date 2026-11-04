@@ -10,14 +10,17 @@ export const IPC_CHANNELS = Object.freeze({
   RECOVERY_DISCARD: 'tla:recovery-discard',
   CLOSE_CONFIRM: 'tla:close-confirm',
   CLOSE_FORCE: 'tla:close-force',
-  // 主进程 → 渲染层的关闭请求；不注册 handler，只作为事件通道。
+  // 主进程 → 渲染层的关闭请求与超时提示；不注册 handler，只作为事件通道。
   CLOSE_REQUEST: 'tla:close-request',
+  CLOSE_TIMEOUT: 'tla:close-timeout',
 })
 
 /** 主进程实际注册 handler 的通道（不含事件通道）。 */
+const EVENT_CHANNELS = new Set([IPC_CHANNELS.CLOSE_REQUEST, IPC_CHANNELS.CLOSE_TIMEOUT])
+
 export const IPC_CHANNEL_LIST = Object.freeze(
-  Object.values(IPC_CHANNELS).filter((channel) => channel !== IPC_CHANNELS.CLOSE_REQUEST),
+  Object.values(IPC_CHANNELS).filter((channel) => !EVENT_CHANNELS.has(channel)),
 )
 
 /** 允许由主进程主动发送到渲染层的事件通道。 */
-export const IPC_EVENT_CHANNELS = Object.freeze([IPC_CHANNELS.CLOSE_REQUEST])
+export const IPC_EVENT_CHANNELS = Object.freeze([...EVENT_CHANNELS])

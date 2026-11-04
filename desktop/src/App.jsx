@@ -13,8 +13,10 @@ import {
   createDraftProject,
   describeProjectStatus,
   dirtyProjectIds,
+  mergeRecoveryEntry,
   needsCancelConfirmation,
   projectFieldErrors,
+  removeProjectFromSession,
 } from './lib/workspace-editing.js'
 import { createWorkspaceSaver } from './lib/workspace-saver.js'
 import { createRecoveryDrafts } from './lib/recovery-drafts.js'
@@ -56,14 +58,18 @@ export default function App() {
   const [backupStates, setBackupStates] = useState({})
   const [recoveryEntries, setRecoveryEntries] = useState([])
   const [recoveryDismissed, setRecoveryDismissed] = useState(new Set())
+  const [recoveryHidden, setRecoveryHidden] = useState(false)
   const [recoveryError, setRecoveryError] = useState(null)
   const [recoveryActionError, setRecoveryActionError] = useState(null)
   const [cancelConfirmId, setCancelConfirmId] = useState(null)
+  const [cancelBusyId, setCancelBusyId] = useState(null)
   const [cancelError, setCancelError] = useState(null)
   const [closeIssue, setCloseIssue] = useState(null)
   const [roleId, setRoleId] = useState(null)
   const [appInfo, setAppInfo] = useState(null)
   const [savingProjectId, setSavingProjectId] = useState(null)
+  const savingProjectIdRef = useRef(null)
+  const closeRequestIdRef = useRef(0)
 
   // 所有会话修改都走这里，确保“防抖备份拿到的是最新文本”，而不是某一次渲染的旧闭包。
   const applySession = useCallback((updater) => {
@@ -100,6 +106,7 @@ export default function App() {
     saverRef.current = createWorkspaceSaver({
       save: (payload) => window.tla?.saveWorkspace?.(payload),
       onStart: (projectId) => {
+        savingProjectIdRef.current = projectId
         setSavingProjectId(projectId)
         setSaveStates((states) => ({ ...states, [projectId]: { kind: 'saving' } }))
       },
@@ -129,7 +136,10 @@ export default function App() {
           [projectId]: { kind: 'failed', message: error.message },
         }))
       },
-      onFinish: () => setSavingProjectId(null),
+      onFinish: () => {
+        savingProjectIdRef.current = null
+        setSavingProjectId(null)
+      },
     })
   }
 
@@ -220,12 +230,14 @@ export default function App() {
     loadWorkspace()
   }, [loadWorkspace])
 
-  const handleCloseRequest = useCallback(async () => {
+  const handleCloseRequest = useCallback(async (payload) => {
+    const requestId = payload?.requestId ?? 0
+    closeRequestIdRef.current = requestId
     const result = await recoveryRef.current.flush()
     const api = window.tla
     if (result.ok) {
       try {
-        await api?.confirmClose?.({ ok: true })
+        await api?.confirmClose?.({ requestId, ok: true })
       } catch {
         // 主进程可能已随窗口关闭结束；这里只负责把结果交回去。
       }
@@ -235,9 +247,14 @@ export default function App() {
       code: 'CLOSE_FLUSH_FAILED',
       message: '恢复稿没有写完。',
     }
-    setCloseIssue({ message: first.message, errors: result.errors ?? [] })
+    // 已经超时提示过就不要用后到的失败结果覆盖超时说明。
+    setCloseIssue((current) =>
+      current?.timedOut
+        ? current
+        : { requestId, timedOut: false, message: first.message, errors: result.errors ?? [] },
+    )
     try {
-      await api?.confirmClose?.({ ok: false, error: first })
+      await api?.confirmClose?.({ requestId, ok: false, error: first })
     } catch {
       // 同上：失败提示已经显示，不在关闭路径上抛错。
     }
@@ -246,13 +263,29 @@ export default function App() {
   useEffect(() => {
     const subscribe = window.tla?.onCloseRequest
     if (typeof subscribe !== 'function') return undefined
-    const unsubscribe = subscribe(() => {
-      void handleCloseRequest()
+    const unsubscribe = subscribe((payload) => {
+      void handleCloseRequest(payload)
     })
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe()
     }
   }, [handleCloseRequest])
+
+  useEffect(() => {
+    const subscribe = window.tla?.onCloseTimeout
+    if (typeof subscribe !== 'function') return undefined
+    const unsubscribe = subscribe((payload) => {
+      setCloseIssue({
+        requestId: payload?.requestId ?? 0,
+        timedOut: true,
+        message: payload?.message ?? '恢复稿备份超时。',
+        errors: [],
+      })
+    })
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [])
 
   const activeProject = useMemo(() => {
     if (!session) return null
@@ -283,11 +316,14 @@ export default function App() {
 
   const recoveryRows = useMemo(() => {
     if (!session) return []
-    const projectIds = new Set(session.projects.map((project) => project.id))
-    return recoveryEntries.filter(
-      (entry) => projectIds.has(entry.id) && !recoveryDismissed.has(entry.id),
-    )
+    // 恢复候选不要求正式文件里已有这个项目：新建但从未保存的项目同样可能留下恢复稿。
+    return recoveryEntries.filter((entry) => !recoveryDismissed.has(entry.id))
   }, [session, recoveryEntries, recoveryDismissed])
+
+  const projectIds = useMemo(
+    () => new Set(session?.projects.map((project) => project.id) ?? []),
+    [session],
+  )
 
   const updateActiveProject = useCallback(
     (field, value) => {
@@ -347,23 +383,15 @@ export default function App() {
   const restoreRecovery = useCallback(
     (entry) => {
       setRecoveryActionError(null)
-      applySession((current) => {
-        if (!current) return current
-        return {
-          ...current,
-          projects: current.projects.map((project) =>
-            project.id === entry.id
-              ? {
-                  ...project,
-                  name: entry.name,
-                  description: entry.description,
-                  taskDraft: entry.taskDraft,
-                }
-              : project,
-          ),
-        }
-      })
-      setSaveStates((states) => ({ ...states, [entry.id]: { kind: 'idle' } }))
+      const current = sessionRef.current
+      if (!current) return
+      const existed = current.projects.some((project) => project.id === entry.id)
+      // 已有的项目只覆盖正文；从未正式保存的新项目会插入会话并被选中，仍保持“未保存”身份。
+      applySession(mergeRecoveryEntry(current, entry))
+      setSaveStates((states) => ({
+        ...states,
+        [entry.id]: existed ? { kind: 'idle' } : { kind: 'empty' },
+      }))
       setRecoveryDismissed((dismissed) => new Set(dismissed).add(entry.id))
     },
     [applySession],
@@ -386,54 +414,50 @@ export default function App() {
   }, [])
 
   const dismissRecovery = useCallback(() => {
-    setRecoveryDismissed((dismissed) => {
-      const next = new Set(dismissed)
-      for (const entry of recoveryRows) next.add(entry.id)
-      return next
-    })
-  }, [recoveryRows])
+    setRecoveryHidden(true)
+  }, [])
 
   const performCancel = useCallback(
     async (projectId) => {
       const current = sessionRef.current
-      if (!current || current.projects.length <= 1) return
+      if (!current) return
       if (savedIdsRef.current.has(projectId)) {
         setCancelConfirmId(null)
         return
       }
+      // 正式保存正在途时不并发取消，避免“刚保存成功又被移出会话”。
+      if (savingProjectIdRef.current === projectId) return
       setCancelError(null)
-      const result = await recoveryRef.current.discard(projectId)
-      if (!result.ok) {
-        setCancelError(result.error.message)
-        return
-      }
-      if (savedIdsRef.current.has(projectId)) {
-        // 取消期间该项目刚好保存成功：保留项目，不能把它当成未保存草稿移除。
-        setCancelConfirmId(null)
-        return
-      }
-      setCancelConfirmId(null)
-      setBackupStates((states) => {
-        const next = { ...states }
-        delete next[projectId]
-        return next
-      })
-      setSaveStates((states) => {
-        const next = { ...states }
-        delete next[projectId]
-        return next
-      })
-      applySession((latest) => {
-        if (!latest) return latest
-        const remaining = latest.projects.filter((project) => project.id !== projectId)
-        if (remaining.length === 0) return latest
-        return {
-          ...latest,
-          projects: remaining,
-          activeProjectId:
-            latest.activeProjectId === projectId ? remaining[0].id : latest.activeProjectId,
+      setCancelBusyId(projectId)
+      try {
+        const result = await recoveryRef.current.discard(projectId)
+        if (!result.ok) {
+          setCancelError(result.error.message)
+          return
         }
-      })
+        if (savedIdsRef.current.has(projectId)) {
+          // 取消期间该项目刚好保存成功：保留项目，不能把它当成未保存草稿移除。
+          setCancelConfirmId(null)
+          return
+        }
+        setCancelConfirmId(null)
+        setBackupStates((states) => {
+          const next = { ...states }
+          delete next[projectId]
+          return next
+        })
+        setSaveStates((states) => {
+          const next = { ...states }
+          delete next[projectId]
+          return next
+        })
+        // 允许取消最后一个项目：会话进入空态，不自动创建替代项目，也不写正式文件。
+        applySession((latest) =>
+          latest ? { ...latest, ...removeProjectFromSession(latest, projectId) } : latest,
+        )
+      } finally {
+        setCancelBusyId(null)
+      }
     },
     [applySession],
   )
@@ -441,6 +465,7 @@ export default function App() {
   const requestCancel = useCallback(
     (project) => {
       if (!project || savedIdsRef.current.has(project.id)) return
+      if (savingProjectIdRef.current === project.id) return
       setCancelError(null)
       if (needsCancelConfirmation(project)) {
         setCancelConfirmId(project.id)
@@ -486,7 +511,7 @@ export default function App() {
   }
 
   const canCancelActive = Boolean(
-    activeProject && !savedIds.has(activeProject.id) && session.projects.length > 1,
+    activeProject && !savedIds.has(activeProject.id) && cancelBusyId !== activeProject.id,
   )
 
   return (
@@ -505,7 +530,9 @@ export default function App() {
       <main className="board" aria-labelledby="board-title">
         <header className="board-head">
           <div className="board-head-text">
-            <h1 id="board-title">{activeProject?.name.trim() || '未命名项目'}</h1>
+            <h1 id="board-title">
+              {activeProject?.name.trim() || (activeProject ? '未命名项目' : '还没有项目')}
+            </h1>
             <p className="board-sub">
               本地项目与任务草稿只保存在本机，所有角色均未接入模型。
             </p>
@@ -542,7 +569,13 @@ export default function App() {
             </section>
           )}
 
-        {recoveryRows.length > 0 && (
+        {recoveryRows.length > 0 && recoveryHidden && (
+          <button type="button" className="recovery-bar ghost" onClick={() => setRecoveryHidden(false)}>
+            有 {recoveryRows.length} 条未处理的未保存内容，点击查看
+          </button>
+        )}
+
+        {recoveryRows.length > 0 && !recoveryHidden && (
           <section className="recovery" aria-label="发现未保存内容">
             <div className="recovery-head">
               <h2>发现未保存内容</h2>
@@ -558,6 +591,9 @@ export default function App() {
                 <li key={entry.id} className="recovery-item">
                   <div className="recovery-meta">
                     <strong>{entry.name.trim() || '未命名项目'}</strong>
+                    {!projectIds.has(entry.id) && (
+                      <span className="chip chip-empty">新建项目 · 尚未正式保存</span>
+                    )}
                     <span>
                       {entry.taskDraft.length > 0
                         ? `任务草稿 ${entry.taskDraft.length} 字`
@@ -585,7 +621,7 @@ export default function App() {
           </section>
         )}
 
-        {activeProject && (
+        {activeProject ? (
           <ProjectEditor
             project={activeProject}
             fieldErrors={fieldErrors}
@@ -595,6 +631,7 @@ export default function App() {
             backupState={backupStates[activeProject.id]}
             blockedByOtherSave={savingProjectId !== null && savingProjectId !== activeProject.id}
             canCancel={canCancelActive}
+            cancelBusy={cancelBusyId === activeProject.id}
             cancelConfirm={cancelConfirmId === activeProject.id}
             cancelError={cancelConfirmId === activeProject.id ? cancelError : null}
             onChange={updateActiveProject}
@@ -606,6 +643,17 @@ export default function App() {
               setCancelError(null)
             }}
           />
+        ) : (
+          <section className="empty-state" aria-label="没有项目">
+            <h2>还没有项目</h2>
+            <p>
+              取消新建后可以停在这里。新建的项目只存在本次会话，点“保存草稿”才会写进正式文件；
+              不会自动创建替代项目，也不会改动磁盘上的任何内容。
+            </p>
+            <button type="button" className="primary" onClick={createProject}>
+              新建项目
+            </button>
+          </section>
         )}
 
         <TeamBoard roles={ROLES} activeRoleId={roleId} onSelect={setRoleId} />
@@ -621,8 +669,14 @@ export default function App() {
       {closeIssue && (
         <div className="modal-backdrop" role="presentation">
           <section className="modal" role="alertdialog" aria-modal="true" aria-labelledby="close-issue-title">
-            <h2 id="close-issue-title">恢复稿没有写完</h2>
-            <p>关闭前需要把最新编辑备份到 recovery.json，但这次没有成功：</p>
+            <h2 id="close-issue-title">
+              {closeIssue.timedOut ? '关闭前备份超时' : '恢复稿没有写完'}
+            </h2>
+            <p>
+              {closeIssue.timedOut
+                ? '主进程等待恢复稿备份超过 2 秒，这次关闭请求已经作废；之后才到的确认不会再关闭窗口。'
+                : '关闭前需要把最新编辑备份到 recovery.json，但这次没有成功：'}
+            </p>
             <p className="load-error-code">{closeIssue.message}</p>
             <p>仍然关闭会丢失尚未备份的编辑；返回后可以继续编辑或重试保存。</p>
             <div className="modal-actions">

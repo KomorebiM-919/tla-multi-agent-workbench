@@ -14,7 +14,7 @@ desktop/
     workspace-store.mjs # 工作区文件的校验、读取与原子保存（不依赖 Electron，可真实文件测试）
     recovery-store.mjs  # 恢复稿 recovery.json 的校验、保存、放弃与版本水位（同样可真实文件测试）
     preload.cjs         # 沙箱预加载：只有 tla.getAppInfo / loadWorkspace / saveWorkspace / 恢复稿与关闭握手
-    ipc-channels.mjs    # 主进程使用的 IPC 白名单（八个 handler 通道 + 一个关闭请求事件）
+    ipc-channels.mjs    # 主进程使用的 IPC 白名单（八个 handler 通道 + 关闭请求/超时两个事件）
   scripts/
     build-renderer.mjs  # 渲染层构建（含受限沙箱下的 exec 兼容）
     before-build.cjs    # 告知 electron-builder：依赖树由外部处理
@@ -118,16 +118,21 @@ node -e "console.log(require('electron'))"   # 打印 dist\electron.exe 的绝�
 - **何时写**：编辑时按 400 ms 防抖备份；名称被临时清空、只剩正文等中间态也会备份。界面显示
   “恢复稿备份中 / 恢复稿已备份（时间）/ 备份失败”，与正式保存的“已保存”明确区分，不会把备份说成保存成功。
 - **顺序与身份**：写入按项目串行，`revision` 单调递增；磁盘上已有更高版本的请求会被拒绝（`STALE_SNAPSHOT`）。
-  放弃/取消后记录内存水位，迟到的旧备份不会覆盖新稿，也不会让已放弃的项目重新出现（`DISCARDED`）。
-- **重开**：读到恢复稿时提示“发现未保存内容”，逐个项目提供“恢复 / 放弃”。恢复只装入本次编辑会话，
-  不自动改写 `workspace.json`；放弃只删该项目的恢复稿，正式文件保持原样；未处理的恢复稿会跨多次重开保留。
+  放弃/取消后记录内存水位，迟到的旧备份不会覆盖新稿，也不会让已放弃的项目重新出现（`DISCARDED`）；
+  清理掉一份已被正式文件覆盖的恢复稿后，协调器保留版本水位，下一次编辑仍用更高 `revision` 继续备份。
+- **重开**：读到恢复稿时提示“发现未保存内容”，逐个项目提供“恢复 / 放弃”。候选包括正式文件里还没有的
+  新建项目；恢复会把它插入本次编辑会话并选中，但仍保持“未正式保存”的身份，不自动改写 `workspace.json`。
+  选择“稍后处理”只会收起面板，候选不会丢失，可用提示条重新展开。放弃只删该项目的恢复稿，正式文件保持原样。
 - **正式保存与恢复稿**：保存成功后，只有恢复稿内容正好等于刚保存的内容、且没有更新的编辑时才清理；
-  保存期间继续输入的内容、其他项目的恢复稿都保留。保存失败不清理恢复稿。
-- **关闭窗口**：主进程先拦下 close，请渲染层把防抖中的最新编辑写完再确认；等待有界（2 秒），
-  超时退回正常状态而不会假称已备份。刷新失败时窗口不关闭，界面提示“返回继续编辑 / 仍然关闭”，
-  不会自动把失败当作成功。
+  清理是异步的，期间继续输入的新稿会保留并重新备份，不会被一起删掉。保存失败不清理恢复稿。
+  关闭前的 `flush()` 只有最新待备份内容确实落盘才报告成功，否则如实返回错误。
+- **关闭窗口**：主进程先拦下 close，请渲染层把防抖中的最新编辑写完再确认；等待有界（2 秒）。
+  超时不会静默处理，而是发出 `tla:close-timeout`，界面提示“返回编辑 / 仍然关闭”；这次请求随即作废，
+  迟到的确认会被当作过期请求拒绝，不会误关后续窗口。刷新失败时窗口同样不关闭。
+  每次关闭请求都有独立 ID，只接受当次请求的确认。
 - **取消新建**：只对从未成功写入 `workspace.json` 的项目显示。空项目直接移除；已经填了文字或改过名时先确认。
-  取消会删除该条目与对应恢复稿，不删除磁盘上的项目目录，也不影响已保存项目；取消失败会保留项目并明确报错。
+  取消最后一个项目后会显示可新建的空态，不会自动创建替代项目，也不写入正式文件；已保存项目没有取消入口。
+  取消失败会保留项目并明确报错；保存正在进行或刚好成功时，不会把项目误当作未保存草稿移除。
   是否“已保存”以实际成功落盘为准，缺文件时的默认内存项目不算。
 
 ## 启动与验证
@@ -200,11 +205,12 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 - `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`、`webviewTag: false`。
 - 预加载脚本只暴露冻结的 `window.tla.getAppInfo()`、`loadWorkspace()`、`saveWorkspace(workspace)`，
   以及 `loadRecovery()`、`saveRecovery(snapshot)`、`discardRecovery({ projectId, revision })`、
-  `onCloseRequest(callback)`、`confirmClose(result)`、`forceClose()`；不暴露 `ipcRenderer` 本体、
-  通用 `on` / `send`、任意文件读写或 shell。
+  `onCloseRequest(callback)`、`onCloseTimeout(callback)`、`confirmClose(result)`、`forceClose()`；
+  不暴露 `ipcRenderer` 本体、通用 `on` / `send`、任意文件读写或 shell。
 - 主进程只注册八个 handler 通道（`tla:app-info`、`tla:workspace-load`、`tla:workspace-save`、
   `tla:recovery-load`、`tla:recovery-save`、`tla:recovery-discard`、`tla:close-confirm`、`tla:close-force`），
-  主→渲染事件只有关闭请求 `tla:close-request`。每个 handler 都先用 `electron/security.mjs` 校验：
+  主→渲染事件只有关闭请求 `tla:close-request` 与超时提示 `tla:close-timeout`。每个 handler 都先用
+  `electron/security.mjs` 校验：
   调用方必须是主窗口的 `webContents`、主 frame，且页面地址与应用页面（或开发服务器地址）完全相等。
 - 工作区与恢复稿的写入固定在主进程解析出的路径，渲染层只能提交符合契约的数据；路径、版本、字段、数量、
   长度、文件大小与快照 revision 全部由主进程复验，非法输入被拒绝而不是截断。

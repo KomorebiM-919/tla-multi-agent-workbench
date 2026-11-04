@@ -301,3 +301,115 @@ test('载入已有恢复稿后，新编辑从磁盘 revision 继续递增', asyn
   assert.equal(writes.calls.length, 1)
   assert.equal(writes.calls[0].snapshot.revision, 8)
 })
+
+test('清理恢复稿之后再次编辑：revision 继续递增，不会被墓碑当成迟到写入', async (t) => {
+  const timers = fakeTimers()
+  const saves = []
+  let highWater = 0
+  const draft = createRecoveryDrafts({
+    save: async (snapshot) => {
+      // 主进程墓碑：撤销水位之后只接受更高 revision，和 recovery-store 的规则一致。
+      if (snapshot.revision <= highWater) {
+        return { ok: false, error: { code: 'DISCARDED', message: '已放弃' } }
+      }
+      highWater = snapshot.revision
+      saves.push(snapshot)
+      return { ok: true, entry: { ...snapshot, updatedAt: `T${snapshot.revision}` } }
+    },
+    discard: async ({ revision }) => {
+      highWater = Math.max(highWater, revision)
+      return { ok: true, removed: true }
+    },
+    timers,
+    debounceMs: 400,
+  })
+  t.after(() => draft.dispose())
+
+  draft.noteEdit(project({ taskDraft: '已保存内容' }))
+  timers.runAll()
+  await settle()
+  assert.equal(saves.length, 1)
+
+  const cleared = await draft.clearCovered('project-a', project({ taskDraft: '已保存内容' }))
+  assert.equal(cleared.cleared, true)
+
+  draft.noteEdit(project({ taskDraft: '保存后又改了一笔' }))
+  timers.runAll()
+  await settle()
+
+  assert.equal(saves.length, 2, '清理后的新编辑必须还能写入')
+  assert.equal(saves[1].revision, 3, '版本号必须继续高于墓碑水位')
+  assert.equal(saves[1].taskDraft, '保存后又改了一笔')
+  assert.equal(draft.hasPending(), false)
+})
+
+test('清理期间的新输入不被删除：保留新稿并继续备份', async (t) => {
+  const timers = fakeTimers()
+  const writes = deferredWrites()
+  let releaseDiscard
+  const discardCalls = []
+  const draft = createRecoveryDrafts({
+    save: writes.write,
+    discard: ({ projectId, revision }) => {
+      discardCalls.push({ projectId, revision })
+      return new Promise((resolve) => {
+        releaseDiscard = resolve
+      })
+    },
+    timers,
+    debounceMs: 400,
+  })
+  t.after(() => draft.dispose())
+
+  draft.noteEdit(project({ taskDraft: '已保存内容' }))
+  timers.runAll()
+  await settle()
+  writes.calls[0].resolve({ ok: true, entry: { ...writes.calls[0].snapshot, updatedAt: 'T1' } })
+  await settle()
+
+  // 正式保存成功，开始清理正好被覆盖的恢复稿；清理请求先挂起。
+  const clearing = draft.clearCovered('project-a', project({ taskDraft: '已保存内容' }))
+  await settle()
+  assert.equal(discardCalls.length, 1)
+  assert.equal(discardCalls[0].revision, 2)
+
+  // 清理还没返回时用户继续输入：这份新稿必须保留，不能被清理逻辑一起删掉。
+  draft.noteEdit(project({ taskDraft: '清理期间的新稿' }))
+  assert.equal(draft.hasPending(), true)
+
+  releaseDiscard({ ok: true, removed: true })
+  const cleared = await clearing
+  assert.equal(cleared.ok, true)
+  assert.equal(cleared.cleared, false)
+  assert.equal(cleared.reason, 'newer-edits')
+
+  timers.runAll()
+  await settle()
+  assert.equal(writes.calls.length, 2, '新稿应重新提交备份')
+  assert.equal(writes.calls[1].snapshot.taskDraft, '清理期间的新稿')
+  assert.equal(writes.calls[1].snapshot.revision, 3)
+
+  writes.calls[1].resolve({ ok: true, entry: { ...writes.calls[1].snapshot, updatedAt: 'T2' } })
+  await settle()
+  assert.equal(draft.hasPending(), false)
+})
+
+test('从未编辑过的项目也能取消；删除按 revision 1 发起', async (t) => {
+  const calls = []
+  const timers = fakeTimers()
+  const draft = createRecoveryDrafts({
+    save: () => Promise.resolve({ ok: true, entry: { updatedAt: 'T' } }),
+    discard: async (request) => {
+      calls.push(request)
+      return { ok: true, removed: false }
+    },
+    timers,
+    debounceMs: 400,
+  })
+  t.after(() => draft.dispose())
+
+  const result = await draft.discard('never-edited')
+  assert.equal(result.ok, true)
+  assert.deepEqual(calls, [{ projectId: 'never-edited', revision: 1 }])
+  assert.equal(draft.hasPending(), false)
+})

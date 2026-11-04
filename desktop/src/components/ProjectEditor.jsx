@@ -23,6 +23,7 @@ export default function ProjectEditor({
   backupState,
   blockedByOtherSave,
   canCancel,
+  cancelBusy,
   cancelConfirm,
   cancelError,
   onChange,
@@ -34,7 +35,7 @@ export default function ProjectEditor({
   const status = describeProjectStatus({ dirty, saveState })
   const saving = saveState?.kind === 'saving'
   const invalid = Object.keys(fieldErrors).length > 0
-  const saveDisabled = saving || blockedByOtherSave || invalid || !dirty
+  const saveDisabled = saving || blockedByOtherSave || cancelBusy || invalid || !dirty
   const statusText =
     status.tone === 'saved' && saveState?.savedAt
       ? `已保存 ${formatClock(saveState.savedAt)}`
@@ -148,8 +149,13 @@ export default function ProjectEditor({
                   这个项目还没有正式保存到 workspace.json，取消会移除条目与对应恢复稿；磁盘上的项目目录和已保存项目不受影响。
                 </p>
                 <div className="cancel-actions">
-                  <button type="button" className="ghost danger" onClick={onCancelConfirm}>
-                    确认取消
+                  <button
+                    type="button"
+                    className="ghost danger"
+                    onClick={onCancelConfirm}
+                    disabled={cancelBusy}
+                  >
+                    {cancelBusy ? '取消中…' : '确认取消'}
                   </button>
                   <button type="button" className="ghost" onClick={onCancelDismiss}>
                     保留项目
@@ -157,8 +163,13 @@ export default function ProjectEditor({
                 </div>
               </>
             ) : (
-              <button type="button" className="ghost" onClick={onCancel}>
-                取消新建
+              <button
+                type="button"
+                className="ghost"
+                onClick={onCancel}
+                disabled={cancelBusy}
+              >
+                {cancelBusy ? '取消中…' : '取消新建'}
               </button>
             )}
             {cancelError && (

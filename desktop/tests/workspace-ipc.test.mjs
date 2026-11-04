@@ -110,7 +110,7 @@ test('主进程只注册白名单内的通道，且拒绝不受信任的调用�
           { id: 'project-a', name: 'A', description: '', taskDraft: '', revision: 1 },
         ],
         ['RECOVERY_DISCARD', recoveryDiscard, { projectId: 'project-a', revision: 2 }],
-        ['CLOSE_CONFIRM', closeConfirm, { ok: true }],
+        ['CLOSE_CONFIRM', closeConfirm, { requestId: 1, ok: true }],
         ['CLOSE_FORCE', closeForce, undefined],
       ]) {
         await assert.rejects(
@@ -131,12 +131,25 @@ test('主进程只注册白名单内的通道，且拒绝不受信任的调用�
       win.webContents.sentMessages.filter(
         (message) => message.channel === IPC_CHANNELS.CLOSE_REQUEST,
       )
+    const closeTimeouts = () =>
+      win.webContents.sentMessages.filter(
+        (message) => message.channel === IPC_CHANNELS.CLOSE_TIMEOUT,
+      )
 
     win.close()
     assert.equal(win.destroyed, false, '握手期间窗口不得直接销毁')
     assert.equal(closeRequests().length, 1, '应发出一次关闭刷新请求')
+    const firstRequestId = closeRequests()[0].payload.requestId
+    assert.equal(typeof firstRequestId, 'number')
+
+    // 伪造或过期的 requestId 不能关闭窗口，也不能打断仍在进行的请求。
+    const stale = await closeConfirm(trustedEvent(win), { requestId: firstRequestId + 99, ok: true })
+    assert.equal(stale.ok, false)
+    assert.equal(stale.error.code, 'STALE_CLOSE_REQUEST')
+    assert.equal(win.destroyed, false)
 
     const aborted = await closeConfirm(trustedEvent(win), {
+      requestId: firstRequestId,
       ok: false,
       error: { code: 'RECOVERY_WRITE_FAILED', message: '备份没写完' },
     })
@@ -145,19 +158,41 @@ test('主进程只注册白名单内的通道，且拒绝不受信任的调用�
 
     win.close()
     assert.equal(closeRequests().length, 2, '中止后再次关闭应重新发起刷新请求')
+    const secondRequestId = closeRequests()[1].payload.requestId
+    assert.notEqual(secondRequestId, firstRequestId, '每次关闭请求都应有独立身份')
 
-    const confirmed = await closeConfirm(trustedEvent(win), { ok: true })
+    // 超时必须把“没写完”明确通知界面，而不是静默当作成功。
+    await delay(2100)
+    assert.equal(win.destroyed, false, '超时只退出这一次握手，不关闭窗口')
+    assert.equal(closeTimeouts().length, 1, '超时应发出可操作的提示事件')
+    assert.equal(closeTimeouts()[0].payload.requestId, secondRequestId)
+
+    // 超时之后才到的确认属于上一轮请求，不得误关后续窗口。
+    const late = await closeConfirm(trustedEvent(win), { requestId: secondRequestId, ok: true })
+    assert.equal(late.ok, false)
+    assert.equal(late.error.code, 'STALE_CLOSE_REQUEST')
+    assert.equal(win.destroyed, false)
+
+    win.close()
+    assert.equal(closeRequests().length, 3, '超时后再次关闭应能重新请求')
+    const thirdRequestId = closeRequests()[2].payload.requestId
+    const confirmed = await closeConfirm(trustedEvent(win), {
+      requestId: thirdRequestId,
+      ok: true,
+    })
     assert.equal(confirmed.ok, true)
     assert.equal(win.destroyed, true, '确认写入成功后窗口才关闭')
 
-    const ignored = await closeConfirm(trustedEvent(win), { ok: true })
+    const ignored = await closeConfirm(trustedEvent(win), { requestId: thirdRequestId, ok: true })
     assert.equal(ignored.ok, false)
-    assert.equal(ignored.error.code, 'NO_CLOSE_REQUEST')
+    assert.equal(ignored.error.code, 'STALE_CLOSE_REQUEST')
 
     const log = readFileSync(logFile, 'utf8')
     assert.match(log, /step=ipc-rejected channel=tla:workspace-save/)
     assert.match(log, /step=close-flushed/)
     assert.match(log, /step=close-flush-failed/)
+    assert.match(log, /step=close-flush-timeout/)
+    assert.match(log, /step=close-confirm-stale/)
   } finally {
     closeAllWindows()
     await removeTempDir(appDataDirectory)

@@ -857,6 +857,42 @@ button {
   background: #fdf7ea;
 }
 
+.recovery-bar {
+  align-self: flex-start;
+  border: 1px dashed #d8b98e;
+  border-radius: 999px;
+  padding: 6px 14px;
+  color: #8a5a2c;
+  font-size: 12px;
+}
+
+.recovery-meta .chip {
+  margin-left: 6px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 28px 24px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+}
+
+.empty-state h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-state p {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.8;
+  max-width: 52em;
+}
+
 .recovery-head {
   display: flex;
   align-items: center;

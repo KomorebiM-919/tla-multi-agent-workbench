@@ -18,6 +18,7 @@ test('IPC 白名单只有已审查的通道', () => {
   assert.equal(IPC_CHANNELS.CLOSE_CONFIRM, 'tla:close-confirm')
   assert.equal(IPC_CHANNELS.CLOSE_FORCE, 'tla:close-force')
   assert.equal(IPC_CHANNELS.CLOSE_REQUEST, 'tla:close-request')
+  assert.equal(IPC_CHANNELS.CLOSE_TIMEOUT, 'tla:close-timeout')
   assert.deepEqual(
     [...IPC_CHANNEL_LIST],
     [
@@ -31,7 +32,7 @@ test('IPC 白名单只有已审查的通道', () => {
       'tla:close-force',
     ],
   )
-  assert.deepEqual([...IPC_EVENT_CHANNELS], ['tla:close-request'])
+  assert.deepEqual([...IPC_EVENT_CHANNELS], ['tla:close-request', 'tla:close-timeout'])
   for (const channel of IPC_EVENT_CHANNELS) {
     assert.equal(IPC_CHANNEL_LIST.includes(channel), false, '主→渲染事件不得注册为 handler 通道')
   }
@@ -60,6 +61,8 @@ test('预加载脚本只暴露版本信息、工作区与恢复稿读写以及�
     'loadRecovery',
     'saveRecovery',
     'discardRecovery',
+    'onCloseRequest',
+    'onCloseTimeout',
     'confirmClose',
     'forceClose',
   ]) {
@@ -77,9 +80,16 @@ test('预加载脚本只暴露版本信息、工作区与恢复稿读写以及�
     '预加载不应暴露双向或单向发送通道',
   )
   assert.equal(
-    /ipcRenderer\.on\((?!CLOSE_REQUEST_CHANNEL)/.test(preload),
+    (preload.match(/ipcRenderer\.on\(/g) ?? []).length,
+    1,
+    '只允许一个受控事件订阅入口',
+  )
+  assert.match(preload, /subscribe\(CLOSE_REQUEST_CHANNEL, callback\)/)
+  assert.match(preload, /subscribe\(CLOSE_TIMEOUT_CHANNEL, callback\)/)
+  assert.equal(
+    /ipcRenderer\.on\((?!channel)/.test(preload),
     false,
-    '只允许订阅关闭请求事件，不暴露通用事件通道',
+    '事件订阅只允许走内部 subscribe(channel)',
   )
   assert.equal(
     /require\(['"](?:node:)?(?:fs|path|child_process)['"]\)/.test(preload),

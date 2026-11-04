@@ -4,7 +4,6 @@
 // 挡住迟到写入，并把“备份中 / 已备份 / 备份失败”反馈给界面。定时器可注入，
 // 测试里能同步推进防抖，不需要在生产代码里加延迟。
 export const RECOVERY_DEBOUNCE_MS = 400
-const MAX_FLUSH_PASSES = 3
 const MAX_PERSIST_ATTEMPTS = 4
 
 function normalizeError(error) {
@@ -117,18 +116,22 @@ export function createRecoveryDrafts({
     for (const state of projects.values()) clearTimer(state)
   }
 
+  function scheduleBackup(projectId, state) {
+    clearTimer(state)
+    state.pending = true
+    state.generation += 1
+    emit(projectId, { kind: 'saving' })
+    state.timer = clock.setTimeout(() => {
+      state.timer = null
+      void persistLoop(projectId)
+    }, debounceMs)
+  }
+
   function noteEdit(project) {
     if (disposed || loadFailure || !project?.id) return
     const state = ensure(project.id)
     state.snapshot = pick(project)
-    state.pending = true
-    state.generation += 1
-    emit(project.id, { kind: 'saving' })
-    clearTimer(state)
-    state.timer = clock.setTimeout(() => {
-      state.timer = null
-      void persistLoop(project.id)
-    }, debounceMs)
+    scheduleBackup(project.id, state)
   }
 
   async function persistOnce(projectId) {
@@ -204,23 +207,32 @@ export function createRecoveryDrafts({
   async function flush() {
     for (const state of projects.values()) clearTimer(state)
     const errors = new Map()
-    // 每个项目只在本轮 flush 里尝试一次：失败就如实返回，不在关闭路径上无限重试。
-    const attempted = new Set()
-    for (let pass = 0; pass < MAX_FLUSH_PASSES; pass += 1) {
-      let busy = false
-      for (const [projectId, state] of projects) {
-        if (state.inFlight) {
-          busy = true
-          const result = await state.inFlight.catch(() => null)
-          if (result && !result.ok) errors.set(projectId, result.error)
-        }
-        if (state.pending && !state.abandoned && !attempted.has(projectId)) {
-          attempted.add(projectId)
-          const result = await persistLoop(projectId)
-          if (!result.ok) errors.set(projectId, result.error)
+    for (const [projectId, state] of projects) {
+      if (state.abandoned) continue
+      // 每个项目在本次 flush 内只串行尝试；失败立即记录并停止，绝不把失败当成可重试的挂起，
+      // 也只有“写入成功后又有新编辑”才继续下一轮。
+      for (let attempt = 0; attempt < MAX_PERSIST_ATTEMPTS; attempt += 1) {
+        if (state.abandoned) break
+        if (state.inFlight) await state.inFlight.catch(() => {})
+        if (!state.pending) break
+        const result = await persistLoop(projectId)
+        if (!result.ok) {
+          errors.set(projectId, result.error)
+          break
         }
       }
-      if (!busy) break
+    }
+    for (const [projectId, state] of projects) {
+      if (state.abandoned) continue
+      if (state.pending || state.inFlight) {
+        // 只有最新内容确实落盘，flush 才能报告成功；否则关闭提示必须如实失败。
+        if (!errors.has(projectId)) {
+          errors.set(projectId, {
+            code: 'RECOVERY_PENDING',
+            message: '最新编辑还没有备份完成。',
+          })
+        }
+      }
     }
     return {
       ok: errors.size === 0,
@@ -238,6 +250,7 @@ export function createRecoveryDrafts({
     }
     if (state?.inFlight) await state.inFlight.catch(() => {})
 
+    // 从来没有编辑过的项目没有协调状态，也要能取消；版本从 0 起算，同样高于墓碑水位。
     const revision = (state?.revision ?? 0) + 1
     let result
     try {
@@ -257,28 +270,63 @@ export function createRecoveryDrafts({
       return { ok: false, error }
     }
 
-    projects.delete(projectId)
-    emit(projectId, { kind: 'idle' })
+    // 保留 revision 连续性：主进程的墓碑水位不会后退，下一次备份必须用更高的版本号，
+    // 否则新编辑会被当成迟到写入拒绝。这里只结束本次快照，不销毁项目状态。
+    if (state) {
+      state.revision = Math.max(state.revision, revision)
+      state.pending = false
+      state.abandoned = false
+      state.lastError = null
+      emit(projectId, { kind: 'idle' })
+    }
     return { ok: true, removed: Boolean(result.removed) }
   }
 
   /**
-   * 正式保存成功后调用：只有“恢复稿内容正好等于刚保存的内容，且没有更新的编辑”
-   * 才删除；保存期间继续输入的内容必须保留恢复能力。
+   * 正式保存成功后调用：只有“恢复稿内容正好等于刚保存的内容”才清理。
+   * 清理前取消尚未触发的防抖；清理期间用户继续输入的内容必须保留并重新备份，
+   * 不能因为一次成功的清理就把新稿一起删掉。
    */
-  function clearCovered(projectId, savedProject) {
+  async function clearCovered(projectId, savedProject) {
     const state = projects.get(projectId)
-    if (!state) return Promise.resolve({ ok: true, cleared: false })
-    if (state.pending || state.inFlight) {
-      return Promise.resolve({ ok: true, cleared: false, reason: 'newer-edits' })
+    if (!state || !state.snapshot || !sameFields(state.snapshot, savedProject)) {
+      return { ok: true, cleared: false, reason: 'newer-edits' }
     }
-    if (!state.snapshot || !sameFields(state.snapshot, savedProject)) {
-      return Promise.resolve({ ok: true, cleared: false, reason: 'newer-edits' })
+
+    const captured = pick(state.snapshot)
+    clearTimer(state)
+    if (state.inFlight) await state.inFlight.catch(() => {})
+
+    const revision = state.revision + 1
+    let result
+    try {
+      result = await discard({ projectId, revision })
+    } catch (error) {
+      result = { ok: false, error: normalizeError(error) }
     }
-    return discardProject(projectId).then((result) => ({
-      ...result,
-      cleared: result.ok,
-    }))
+
+    if (!result?.ok) {
+      const error = result?.error ?? normalizeError('无法清理恢复稿')
+      state.lastError = error
+      state.pending = true
+      emit(projectId, { kind: 'failed', message: error.message, code: error.code })
+      return { ok: false, error }
+    }
+
+    state.revision = revision
+    state.lastError = null
+
+    if (sameFields(state.snapshot, captured)) {
+      // 清理期间没有新输入：恢复稿已被正式文件覆盖，可以停在“无待备份”。
+      state.pending = false
+      state.snapshot = captured
+      emit(projectId, { kind: 'idle' })
+      return { ok: true, cleared: true }
+    }
+
+    // 清理期间又编辑了：新内容还没进正式文件，必须继续备份。
+    scheduleBackup(projectId, state)
+    return { ok: true, cleared: false, reason: 'newer-edits' }
   }
 
   function hasPending() {
