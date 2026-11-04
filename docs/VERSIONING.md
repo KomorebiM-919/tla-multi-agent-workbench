@@ -13,19 +13,23 @@
 | --- | --- | --- | --- |
 | V0.1 | `feat/v0.1-three-agent-mvp`（`b2b48ab`） | 主仓库工作树 `<repo>`（当前检出该分支） | 未合并；归档标签 `archive/v0.1-verbatim` |
 | V0.2 | `feat/v0.2-component-reuse` | `<repo>\..\workspaces\v0.2-component-reuse` | 开发中，**未验收** |
-| V0.3 | `feat/v0.3-desktop-ui`（基线 `95d4e7d`） | C 盘独立仓库 `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui` | 首批桌面壳开发中，**未验收** |
+| V0.3 | `feat/v0.3-desktop-ui`（基线 `95d4e7d`） | 独立仓库 `<active-workspace>`（旧 C 盘仓库保留，不再开发） | 首批桌面壳开发中，**未验收**；桌面入口待用户反馈 |
 
-### 2.1 V0.3 的工作区例外（2026-11-04 人工批准，一次性）
+### 2.1 V0.3 的工作区例外与迁移（2026-11-04 人工批准，一次性）
 
-- **基线例外**：V0.3 没有从“已验收的 `main`”起步。C 盘这份独立仓库里不存在 `main` 分支，
+- **基线例外**：V0.3 没有从“已验收的 `main`”起步。该独立仓库本地只检出 `feat/v0.3-desktop-ui`，没有 `main` 分支，
   基线取发布分支 `feat/v0.3-desktop-ui` 的 tip `95d4e7d045a00e172f0deb21e1e2d22c484946bd`
   （提交信息 `docs: publish accepted minimal workflow baseline`，2026-11-04 02:18:50 +0800）。
   用户知情并批准了这次一次性例外；它**不**推翻 §3 第 1 条，后续版本仍须回到已验收的 `main`。
-- **C 盘独立仓库**：该工作区自带 `.git`，是独立仓库而不是 `git worktree` 登记项；
-  `origin` 指向 E 盘旧工作区 `E:\AI\DSH Workplace\workspaces\v0.3-desktop-ui`，
-  该远端只用于取证与对齐，不是长期共享的开发工作区。
-- **E 盘旧工作区保留**：`E:\AI\DSH Workplace\workspaces\v0.3-desktop-ui` 原样保留，
-  本批不迁移、不删除、不改写其工作树；两处不并发开发。
+- **独立仓库，不是 worktree**：`<active-workspace>` 自带 `.git`，`git worktree list` 只有它自己一条登记项；
+  `origin` 指向既有 GitHub 仓库（本批未 fetch，`refs/remotes` 为空）。
+- **活动源码已迁到 E 盘的 active 独立仓库**：2026-11-04 用 `git clone --no-hardlinks` 从旧 C 盘仓库
+  `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui` 复制到 `<active-workspace>`，分支、`HEAD`
+  （`b8c5f27`）与 tracked 508 条目保持一致，`.git/config` 的 `[tla]` 段记下迁移来源与时间；
+  `renderer-dist/` 是忽略产物、不带进 clone，按字节复制并校验。
+  旧 C 盘仓库从此只作旧现场保留，不再开发。
+- **旧工作区保留**：C 盘旧仓库与 E 盘旧工作区（与本仓库并列的 `v0.3-desktop-ui`）都不迁移、不删除、
+  不改写其工作树；本批不并发使用其中任何一处。
 
 - 主要版本各用独立分支（`feat/vX.Y-<feature>`）、**并列**工作区、新 DSH 会话；不同版本不共享工作区，
   也不并发使用同一工作区。
@@ -44,6 +48,21 @@
   版本、文件清单和构建指纹一致，并把修复前后证据写进迁移记录。公开文档只写占位符，profile 备份与绝对路径留本地。
 - 迁移检查必须可复跑（例如 `tools/check-migration-links.mjs`），覆盖外部链接、断链、manifest/lock 不一致与
   副本漂移；检查失败不得进入实验审批。
+
+### 2.2 桌面运行目录（不是工作区）
+
+- 正常桌面入口是运行目录里的启动脚本 `<run-dir>\launch-tla.cmd`：它把 `TLA_DESKTOP` 指向
+  `<active-workspace>\desktop`，用运行目录自带的 Electron 45.2.1（`runtime-45-normal\electron.exe`）
+  加载已构建的 `renderer-dist/`，只清除子进程继承的 `ELECTRON_RUN_AS_NODE`、`TLA_DEV_SERVER_URL`。
+- 运行目录用 `robocopy /COPY:DAT` 从原诊断目录复制（只带数据/属性/时间，不带安全描述符）；
+  实测目录与 `electron.exe` 都是 `no-label`（普通 Medium）。
+- **运行目录不得作为 DSH 工作区。** 本批实测：DSH 工作区目录会被写入显式 ACL 与
+  `Mandatory Label\Low Mandatory Level`；原开发目录继承了 Low 完整性标签，启动故障即定位在这里，
+  而迁移出的运行目录没有该标签。再把它登记成工作区，等于把问题搬回来。
+- **权限/ACL 修复脚本本批不执行。** 后续权限一旦再变化，`PurgeAccessRules` 不能无条件当作
+  “只删除本次新增 ACE”的精确回滚——重跑前必须先比对当时的 ACL 快照，否则可能连带删掉别人的 ACE。
+- 该入口是“独立运行时 + 源码目录”的开发式启动，**不等于** `npm start` 或打包 `TLA.exe` 已永久修复；
+  在取得用户桌面端启动反馈之前，不得写成“E 盘入口已验收”。
 
 ## 3. 起点与兼容
 
@@ -66,11 +85,13 @@
 
 ### 4.1 V0.3 工作区实测（2026-11-04）
 
-- C 盘独立仓库 `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui`：`HEAD` = `95d4e7d`，
-  当前分支 `feat/v0.3-desktop-ui`，与 `origin/feat/v0.3-desktop-ui` 一致。
-- 该仓库**没有** `main`；`origin/HEAD` 指向 `feat/v0.3-desktop-ui`，因此“从已验收 main 起步”在本仓库不可执行，
-  只能按 §2.1 登记为例外。
-- `git worktree list` 只有一条登记项（就是本工作区），E 盘旧工作区不在本仓库的 worktree 列表里。
+- 活动仓库 `<active-workspace>`：`HEAD` = `b8c5f27`
+  （`fix(desktop): make startup failures visible and log them`），当前分支 `feat/v0.3-desktop-ui`，
+  `git worktree list` 只有这一条，`refs/remotes` 为空（本批未 fetch）。
+- 迁移前的旧 C 盘仓库 `C:\Users\<user>\TLA-Workspaces\v0.3-desktop-ui` 停在同一个 `HEAD`，
+  工作树干净、领先 `origin` 3 个尚未推送的本地提交；现在只作旧现场保留。
+- 本地**没有** `main` 分支（只检出 `feat/v0.3-desktop-ui`）；远端 refs 未 fetch，`origin/HEAD` 未核对。
+  因此“从已验收 main 起步”在本仓库当前不可执行，只能按 §2.1 登记为例外。
 - 允许的表述：V0.3 从发布分支基线起步、`main` 尚未参与本版本。
   不允许的表述：V0.3 已从已验收 `main` 起步、V0.3 已合并或已验收。
 
@@ -89,4 +110,5 @@
 
 `main` 合并、标签发布、Draft PR 转正式，都属于验收之后的独立人工决定。AI 开发者只能建议并给出证据，
 不得自行合并、打标签或强推。公开证据里不写本机绝对路径：用 `<repo>`、`<dsh-install>`、
-`<repo>\..\workspaces\<version>` 这类占位符。
+`<active-workspace>`（V0.3 活动工作区）、`<run-dir>`（桌面运行目录）、`<repo>\..\workspaces\<version>`
+这类占位符。迁移记录、ACL 快照与 profile 备份留在本地。
