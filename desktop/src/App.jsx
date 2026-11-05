@@ -28,6 +28,14 @@ import {
   createConversationDrafts,
 } from './lib/conversation-drafts.js'
 import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
+import {
+  flushBeforeClose,
+  indexCandidates,
+  initialConversationTexts,
+  recordConversationEdit,
+  restoreConversationCandidate,
+  unretainedMessage,
+} from './lib/conversation-session.js'
 import { attemptPageChange } from './lib/page-navigation.js'
 import { isRoleDetailVisible } from './lib/layout-state.js'
 import { requestDynamicsChange } from './lib/dynamics-transition.js'
@@ -83,6 +91,9 @@ export default function App() {
   const [cancelError, setCancelError] = useState(null)
   const [conversationTexts, setConversationTexts] = useState({})
   const conversationTextsRef = useRef({})
+  const [conversationCandidates, setConversationCandidates] = useState({})
+  const [conversationUnretained, setConversationUnretained] = useState({})
+  const conversationUnretainedRef = useRef({})
   const [conversationStates, setConversationStates] = useState({})
   const [conversationError, setConversationError] = useState(null)
   const [orphanDrafts, setOrphanDrafts] = useState([])
@@ -345,10 +356,13 @@ export default function App() {
 
       if (conversation?.ok) {
         const drafts = Array.isArray(conversation.drafts) ? conversation.drafts : []
-        const texts = {}
-        for (const draft of drafts) texts[draft.projectId] = draft.text
+        // 输入框默认空白：已保留的文字只作为候选，等用户点击才恢复。
+        const texts = initialConversationTexts(drafts)
         conversationTextsRef.current = texts
         setConversationTexts(texts)
+        setConversationCandidates(indexCandidates(drafts))
+        setConversationUnretained({})
+        conversationUnretainedRef.current = {}
         // 只登记已存在的未发送文字，不在启动时写入或删除任何东西。
         conversationRef.current.reset(drafts)
         setConversationError(null)
@@ -369,6 +383,9 @@ export default function App() {
         conversationRef.current.markLoadFailure(error)
         conversationTextsRef.current = {}
         setConversationTexts({})
+        setConversationCandidates({})
+        setConversationUnretained({})
+        conversationUnretainedRef.current = {}
         setConversationError(error)
         setOrphanDrafts([])
       }
@@ -398,10 +415,15 @@ export default function App() {
       onBlocked: (problem) => setCloseIssue({ requestId, roleIssue: true, timedOut: false, message: problem.message, errors: [] }),
     })
     if (await roleCloseGuard()) return
-    const result = await recoveryRef.current.flush()
-    const conversationResult = await conversationRef.current.flush()
+    // 两类最新编辑一起做一致性屏障：任何一类在等待另一类期间又变脏，
+    // 都会再走一轮，只有两边都不再 pending 才允许确认关闭。
+    const result = await flushBeforeClose({
+      recovery: recoveryRef.current,
+      conversation: conversationRef.current,
+      unretained: conversationUnretainedRef.current,
+    })
     if (await roleCloseGuard()) return
-    if (result.ok && conversationResult.ok) {
+    if (result.ok) {
       try {
         await api?.confirmClose?.({ requestId, ok: true })
       } catch {
@@ -409,7 +431,7 @@ export default function App() {
       }
       return
     }
-    const combined = [...(result.errors ?? []), ...(conversationResult.errors ?? [])]
+    const combined = result.errors ?? []
     const first = combined[0]?.error ?? {
       code: 'CLOSE_FLUSH_FAILED',
       message: '恢复稿或未发送文字没有写完。',
@@ -575,13 +597,50 @@ export default function App() {
       const current = sessionRef.current
       const projectId = current?.activeProjectId
       if (!projectId) return
+      const project = current.projects.find((item) => item.id === projectId)
+      if (!project) return
+      const result = recordConversationEdit({
+        conversation: conversationRef.current,
+        recovery: recoveryRef.current,
+        project,
+        saved: savedIdsRef.current.has(projectId),
+        text: value,
+        limit: MAX_CONVERSATION_TEXT_LENGTH,
+      })
+      // 读取失败等不可写状态不接受新输入，避免“看得到但没人负责保留”的文字。
+      if (!result.accepted) return
       setConversationText(projectId, value)
-      if (conversationError) return
-      // 超长内容不写入，避免把主进程的拒绝伪装成“已保留”；缩短后自动恢复保留。
-      if (value.length > MAX_CONVERSATION_TEXT_LENGTH) return
-      conversationRef.current.noteEdit(projectId, value)
+      const nextUnretained = { ...conversationUnretainedRef.current }
+      if (result.retained) delete nextUnretained[projectId]
+      else nextUnretained[projectId] = { text: value, reason: result.reason }
+      conversationUnretainedRef.current = nextUnretained
+      setConversationUnretained(nextUnretained)
     },
-    [conversationError, setConversationText],
+    [setConversationText],
+  )
+
+  const restoreConversation = useCallback(
+    (projectId, confirmed = false) => {
+      const candidate = conversationCandidates[projectId]
+      if (!candidate || !candidate.text) return { applied: false }
+      const decision = restoreConversationCandidate({
+        currentText: conversationTextsRef.current[projectId] ?? '',
+        candidateText: candidate.text,
+        confirmed,
+      })
+      if (!decision.apply) return { applied: false, needsConfirmation: true }
+      setConversationText(projectId, decision.text)
+      setConversationStates((states) => ({
+        ...states,
+        [projectId]: {
+          kind: 'saved',
+          backedUpAt: candidate.updatedAt ?? null,
+          restored: true,
+        },
+      }))
+      return { applied: true }
+    },
+    [conversationCandidates, setConversationText],
   )
 
   const selectProject = useCallback(
@@ -719,6 +778,15 @@ export default function App() {
         delete remainingTexts[projectId]
         conversationTextsRef.current = remainingTexts
         setConversationTexts(remainingTexts)
+        setConversationCandidates((candidates) => {
+          const next = { ...candidates }
+          delete next[projectId]
+          return next
+        })
+        const remainingUnretained = { ...conversationUnretainedRef.current }
+        delete remainingUnretained[projectId]
+        conversationUnretainedRef.current = remainingUnretained
+        setConversationUnretained(remainingUnretained)
         // 允许取消最后一个项目：会话进入空态，不自动创建替代项目，也不写正式文件。
         applySession((latest) =>
           latest ? { ...latest, ...removeProjectFromSession(latest, projectId) } : latest,
@@ -735,15 +803,18 @@ export default function App() {
       if (!project || savedIdsRef.current.has(project.id)) return
       if (savingProjectIdRef.current === project.id) return
       setCancelError(null)
-      // 有未发送文字时同样要先确认，不能只按项目计划判空。
-      const hasConversationText = (conversationTextsRef.current[project.id] ?? '').length > 0
+      // 未恢复的候选文字也算“有内容”，不能因为输入框为空就跳过确认。
+      const hasConversationText =
+        (conversationTextsRef.current[project.id] ?? '').length > 0 ||
+        (conversationCandidates[project.id]?.text ?? '').length > 0 ||
+        Boolean(conversationUnretained[project.id])
       if (needsCancelConfirmation(project) || hasConversationText) {
         setCancelConfirmId(project.id)
         return
       }
       void performCancel(project.id)
     },
-    [performCancel],
+    [conversationCandidates, conversationUnretained, performCancel],
   )
 
   if (loadState.status === 'error') {
@@ -787,8 +858,14 @@ export default function App() {
     ? (conversationTexts[activeProject.id] ?? '')
     : ''
   const conversationState = activeProject ? conversationStates[activeProject.id] : null
+  const conversationCandidate = activeProject
+    ? conversationCandidates[activeProject.id] ?? null
+    : null
+  const conversationUnretainedEntry = activeProject
+    ? conversationUnretained[activeProject.id] ?? null
+    : null
   const conversationDisabledReason = conversationError
-    ? `未发送文字文件不可用（${conversationError.code}）：${conversationError.message} 为避免覆盖原文件，本窗口已停止写入；项目设置仍可正常使用。`
+    ? `未发送文字文件不可用（${conversationError.code}）：${conversationError.message} 为避免覆盖原文件，本窗口已停止写入并暂不接受新输入；项目设置仍可正常使用。`
     : null
   const openSettings = () => changePage('settings')
   // 角色详情只属于团队页；对话/流程页释放右侧列。动态侧栏复用同一列，不额外开第四栏。
@@ -948,6 +1025,11 @@ export default function App() {
               onChangeText={updateConversationText}
               disabledReason={conversationDisabledReason}
               recoveryState={backupStates[activeProject.id]}
+              candidate={conversationCandidate}
+              onRestore={() => restoreConversation(activeProject.id)}
+              onRestoreConfirm={() => restoreConversation(activeProject.id, true)}
+              unretained={conversationUnretainedEntry}
+              unretainedMessage={conversationUnretainedEntry ? unretainedMessage(conversationUnretainedEntry.reason) : ''}
             />
           ) : (
             <section className="empty-state" aria-label="没有项目">

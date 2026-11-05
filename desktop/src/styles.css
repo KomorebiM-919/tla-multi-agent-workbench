@@ -2604,8 +2604,40 @@ body {
   line-height: 1.6;
 }
 
-.conversation-status.tone-failed {
+.conversation-status.tone-failed,
+.conversation-status.is-failed {
   color: var(--danger);
+}
+
+.restore-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.restore-banner p {
+  margin: 0;
+}
+
+.restore-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.restore-warning {
+  flex-basis: 100%;
+  color: var(--ink-mute);
+  font-size: 11.5px;
 }
 
 .composer-project {
