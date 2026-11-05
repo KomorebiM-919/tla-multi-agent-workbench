@@ -1,26 +1,32 @@
 # TLA Desktop（V0.3 首批桌面壳）
 
 独立桌面子工程，不改变仓库根 `package.json`（V0.2 observer 包）与冻结内核。当前交付“能启动、能看、边界诚实”的桌面壳，
-并支持**本机多项目、任务草稿和按项目手动角色设置**。界面采用对话优先的三页布局（对话 / 团队 / 流程），
-组织关系图与工作流阶段模板放在辅助页；模型标签只记录计划分工，**不连接任何模型**。
+并支持**本机多项目、项目计划、独立对话输入、未发送文字自动保留和按项目手动角色设置**。
+界面采用对话优先的布局（对话 / 团队 / 流程，项目设置从左侧独立入口打开）；组织关系图与工作流阶段模板放在辅助页；
+模型标签只记录计划分工，**不连接任何模型**。
 视觉按已确认的暖黑稿实现；Source Sans 3、Source Serif 4 与思源黑体作为开源字体随构建产物本地加载，不依赖网络或系统安装。
 
 ## 对话优先的页面布局
 
-- **对话页（默认）**：中栏是对话工作区，下方输入框直接复用当前项目的 `taskDraft`，与“保存任务草稿”共用同一套
-  正式保存和恢复稿备份机制。当前没有执行引擎，因此“发送”按钮固定禁用并标注“未接入”；不生成回复、不伪造忙碌状态，
-  也不另建第二套聊天记录。空态只说明尚无消息，不预置设计样稿里的成员对话。
+- **对话页（默认）**：中栏是对话工作区，下方是**独立的对话输入框**，不再复用项目的 `taskDraft`。
+  每个项目自动保留最新一份未发送文字到 `conversation-drafts.json`，界面上显示“保留中 / 输入已保留（时间）/ 保留失败”；
+  这不是正式保存。当前没有执行引擎，“发送”固定禁用并标注“未接入”；不生成回复、不伪造忙碌状态，也不预建聊天记录。
+  空态只说明尚无消息，不预置设计样稿里的成员对话。项目名称、简介与计划不在对话页编辑，统一放到左侧“项目设置”。
+- **项目设置（左侧入口）**：独立页面，编辑项目名称、简介和项目计划（旧版本的 `taskDraft` 原样沿用该字段与长度上限），
+  保存按钮写正式 `workspace.json`。对话输入与未发送文字不随项目设置保存，也不会被它清空。
 - **团队页**：角色卡片、只读组织关系图与手动角色设置都在这里；流程模板移到**流程页**，仍是整体“未运行”的只读模板。
-  角色详情只在团队页占用右侧辅助列；切到对话或流程页时该列直接释放，选中角色保留但不渲染。
+  角色详情只在团队页占用右侧辅助列；切到对话、流程或设置页时该列直接释放，选中角色保留但不渲染。
 - **团队动态**：顶部“团队动态”是固定入口，每次启动默认收起。展开后是**参与网格布局**的 docked 侧栏，与角色详情共用右侧
   同一列，不覆盖主区或输入框；可切成右下浮窗。头部有 ×（`aria-label="收起团队动态"`）和“Esc 收起”提示，收起后焦点回到
   触发按钮。所有会进入 docked、并可能隐藏角色表单的入口——首次展开，以及浮窗的“收进侧栏”——
   都先走同一个 `mayLeave` 离开保护；被拦下时保持浮窗、表单与提示可见，不自动保存、取消或延迟转换。
   收起和 docked→浮窗只改变显示，不会启动、暂停或取消任何工作。
   没有真实活动时只显示“尚无运行中的任务”，不伪造记录。
-- **未保存保护**：对话、团队、流程任意两页之间的切换都先经过同一个角色 `mayLeave` 检查，不只在离开团队页时检查；
+- **未保存保护**：对话、团队、流程、设置任意两页之间的切换都先经过同一个角色 `mayLeave` 检查，不只在离开团队页时检查；
   切换项目、关闭角色详情也复用同一保护。被拦下时保留当前页、表单和可操作的提示，不自动保存、丢弃或延迟执行这次导航。
   页面切换是普通状态，不引入路由库、图形库或独立窗口框架。
+- **滚动与页脚**：主区是固定高度的纵向布局，提示区单独限高滚动，对话消息区与设置页各自滚动，输入框不再 sticky，
+  不会压在页脚上；1024×680、1280×820、1440×900 三档下输入与按钮保持可达。
 
 ## 目录
 
@@ -33,8 +39,9 @@ desktop/
     workspace-store.mjs # 工作区文件的校验、读取与原子保存（不依赖 Electron，可真实文件测试）
     recovery-store.mjs  # 恢复稿 recovery.json 的校验、保存、放弃与版本水位（同样可真实文件测试）
     team-settings-store.mjs # 独立角色设置、目标角色合并与原子写入
-    preload.cjs         # 沙箱预加载：只有 tla.getAppInfo / loadWorkspace / saveWorkspace / 恢复稿与关闭握手
-    ipc-channels.mjs    # 主进程使用的 IPC 白名单（十个 handler 通道 + 关闭请求/超时两个事件）
+    conversation-drafts-store.mjs # conversation-drafts.json 的校验、原子保存、放弃与迟到写入保护
+    preload.cjs         # 沙箱预加载：只有 tla.getAppInfo / 工作区 / 恢复稿 / 角色 / 未发送文字 / 关闭握手
+    ipc-channels.mjs    # 主进程使用的 IPC 白名单（十三个 handler 通道 + 关闭请求/超时两个事件）
   scripts/
     build-renderer.mjs  # 渲染层构建（含受限沙箱下的 exec 兼容）
     before-build.cjs    # 告知 electron-builder：依赖树由外部处理
@@ -43,19 +50,20 @@ desktop/
     lib/workspace-editing.js # 会话副本、dirty 判定、状态与字段校验（纯函数）
     lib/workspace-saver.js   # 保存协调：单请求在途、baseline 同步更新、失败释放
     lib/recovery-drafts.js   # 恢复稿协调：防抖、写入顺序、清理与放弃（定时器可注入）
+    lib/conversation-drafts.js # 未发送文字协调：防抖、版本顺序、刷新与取消（定时器可注入）
     lib/team-settings.js     # 主进程与前端共用的纯角色数据契约
     lib/team-settings-controller.js # 角色表单、请求身份、保存与关闭保护
     lib/page-navigation.js   # 页面切换统一经过角色离开保护（纯函数，可单测）
     lib/layout-state.js      # 辅助列归属与动态侧栏/浮窗开合规则（纯函数，可单测）
     lib/dynamics-transition.js # 动态模式转换：进入 docked 前统一走角色离开保护（纯函数，可单测）
     lib/org-chart.js         # 只读组织关系模板：稳定 roleId 引用与节点完整性校验
-    components/         # 项目导航、对话工作区、项目编辑、团队卡片/组织关系图、团队动态、角色详情、工作流模板
+    components/         # 项目导航、对话工作区、项目设置、团队卡片/组织关系图、团队动态、角色详情、工作流模板
     data/team.js        # 初始团队模板（唯一数据源）
     data/workflow-template.js # 冻结工作流的阶段顺序模板（只读，不读取历史记录）
     assets/fonts/       # 内置开源 WOFF2 变量字体（Source Sans 3 / Source Serif 4 / 思源黑体）
     styles.css          # 暖黑主题、三列/双列布局与本地 @font-face
   public/licenses/fonts/ # 字体许可证、来源清单与 font-manifest.json（随 renderer-dist 复制）
-  tests/                # node:test 单元测试（工作区与恢复稿存储、IPC、角色数据、诊断、安全边界、启动流程、布局规则、字体资源校验）
+  tests/                # node:test 单元测试（工作区/恢复稿/角色/未发送文字存储、IPC、角色数据、诊断、安全边界、启动流程、布局规则、字体资源校验）
   index.html
   vite.config.mjs
   package.json          # 精确版本依赖 + electron-builder 配置
@@ -114,19 +122,21 @@ node -e "console.log(require('electron'))"   # 打印 dist\electron.exe 的绝�
 返回 `false` 声明“node_modules 由外部处理”，从而跳过这次收集。
 **以后若加入运行时依赖，必须删掉 `build.beforeBuild` 这个钩子**，否则依赖不会被打进包里。
 
-## 本地项目与任务草稿
+## 本地项目、项目计划与对话输入
 
-桌面壳支持本机多项目：新建项目、改名称与简介、切换项目，每个项目各有一份任务草稿，并有明确的保存按钮。
+桌面壳支持本机多项目：从左侧“项目设置”新建、改名称与简介、编辑项目计划，并切换项目。
+项目计划与对话输入是两套独立数据：前者随项目正式保存，后者自动保留未发送文字。
 这些数据只存在本机工作区文件里，不入库、不联网、不连接模型。
 
 - **位置固定**：`<workspace>\.local\tla-desktop\workspace.json`。路径由 `electron/workspace-store.mjs`
   按源码位置解析（`desktop/` 的上一级），不依赖 cwd，也不接受渲染层传入；`.local/` 已加入 `.gitignore`。
 - **结构**：`{ schemaVersion: 1, activeProjectId, projects: [{ id, name, description, taskDraft }] }`。
-  最多 20 个项目；名称 60、简介 500、任务草稿 5000 字符；文件上限 512 KiB。ID 只允许小写字母、数字和连字符，
-  且必须唯一，`activeProjectId` 必须指向已有项目。
+  最多 20 个项目；名称 60、简介 500、项目计划 5000 字符；文件上限 512 KiB。ID 只允许小写字母、数字和连字符，
+  且必须唯一，`activeProjectId` 必须指向已有项目。字段名仍沿用 `taskDraft` 以兼容旧数据与既有存储，
+  界面统一称为“项目计划”，不会把旧内容清空或迁移成另一份文件。
 - **校验在写入前**：主进程按上面的规则校验字段、版本、ID 与选中关系；任何越界、未知字段或多余键都直接拒绝，
   返回错误码与原因，**不做静默截断或修补**。渲染层只保存当前项目的新内容，其他项目写回最近一次成功保存的版本，
-  因此“保存这个项目”不会顺带提交别的项目的未保存草稿。
+  因此“保存这个项目”不会顺带提交别的项目的未保存修改。
 - **文件不存在**：返回一个默认项目（`我的第一个项目`），不主动创建文件；用户点保存才落盘。
 - **文件损坏、版本不认识或读不出来**：界面显示错误码与原因，本窗口停止保存，原文件原样保留，不会被“重置成默认值”。
 - **写入是原子的**：同目录唯一临时文件写完后 `rename` 覆盖，不先删除旧文件；保存请求串行执行，
@@ -165,6 +175,28 @@ node -e "console.log(require('electron'))"   # 打印 dist\electron.exe 的绝�
   取消最后一个项目后会显示可新建的空态，不会自动创建替代项目，也不写入正式文件；已保存项目没有取消入口。
   取消失败会保留项目并明确报错；保存正在进行或刚好成功时，不会把项目误当作未保存草稿移除。
   是否“已保存”以实际成功落盘为准，缺文件时的默认内存项目不算。
+
+### 未发送文字（对话输入）
+
+对话输入与项目计划分开存储，避免把“还没发出去的话”混进正式项目文件：
+
+- **位置**：同一 `.local\tla-desktop\` 下的 `conversation-drafts.json`，结构
+  `{ schemaVersion: 1, drafts: [{ projectId, text, revision, updatedAt }] }`。
+  每个项目只保留最新一份文字，包含空字符串（用户主动清空也算一次最新状态）；最多 20 个项目、每项 5000 字符、
+  文件上限 512 KiB。文件不存在时返回空列表，不主动创建。
+- **何时写**：输入时按 400 ms 防抖自动保留，界面显示“保留中 / 输入已保留（时间）/ 保留失败”。
+  这里只表示文字留在了本机草稿文件，**不等于**项目已保存，也不表示消息已发送。
+- **顺序与迟到写入**：按项目串行，`revision` 单调递增；过期请求被拒绝（`STALE_SNAPSHOT`）。
+  放弃/取消后记录水位，迟到的旧文字不能复活该项目（`DISCARDED`）。
+  清空输入会以空字符串写入，不会因为“看起来为空”而跳过，也不会删除其他项目的文字。
+- **重开**：读取 `conversation-drafts.json` 后按 `projectId` 回填输入框。对应项目既不在正式 `workspace.json`
+  也不在恢复候选里时，文字仍原样保留，界面提示“暂时找不到对应项目”，不会删除或挂到别的项目上。
+- **取消新建**：同时清理该项目的恢复稿与未发送文字；任一步失败都保留项目并报错，可以重试。
+  有未发送文字时，即使项目名称为空也要先确认，不能无声丢弃。
+- **关闭窗口**：关闭握手先刷新恢复稿，再刷新未发送文字；两者都成功才确认关闭。
+  任一项失败都会显示失败提示，并保留“返回编辑 / 仍然关闭”，不会把未完成说成成功。
+- **文件损坏或版本不认识**：保留原文件、停止本窗口的未发送文字写入并明确报错；项目设置与正式保存不受影响，
+  不会用空数据覆盖原文件。
 
 ### 窗口与键盘
 
@@ -290,15 +322,17 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 - 预加载脚本只暴露冻结的 `window.tla.getAppInfo()`、`loadWorkspace()`、`saveWorkspace(workspace)`，
   以及 `loadRecovery()`、`saveRecovery(snapshot)`、`discardRecovery({ projectId, revision })`、
   `onCloseRequest(callback)`、`onCloseTimeout(callback)`、`confirmClose(result)`、`forceClose()`；
-  另有 `loadTeamSettings(projectId)`、`saveRoleSettings(projectId, setting)`；
+  另有 `loadTeamSettings(projectId)`、`saveRoleSettings(projectId, setting)`、
+  `loadConversationDrafts()`、`saveConversationDraft(draft)`、`discardConversationDraft({ projectId, revision })`；
   不暴露 `ipcRenderer` 本体、通用 `on` / `send`、任意文件读写或 shell。
-- 主进程只注册十个 handler 通道（`tla:app-info`、`tla:workspace-load`、`tla:workspace-save`、
-  `tla:recovery-load`、`tla:recovery-save`、`tla:recovery-discard`、`tla:team-load`、`tla:team-save-role`、`tla:close-confirm`、`tla:close-force`），
+- 主进程只注册十三个 handler 通道（`tla:app-info`、`tla:workspace-load`、`tla:workspace-save`、
+  `tla:recovery-load`、`tla:recovery-save`、`tla:recovery-discard`、`tla:team-load`、`tla:team-save-role`、
+  `tla:conversation-load`、`tla:conversation-save`、`tla:conversation-discard`、`tla:close-confirm`、`tla:close-force`），
   主→渲染事件只有关闭请求 `tla:close-request` 与超时提示 `tla:close-timeout`。每个 handler 都先用
   `electron/security.mjs` 校验：
   调用方必须是主窗口的 `webContents`、主 frame，且页面地址与应用页面（或开发服务器地址）完全相等。
-- 工作区与恢复稿的写入固定在主进程解析出的路径，渲染层只能提交符合契约的数据；路径、版本、字段、数量、
-  长度、文件大小与快照 revision 全部由主进程复验，非法输入被拒绝而不是截断。
+- 工作区、恢复稿与未发送文字的写入固定在主进程解析出的路径，渲染层只能提交符合契约的数据；路径、版本、字段、
+  数量、长度、文件大小与快照 revision 全部由主进程复验，非法输入被拒绝而不是截断。
 - 拒绝所有新窗口（不调用 `shell.openExternal`，不交给系统浏览器）、外部导航与 `<webview>` 挂载；
   拒绝所有权限申请（摄像头、麦克风、通知等）。
 - 渲染层带 CSP：`default-src 'self'`，脚本仅允许同源文件。
@@ -328,10 +362,10 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 - 主进程复用 `src/data/team.js` 和纯数据契约 `src/lib/team-settings.js`，打包白名单仅补这两个模块，
   不包含整个src或新增运行时依赖。本批未重新打包，实际桌面交互仍需用户验收。
 
-本批自动测试140例通过（上一批134 + 动态转换6），其中Electron使用替身，
+本批自动测试166例通过（上一批140 + 未发送文字存储14 + 协调器9 + 端到端3），其中Electron使用替身，
 不将此结果称为真实窗口验收。字体资源、构建产物和许可证已完成字节级校验；字体在窗口中的实际加载、
-暖黑主题的视觉还原、三档窗口宽度、动态侧栏/浮窗与关闭提示的键盘行为仍需用户从正常桌面入口确认，
-在取得真实窗口截图前不记为视觉验收通过。
+暖黑主题的视觉还原、项目设置页与对话输入是否仍与页脚重叠、三档窗口宽度、动态侧栏/浮窗与关闭提示的键盘行为
+仍需用户从正常桌面入口确认，在取得真实窗口截图前不记为视觉验收通过。
 
 ## 首批不做的事
 

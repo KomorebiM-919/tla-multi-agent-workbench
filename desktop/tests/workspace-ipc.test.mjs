@@ -116,6 +116,17 @@ test('主进程只注册白名单内的通道，且拒绝不受信任的调用�
         ['CLOSE_FORCE', closeForce, undefined],
         ['TEAM_LOAD', getIpcHandler(IPC_CHANNELS.TEAM_LOAD), 'default-project'],
         ['TEAM_SAVE_ROLE', getIpcHandler(IPC_CHANNELS.TEAM_SAVE_ROLE), 'default-project'],
+        ['CONVERSATION_LOAD', getIpcHandler(IPC_CHANNELS.CONVERSATION_LOAD), undefined],
+        [
+          'CONVERSATION_SAVE',
+          getIpcHandler(IPC_CHANNELS.CONVERSATION_SAVE),
+          { projectId: 'project-a', text: '草稿', revision: 1 },
+        ],
+        [
+          'CONVERSATION_DISCARD',
+          getIpcHandler(IPC_CHANNELS.CONVERSATION_DISCARD),
+          { projectId: 'project-a', revision: 2 },
+        ],
       ]) {
         await assert.rejects(
           async () => handler(event, args),
@@ -212,6 +223,7 @@ test('团队IPC在隔离应用根真实保存，只写目标角色且保留项�
       'electron/main.mjs', 'electron/diagnostics.mjs', 'electron/security.mjs',
       'electron/workspace-store.mjs', 'electron/recovery-store.mjs',
       'electron/team-settings-store.mjs', 'electron/ipc-channels.mjs',
+      'electron/conversation-drafts-store.mjs',
       'src/data/team.js', 'src/lib/team-settings.js', 'package.json',
     ]
     for (const relative of files) {

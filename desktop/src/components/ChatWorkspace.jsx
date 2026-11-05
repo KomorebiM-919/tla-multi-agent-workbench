@@ -1,6 +1,3 @@
-import ProjectEditor from './ProjectEditor.jsx'
-import { describeProjectStatus } from '../lib/workspace-editing.js'
-
 function formatClock(iso) {
   if (!iso) return ''
   const date = new Date(iso)
@@ -8,39 +5,27 @@ function formatClock(iso) {
   return date.toLocaleTimeString('zh-CN', { hour12: false })
 }
 
-function backupLabel(backupState) {
-  if (!backupState || backupState.kind === 'idle') return ''
-  if (backupState.kind === 'saving') return '恢复稿备份中…'
-  if (backupState.kind === 'failed') return `备份失败：${backupState.message}`
-  return backupState.backedUpAt ? `恢复稿已备份 ${formatClock(backupState.backedUpAt)}` : '恢复稿已备份'
+/** 未发送文字的保留状态：措辞只描述本机保留，不说“已发送”或“已保存项目设置”。 */
+function conversationLabel(state) {
+  if (!state || state.kind === 'idle') return ''
+  if (state.kind === 'saving') return '保留中…'
+  if (state.kind === 'failed') return `保留失败：${state.message}`
+  return state.backedUpAt
+    ? `输入已保留在本机 ${formatClock(state.backedUpAt)}`
+    : '输入已保留在本机'
 }
 
 export default function ChatWorkspace({
   project,
-  fieldErrors,
-  limits,
-  dirty,
-  saveState,
-  backupState,
-  blockedByOtherSave,
-  canCancel,
-  cancelBusy,
-  cancelConfirm,
-  cancelError,
-  onChange,
-  onSave,
-  onCancel,
-  onCancelConfirm,
-  onCancelDismiss,
+  text,
+  limit,
+  conversationState,
+  onChangeText,
+  disabledReason,
+  recoveryState,
 }) {
-  const status = describeProjectStatus({ dirty, saveState })
-  const saving = saveState?.kind === 'saving'
-  const invalid = Object.keys(fieldErrors).length > 0
-  const saveDisabled = saving || blockedByOtherSave || cancelBusy || invalid || !dirty
-  const statusText =
-    status.tone === 'saved' && saveState?.savedAt
-      ? `已保存 ${formatClock(saveState.savedAt)}`
-      : status.label
+  const tooLong = text.length > limit
+  const label = conversationLabel(conversationState)
 
   return (
     <section className="chat" aria-labelledby="chat-title">
@@ -49,101 +34,78 @@ export default function ChatWorkspace({
       </h2>
 
       <div className="chat-stream" role="log" aria-label="对话记录">
-        <p className="chat-caption">任务草稿 · 仅保存在本机</p>
+        <p className="chat-caption">对话 · 未接入模型</p>
         <p className="chat-empty">
-          还没有消息。当前版本不连接模型，也不会生成回复；在下方写下这个项目下一步要做什么，
-          保存后重开可以继续编辑。
+          还没有消息。当前版本不连接模型，也不会生成回复；写下的文字只是本机未发送内容，
+          重开后会回到输入框，不会被当成已发送消息。
         </p>
       </div>
 
       <div className="composer">
         <label className="composer-field">
-          <span className="visually-hidden">任务草稿</span>
+          <span className="composer-label">给团队的消息</span>
           <textarea
-            className={fieldErrors.taskDraft ? 'composer-input is-invalid' : 'composer-input'}
+            className={tooLong ? 'composer-input is-invalid' : 'composer-input'}
             rows={3}
-            value={project.taskDraft}
-            aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
-            placeholder="描述这个项目下一步要推进的事，保存为任务草稿…"
-            onChange={(event) => onChange('taskDraft', event.target.value)}
+            value={text}
+            aria-invalid={tooLong ? 'true' : undefined}
+            aria-describedby="composer-limit"
+            placeholder="给团队写一条消息…（当前未接入模型，不能发送）"
+            onChange={(event) => onChangeText(event.target.value)}
           />
         </label>
-        <span className="field-meta composer-meta">
+        <span className="field-meta composer-meta" id="composer-limit">
           <span>
-            {project.taskDraft.length} / {limits.taskDraft}
+            {text.length} / {limit}
           </span>
-          {fieldErrors.taskDraft && <span className="field-error">{fieldErrors.taskDraft}</span>}
+          {tooLong && (
+            <span className="field-error">
+              未发送文字不能超过 {limit} 个字符（当前 {text.length} 个），超出部分不会写入磁盘
+            </span>
+          )}
         </span>
 
         <div className="composer-actions">
           <button
             type="button"
-            className="primary"
-            onClick={onSave}
-            disabled={saveDisabled}
-            title={
-              blockedByOtherSave
-                ? '另一个项目正在保存，完成后再保存这个项目'
-                : dirty
-                  ? '保存当前项目的名称、简介与任务草稿'
-                  : '没有需要保存的更改'
-            }
-          >
-            {saving ? '保存中…' : '保存任务草稿'}
-          </button>
-          <button
-            type="button"
             className="ghost"
             disabled
-            title="当前版本未接入执行，不能发送；草稿只保存在本机。"
+            title="当前版本未接入执行，不能发送；文字只保留在本机。"
           >
             发送（未接入）
           </button>
-          <span className={`save-status tone-${status.tone}`} role="status">
-            {statusText}
-          </span>
-          {backupLabel(backupState) && (
-            <span className={`backup-status backup-${backupState.kind}`} role="status">
-              {backupLabel(backupState)}
+          {label && (
+            <span
+              className={
+                conversationState?.kind === 'failed'
+                  ? 'conversation-status is-failed'
+                  : 'conversation-status'
+              }
+              role="status"
+            >
+              {label}
+            </span>
+          )}
+          {recoveryState?.kind === 'failed' && (
+            <span className="backup-status backup-failed" role="status">
+              项目恢复稿备份失败
             </span>
           )}
         </div>
 
-        {blockedByOtherSave && (
-          <p className="save-blocked" role="status">
-            另一个项目正在保存，完成后再保存这个项目；当前编辑不会丢失。
-          </p>
-        )}
-        {saveState?.kind === 'failed' && (
+        <p className="composer-note">
+          未发送文字只保留在本机 conversation-drafts.json，不是正式项目计划，也不是已发送消息；
+          不保证断电或强制退出零丢失。项目名称、简介与计划在左侧“项目设置”里编辑。
+        </p>
+        {disabledReason && (
           <p className="save-error" role="alert">
-            保存失败：{saveState.message}
+            {disabledReason}
           </p>
         )}
-        <p className="composer-note">保存只写入本机 workspace.json；编辑仍会自动备份到恢复稿，不保证断电零丢失。</p>
+        {project && (
+          <p className="composer-project">当前项目：{project.name.trim() || '未命名项目'}</p>
+        )}
       </div>
-
-      <details className="chat-project">
-        <summary>项目名称与简介</summary>
-        <ProjectEditor
-          draftMode="meta"
-          project={project}
-          fieldErrors={fieldErrors}
-          limits={limits}
-          dirty={dirty}
-          saveState={saveState}
-          backupState={backupState}
-          blockedByOtherSave={blockedByOtherSave}
-          canCancel={canCancel}
-          cancelBusy={cancelBusy}
-          cancelConfirm={cancelConfirm}
-          cancelError={cancelError}
-          onChange={onChange}
-          onSave={onSave}
-          onCancel={onCancel}
-          onCancelConfirm={onCancelConfirm}
-          onCancelDismiss={onCancelDismiss}
-        />
-      </details>
     </section>
   )
 }

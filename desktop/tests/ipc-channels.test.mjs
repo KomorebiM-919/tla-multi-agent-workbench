@@ -15,6 +15,11 @@ test('IPC 白名单只有已审查的通道', () => {
   assert.equal(IPC_CHANNELS.RECOVERY_LOAD, 'tla:recovery-load')
   assert.equal(IPC_CHANNELS.RECOVERY_SAVE, 'tla:recovery-save')
   assert.equal(IPC_CHANNELS.RECOVERY_DISCARD, 'tla:recovery-discard')
+  assert.equal(IPC_CHANNELS.TEAM_LOAD, 'tla:team-load')
+  assert.equal(IPC_CHANNELS.TEAM_SAVE_ROLE, 'tla:team-save-role')
+  assert.equal(IPC_CHANNELS.CONVERSATION_LOAD, 'tla:conversation-load')
+  assert.equal(IPC_CHANNELS.CONVERSATION_SAVE, 'tla:conversation-save')
+  assert.equal(IPC_CHANNELS.CONVERSATION_DISCARD, 'tla:conversation-discard')
   assert.equal(IPC_CHANNELS.CLOSE_CONFIRM, 'tla:close-confirm')
   assert.equal(IPC_CHANNELS.CLOSE_FORCE, 'tla:close-force')
   assert.equal(IPC_CHANNELS.CLOSE_REQUEST, 'tla:close-request')
@@ -30,6 +35,9 @@ test('IPC 白名单只有已审查的通道', () => {
       'tla:recovery-discard',
       'tla:team-load',
       'tla:team-save-role',
+      'tla:conversation-load',
+      'tla:conversation-save',
+      'tla:conversation-discard',
       'tla:close-confirm',
       'tla:close-force',
     ],
@@ -65,6 +73,9 @@ test('预加载脚本只暴露版本信息、工作区与恢复稿读写以及�
     'discardRecovery',
     'loadTeamSettings',
     'saveRoleSettings',
+    'loadConversationDrafts',
+    'saveConversationDraft',
+    'discardConversationDraft',
     'onCloseRequest',
     'onCloseTimeout',
     'confirmClose',
@@ -119,6 +130,13 @@ test('工作区路径由主进程按源码位置解析，不接受渲染层传�
     /recoveryStore\.save\((?!snapshot)/.test(main),
     false,
     '不得把渲染层传入的路径交给恢复稿存储层',
+  )
+  assert.match(main, /resolveConversationFilePath\(DESKTOP_ROOT\)/, '未发送文字路径同样由源码位置解析')
+  assert.match(main, /conversationStore\.save\(draft\)/)
+  assert.equal(
+    /conversationStore\.save\((?!draft)/.test(main),
+    false,
+    '不得把渲染层传入的路径交给未发送文字存储层',
   )
 })
 

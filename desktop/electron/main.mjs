@@ -8,6 +8,10 @@ import { isAllowedPage, isTrustedSender } from './security.mjs'
 import { createWorkspaceStore, resolveWorkspaceFilePath } from './workspace-store.mjs'
 import { createRecoveryStore, resolveRecoveryFilePath } from './recovery-store.mjs'
 import { createTeamSettingsStore, resolveTeamSettingsFilePath } from './team-settings-store.mjs'
+import {
+  createConversationStore,
+  resolveConversationFilePath,
+} from './conversation-drafts-store.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DESKTOP_ROOT = path.resolve(__dirname, '..')
@@ -23,6 +27,9 @@ const teamSettingsStore = createTeamSettingsStore({
   filePath: resolveTeamSettingsFilePath(DESKTOP_ROOT),
   loadWorkspace: () => workspaceStore.load(),
 })
+// 未发送的对话文字是独立的一类数据：不进 taskDraft，也不进项目恢复稿。
+const CONVERSATION_FILE = resolveConversationFilePath(DESKTOP_ROOT)
+const conversationStore = createConversationStore({ filePath: CONVERSATION_FILE })
 const APP_URL = pathToFileURL(RENDERER_ENTRY).href
 const DEV_SERVER_URL = (process.env.TLA_DEV_SERVER_URL ?? '').replace(/\/+$/, '')
 const PAGE_URL = DEV_SERVER_URL || APP_URL
@@ -79,6 +86,7 @@ log('bootstrap', {
   logsWritable: diagnostics.writable,
   workspaceFile: WORKSPACE_FILE,
   recoveryFile: RECOVERY_FILE,
+  conversationFile: CONVERSATION_FILE,
 })
 
 process.on('uncaughtException', (error) => {
@@ -357,6 +365,55 @@ function registerIpc() {
     } catch (error) {
       const info = workspaceErrorInfo(error)
       log('team-save-failed', { code: info.code })
+      return { ok: false, error: info }
+    }
+  })
+
+  // 未发送文字只暴露“读、按项目写一份、按项目删除”三个动作；
+  // 日志只记项目 ID、版本与错误码，不记正文。
+  ipcMain.handle(IPC_CHANNELS.CONVERSATION_LOAD, async (event) => {
+    assertTrustedSender(event, IPC_CHANNELS.CONVERSATION_LOAD)
+    try {
+      const { drafts, source, savedAt } = await conversationStore.load()
+      log('conversation-loaded', { drafts: drafts.length, source })
+      return { ok: true, drafts, source, savedAt }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('conversation-load-failed', { code: info.code })
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATION_SAVE, async (event, draft) => {
+    assertTrustedSender(event, IPC_CHANNELS.CONVERSATION_SAVE)
+    try {
+      const { entry } = await conversationStore.save(draft)
+      log('conversation-saved', { projectId: entry.projectId, revision: entry.revision })
+      return { ok: true, entry }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('conversation-save-failed', {
+        projectId: draft?.projectId,
+        revision: draft?.revision,
+        code: info.code,
+      })
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATION_DISCARD, async (event, request) => {
+    assertTrustedSender(event, IPC_CHANNELS.CONVERSATION_DISCARD)
+    try {
+      const { removed } = await conversationStore.discard(request)
+      log('conversation-discarded', {
+        projectId: request?.projectId,
+        revision: request?.revision,
+        removed,
+      })
+      return { ok: true, removed }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('conversation-discard-failed', { projectId: request?.projectId, code: info.code })
       return { ok: false, error: info }
     }
   })

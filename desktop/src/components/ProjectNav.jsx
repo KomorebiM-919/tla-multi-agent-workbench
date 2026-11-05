@@ -50,6 +50,9 @@ export default function ProjectNav({
   pages = [],
   page,
   onChangePage,
+  onOpenSettings,
+  settingsDisabled,
+  settingsActive,
 }) {
   return (
     <aside className="nav" aria-label="项目导航">
@@ -95,6 +98,34 @@ export default function ProjectNav({
 
       <div className="nav-projects">
         <h2 className="nav-title">当前项目</h2>
+        <button
+          type="button"
+          className={settingsActive ? 'nav-settings is-active' : 'nav-settings'}
+          aria-current={settingsActive ? 'page' : undefined}
+          onClick={onOpenSettings}
+          disabled={settingsDisabled}
+          title={
+            settingsDisabled
+              ? '还没有项目；新建项目后可以编辑项目设置'
+              : '编辑当前项目的名称、简介与项目计划'
+          }
+        >
+          <svg
+            className="nav-settings-icon"
+            viewBox="0 0 14 16"
+            width="14"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.1"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="7" cy="8" r="2.1" />
+            <path d="M7 2.2v1.6M7 12.2v1.6M2.4 8h1.6M10 8h1.6M3.7 4.7l1.1 1.1M9.2 10.2l1.1 1.1M3.7 11.3l1.1-1.1M9.2 5.8l1.1-1.1" />
+          </svg>
+          <span>项目设置</span>
+        </button>
         <ul className="nav-list">
           {projects.map((project) => {
             const active = project.id === activeId

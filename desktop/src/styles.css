@@ -2520,3 +2520,163 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background-color: #4a453d;
 }
+
+/* ===== 项目设置独立页、对话输入与滚动修正 ===== */
+.board {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.board-notices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 26vh;
+  margin-top: 14px;
+  padding-right: 4px;
+  overflow: auto;
+}
+
+.board-notices:empty {
+  display: none;
+}
+
+.board-notices > .recovery,
+.board-notices > .notice,
+.board-notices > .recovery-bar {
+  margin-top: 0;
+}
+
+.page-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  padding-top: 4px;
+  overflow: auto;
+}
+
+.chat {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-stream {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.composer {
+  position: static;
+  flex: none;
+  margin-top: 12px;
+  box-shadow: none;
+}
+
+.composer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-label {
+  color: var(--ink-mute);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.composer-input {
+  max-height: 160px;
+  overflow: auto;
+}
+
+.conversation-status {
+  color: var(--ink-mute);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.conversation-status.tone-failed {
+  color: var(--danger);
+}
+
+.composer-project {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.board-foot {
+  flex: none;
+}
+
+.nav-settings {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: left;
+}
+
+.nav-settings:hover {
+  background: #201e19;
+  color: var(--ink);
+}
+
+.nav-settings.is-active {
+  border-color: var(--accent-line);
+  background: #27241f;
+  color: var(--ink);
+}
+
+.nav-settings:disabled {
+  color: var(--ink-mute);
+  cursor: not-allowed;
+}
+
+.nav-settings svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  opacity: 0.85;
+}
+
+.settings-page .editor {
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-page .draft-head {
+  margin-top: 18px;
+}
+
+.field-hint {
+  margin: -2px 0 4px;
+  color: var(--ink-mute);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+@media (max-height: 760px) {
+  .board-notices {
+    max-height: 22vh;
+  }
+}

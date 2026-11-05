@@ -15,7 +15,6 @@ function backupLabel(backupState) {
 }
 
 export default function ProjectEditor({
-  draftMode = 'full',
   project,
   fieldErrors,
   limits,
@@ -35,7 +34,6 @@ export default function ProjectEditor({
 }) {
   const status = describeProjectStatus({ dirty, saveState })
   const saving = saveState?.kind === 'saving'
-  const showDraft = draftMode !== 'meta'
   const invalid = Object.keys(fieldErrors).length > 0
   const saveDisabled = saving || blockedByOtherSave || cancelBusy || invalid || !dirty
   const statusText =
@@ -44,10 +42,10 @@ export default function ProjectEditor({
       : status.label
 
   return (
-    <section className="editor" aria-labelledby="editor-title">
+    <section className="editor settings-editor" aria-labelledby="editor-title">
       <div className="editor-head">
-        <h2 id="editor-title">项目信息</h2>
-        <span className="editor-hint">本地草稿 · 未连接模型</span>
+        <h2 id="editor-title">项目设置</h2>
+        <span className="editor-hint">仅保存在本机 · 未连接模型</span>
       </div>
 
       <label className="field">
@@ -87,28 +85,27 @@ export default function ProjectEditor({
       </label>
 
       <div className="draft">
-        {showDraft && (
-          <>
-            <div className="draft-head">
-              <h3>任务草稿</h3>
-              <span className="field-meta">
-                <span>
-                  {project.taskDraft.length} / {limits.taskDraft}
-                </span>
-              </span>
-            </div>
-            <textarea
-              className={fieldErrors.taskDraft ? 'draft-input is-invalid' : 'draft-input'}
-              rows={9}
-              value={project.taskDraft}
-              aria-label="任务草稿"
-              aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
-              placeholder="写下这个项目下一步要做什么。草稿只保存在本机，不会发送给任何模型。"
-              onChange={(event) => onChange('taskDraft', event.target.value)}
-            />
-            {fieldErrors.taskDraft && <p className="field-error">{fieldErrors.taskDraft}</p>}
-          </>
-        )}
+        <div className="draft-head">
+          <h3>项目计划</h3>
+          <span className="field-meta">
+            <span>
+              {project.taskDraft.length} / {limits.taskDraft}
+            </span>
+          </span>
+        </div>
+        <p className="field-hint">
+          总体安排与预期。旧版本保存的“任务草稿”会原样显示在这里，仍使用原字段与长度上限。
+        </p>
+        <textarea
+          className={fieldErrors.taskDraft ? 'draft-input is-invalid' : 'draft-input'}
+          rows={9}
+          value={project.taskDraft}
+          aria-label="项目计划"
+          aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
+          placeholder="写下这个项目的总体安排与预期；只保存在本机，不会发送给任何模型。"
+          onChange={(event) => onChange('taskDraft', event.target.value)}
+        />
+        {fieldErrors.taskDraft && <p className="field-error">{fieldErrors.taskDraft}</p>}
 
         <div className="draft-actions">
           <button
@@ -120,11 +117,11 @@ export default function ProjectEditor({
               blockedByOtherSave
                 ? '另一个项目正在保存，完成后再保存这个项目'
                 : dirty
-                  ? '保存当前项目的名称、简介与任务草稿'
+                  ? '保存当前项目的名称、简介与计划'
                   : '没有需要保存的更改'
             }
           >
-            {saving ? '保存中…' : '保存草稿'}
+            {saving ? '保存中…' : '保存项目设置'}
           </button>
           <span className={`save-status tone-${status.tone}`} role="status">
             {statusText}

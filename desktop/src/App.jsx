@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProjectNav from './components/ProjectNav.jsx'
 import ChatWorkspace from './components/ChatWorkspace.jsx'
+import ProjectEditor from './components/ProjectEditor.jsx'
 import TeamDynamics from './components/TeamDynamics.jsx'
 import TeamBoard from './components/TeamBoard.jsx'
 import WorkflowTemplate from './components/WorkflowTemplate.jsx'
@@ -22,6 +23,10 @@ import {
 } from './lib/workspace-editing.js'
 import { createWorkspaceSaver } from './lib/workspace-saver.js'
 import { createRecoveryDrafts } from './lib/recovery-drafts.js'
+import {
+  MAX_CONVERSATION_TEXT_LENGTH,
+  createConversationDrafts,
+} from './lib/conversation-drafts.js'
 import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
 import { attemptPageChange } from './lib/page-navigation.js'
 import { isRoleDetailVisible } from './lib/layout-state.js'
@@ -76,6 +81,11 @@ export default function App() {
   const [cancelConfirmId, setCancelConfirmId] = useState(null)
   const [cancelBusyId, setCancelBusyId] = useState(null)
   const [cancelError, setCancelError] = useState(null)
+  const [conversationTexts, setConversationTexts] = useState({})
+  const conversationTextsRef = useRef({})
+  const [conversationStates, setConversationStates] = useState({})
+  const [conversationError, setConversationError] = useState(null)
+  const [orphanDrafts, setOrphanDrafts] = useState([])
   const [closeIssue, setCloseIssue] = useState(null)
   const [roleId, setRoleId] = useState(null)
   const [page, setPage] = useState('chat')
@@ -178,6 +188,30 @@ export default function App() {
     })
   }
 
+  const conversationRef = useRef(null)
+  if (!conversationRef.current) {
+    conversationRef.current = createConversationDrafts({
+      save: (draft) =>
+        window.tla?.saveConversationDraft
+          ? window.tla.saveConversationDraft(draft)
+          : Promise.resolve({ ok: false, error: BRIDGE_UNAVAILABLE }),
+      discard: (request) =>
+        window.tla?.discardConversationDraft
+          ? window.tla.discardConversationDraft(request)
+          : Promise.resolve({ ok: false, error: BRIDGE_UNAVAILABLE }),
+      onStatus: (projectId, status) => {
+        setConversationStates((states) => ({ ...states, [projectId]: status }))
+      },
+    })
+  }
+
+  const setConversationText = useCallback((projectId, text) => {
+    if (!projectId) return
+    const next = { ...conversationTextsRef.current, [projectId]: text }
+    conversationTextsRef.current = next
+    setConversationTexts(next)
+  }, [])
+
   const saverRef = useRef(null)
   if (!saverRef.current) {
     saverRef.current = createWorkspaceSaver({
@@ -252,8 +286,24 @@ export default function App() {
           }))
         : Promise.resolve(null)
 
+    const conversationApi = window.tla?.loadConversationDrafts
+    const conversationPromise =
+      typeof conversationApi === 'function'
+        ? conversationApi().catch((error) => ({
+            ok: false,
+            error: {
+              code: 'CONVERSATION_READ_FAILED',
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }))
+        : Promise.resolve(null)
+
     try {
-      const [result, recovery] = await Promise.all([api(), recoveryPromise])
+      const [result, recovery, conversation] = await Promise.all([
+        api(),
+        recoveryPromise,
+        conversationPromise,
+      ])
       if (!result?.ok) {
         setLoadState({
           status: 'error',
@@ -292,6 +342,36 @@ export default function App() {
         setRecoveryEntries([])
         setRecoveryError(error)
       }
+
+      if (conversation?.ok) {
+        const drafts = Array.isArray(conversation.drafts) ? conversation.drafts : []
+        const texts = {}
+        for (const draft of drafts) texts[draft.projectId] = draft.text
+        conversationTextsRef.current = texts
+        setConversationTexts(texts)
+        // 只登记已存在的未发送文字，不在启动时写入或删除任何东西。
+        conversationRef.current.reset(drafts)
+        setConversationError(null)
+        // 项目身份已不在会话、也没有可恢复的项目恢复稿：文字原样保留并提示，
+        // 不静默删除，也不挂到别的项目上。
+        const knownProjects = new Set(workspace.projects.map((project) => project.id))
+        const restorableProjects = new Set(
+          (recovery?.ok ? recovery.entries : []).map((entry) => entry.id),
+        )
+        setOrphanDrafts(
+          drafts.filter(
+            (draft) =>
+              !knownProjects.has(draft.projectId) && !restorableProjects.has(draft.projectId),
+          ),
+        )
+      } else {
+        const error = conversation?.error ?? BRIDGE_UNAVAILABLE
+        conversationRef.current.markLoadFailure(error)
+        conversationTextsRef.current = {}
+        setConversationTexts({})
+        setConversationError(error)
+        setOrphanDrafts([])
+      }
     } catch (error) {
       setLoadState({
         status: 'error',
@@ -319,8 +399,9 @@ export default function App() {
     })
     if (await roleCloseGuard()) return
     const result = await recoveryRef.current.flush()
+    const conversationResult = await conversationRef.current.flush()
     if (await roleCloseGuard()) return
-    if (result.ok) {
+    if (result.ok && conversationResult.ok) {
       try {
         await api?.confirmClose?.({ requestId, ok: true })
       } catch {
@@ -328,15 +409,24 @@ export default function App() {
       }
       return
     }
-    const first = result.errors?.[0]?.error ?? {
+    const combined = [...(result.errors ?? []), ...(conversationResult.errors ?? [])]
+    const first = combined[0]?.error ?? {
       code: 'CLOSE_FLUSH_FAILED',
-      message: '恢复稿没有写完。',
+      message: '恢复稿或未发送文字没有写完。',
     }
     // 已经超时提示过就不要用后到的失败结果覆盖超时说明。
     setCloseIssue((current) =>
       current?.timedOut
         ? current
-        : { requestId, timedOut: false, message: first.message, errors: result.errors ?? [] },
+        : {
+            requestId,
+            timedOut: false,
+            message:
+              combined.length > 1
+                ? `${first.message}（另有 ${combined.length - 1} 项尚未完成）`
+                : first.message,
+            errors: combined,
+          },
     )
     try {
       await api?.confirmClose?.({ requestId, ok: false, error: first })
@@ -480,6 +570,20 @@ export default function App() {
     [activeProject, applySession],
   )
 
+  const updateConversationText = useCallback(
+    (value) => {
+      const current = sessionRef.current
+      const projectId = current?.activeProjectId
+      if (!projectId) return
+      setConversationText(projectId, value)
+      if (conversationError) return
+      // 超长内容不写入，避免把主进程的拒绝伪装成“已保留”；缩短后自动恢复保留。
+      if (value.length > MAX_CONVERSATION_TEXT_LENGTH) return
+      conversationRef.current.noteEdit(projectId, value)
+    },
+    [conversationError, setConversationText],
+  )
+
   const selectProject = useCallback(
     (projectId) => {
       if (!teamControllerRef.current.mayLeave()) return
@@ -505,6 +609,8 @@ export default function App() {
     setRoleId(null)
     setCancelConfirmId(null)
     setCancelError(null)
+    // 新建后直接进入设置页，命名、保存与取消入口都不会被对话输入挤掉。
+    setPage('settings')
   }, [applySession])
 
   const saveActiveProject = useCallback(async () => {
@@ -577,9 +683,15 @@ export default function App() {
       setCancelError(null)
       setCancelBusyId(projectId)
       try {
-        const result = await recoveryRef.current.discard(projectId)
-        if (!result.ok) {
-          setCancelError(result.error.message)
+        const recoveryResult = await recoveryRef.current.discard(projectId)
+        if (!recoveryResult.ok) {
+          setCancelError(recoveryResult.error.message)
+          return
+        }
+        // 取消新建必须同时清掉未发送文字；任一步失败都保留项目，方便重试。
+        const conversationResult = await conversationRef.current.discard(projectId)
+        if (!conversationResult.ok) {
+          setCancelError(conversationResult.error.message)
           return
         }
         if (savedIdsRef.current.has(projectId)) {
@@ -598,6 +710,15 @@ export default function App() {
           delete next[projectId]
           return next
         })
+        setConversationStates((states) => {
+          const next = { ...states }
+          delete next[projectId]
+          return next
+        })
+        const remainingTexts = { ...conversationTextsRef.current }
+        delete remainingTexts[projectId]
+        conversationTextsRef.current = remainingTexts
+        setConversationTexts(remainingTexts)
         // 允许取消最后一个项目：会话进入空态，不自动创建替代项目，也不写正式文件。
         applySession((latest) =>
           latest ? { ...latest, ...removeProjectFromSession(latest, projectId) } : latest,
@@ -614,7 +735,9 @@ export default function App() {
       if (!project || savedIdsRef.current.has(project.id)) return
       if (savingProjectIdRef.current === project.id) return
       setCancelError(null)
-      if (needsCancelConfirmation(project)) {
+      // 有未发送文字时同样要先确认，不能只按项目计划判空。
+      const hasConversationText = (conversationTextsRef.current[project.id] ?? '').length > 0
+      if (needsCancelConfirmation(project) || hasConversationText) {
         setCancelConfirmId(project.id)
         return
       }
@@ -660,6 +783,14 @@ export default function App() {
   const canCancelActive = Boolean(
     activeProject && !savedIds.has(activeProject.id) && cancelBusyId !== activeProject.id,
   )
+  const conversationText = activeProject
+    ? (conversationTexts[activeProject.id] ?? '')
+    : ''
+  const conversationState = activeProject ? conversationStates[activeProject.id] : null
+  const conversationDisabledReason = conversationError
+    ? `未发送文字文件不可用（${conversationError.code}）：${conversationError.message} 为避免覆盖原文件，本窗口已停止写入；项目设置仍可正常使用。`
+    : null
+  const openSettings = () => changePage('settings')
   // 角色详情只属于团队页；对话/流程页释放右侧列。动态侧栏复用同一列，不额外开第四栏。
   const dockedDynamics = dynamics === 'docked'
   const showRoleDetail = isRoleDetailVisible({ page, roleId, dynamics })
@@ -715,6 +846,27 @@ export default function App() {
           </div>
         </header>
 
+        <div className="board-notices">
+        {conversationError && (
+          <section className="notice notice-warn" role="alert">
+            <strong>未发送文字不可用</strong>
+            <p>
+              {conversationError.code} · {conversationError.message} 为避免覆盖原文件，本窗口已停止写入
+              conversation-drafts.json；项目设置与正式保存不受影响。
+            </p>
+          </section>
+        )}
+
+        {orphanDrafts.length > 0 && (
+          <section className="notice notice-warn" role="status">
+            <strong>有 {orphanDrafts.length} 条未发送文字暂时找不到对应项目</strong>
+            <p>
+              这些文字仍原样保留在 conversation-drafts.json 里，不会删除，也不会挂到别的项目上；
+              恢复或重建对应项目（同一项目 ID）后才能重新显示。
+            </p>
+          </section>
+        )}
+
         {recoveryError && (
           <section className="notice notice-warn" role="alert">
             <strong>恢复稿不可用</strong>
@@ -760,8 +912,8 @@ export default function App() {
                     )}
                     <span>
                       {entry.taskDraft.length > 0
-                        ? `任务草稿 ${entry.taskDraft.length} 字`
-                        : '任务草稿为空'}
+                        ? `项目计划 ${entry.taskDraft.length} 字`
+                        : '项目计划为空'}
                       {' · '}
                       备份于 {formatClock(entry.updatedAt)}
                     </span>
@@ -784,36 +936,68 @@ export default function App() {
             </ul>
           </section>
         )}
+        </div>
 
         {page === 'chat' && (
           activeProject ? (
             <ChatWorkspace
               project={activeProject}
-              fieldErrors={fieldErrors}
-              limits={LIMITS}
-              dirty={dirtyIds.has(activeProject.id)}
-              saveState={saveStates[activeProject.id]}
-              backupState={backupStates[activeProject.id]}
-              blockedByOtherSave={savingProjectId !== null && savingProjectId !== activeProject.id}
-              canCancel={canCancelActive}
-              cancelBusy={cancelBusyId === activeProject.id}
-              cancelConfirm={cancelConfirmId === activeProject.id}
-              cancelError={cancelConfirmId === activeProject.id ? cancelError : null}
-              onChange={updateActiveProject}
-              onSave={saveActiveProject}
-              onCancel={() => requestCancel(activeProject)}
-              onCancelConfirm={() => void performCancel(activeProject.id)}
-              onCancelDismiss={() => {
-                setCancelConfirmId(null)
-                setCancelError(null)
-              }}
+              text={conversationText}
+              limit={MAX_CONVERSATION_TEXT_LENGTH}
+              conversationState={conversationState}
+              onChangeText={updateConversationText}
+              disabledReason={conversationDisabledReason}
+              recoveryState={backupStates[activeProject.id]}
             />
           ) : (
             <section className="empty-state" aria-label="没有项目">
               <h2>还没有项目</h2>
               <p>
-                取消新建后可以停在这里。新建的项目先留在本次会话，并自动备份到恢复稿；
-                点“保存任务草稿”才会写进正式文件。不会自动创建替代项目，也不会改动磁盘上的其他内容。
+                新建项目后可以写下给团队的未发送文字；当前版本未接入模型，不能发送。
+                项目名称、简介与计划在左侧“项目设置”里编辑。
+              </p>
+              <button type="button" className="primary" onClick={createProject}>
+                新建项目
+              </button>
+            </section>
+          )
+        )}
+
+        {page === 'settings' && (
+          activeProject ? (
+            <div className="page-scroll settings-page">
+              <p className="page-lead">
+                项目设置承载名称、简介与项目计划；对话输入与未发送文字不在这里，
+                保存设置不会提交或清空对话文字。
+              </p>
+              <ProjectEditor
+                project={activeProject}
+                fieldErrors={fieldErrors}
+                limits={LIMITS}
+                dirty={dirtyIds.has(activeProject.id)}
+                saveState={saveStates[activeProject.id]}
+                backupState={backupStates[activeProject.id]}
+                blockedByOtherSave={savingProjectId !== null && savingProjectId !== activeProject.id}
+                canCancel={canCancelActive}
+                cancelBusy={cancelBusyId === activeProject.id}
+                cancelConfirm={cancelConfirmId === activeProject.id}
+                cancelError={cancelConfirmId === activeProject.id ? cancelError : null}
+                onChange={updateActiveProject}
+                onSave={saveActiveProject}
+                onCancel={() => requestCancel(activeProject)}
+                onCancelConfirm={() => void performCancel(activeProject.id)}
+                onCancelDismiss={() => {
+                  setCancelConfirmId(null)
+                  setCancelError(null)
+                }}
+              />
+            </div>
+          ) : (
+            <section className="empty-state" aria-label="没有项目">
+              <h2>还没有项目</h2>
+              <p>
+                取消新建后可以停在这里，再新建一个项目并从这里命名、保存或取消。
+                不会自动创建替代项目，也不会改动磁盘上的其他内容。
               </p>
               <button type="button" className="primary" onClick={createProject}>
                 新建项目
@@ -823,25 +1007,25 @@ export default function App() {
         )}
 
         {page === 'team' && (
-          <>
+          <div className="page-scroll">
             {teamState?.status === 'unsaved' && <p className="role-settings-hint">先保存当前项目信息，即可编辑本项目的角色设置。</p>}
             {teamState?.status === 'loading' && <p className="role-settings-hint" role="status">正在读取本项目角色设置…</p>}
-            {teamState?.status === 'error' && <p className="save-error" role="alert">角色设置读取失败：{teamState.error.message}。目前仅显示初始模板参考，已停止角色写入；项目草稿仍可使用。</p>}
+            {teamState?.status === 'error' && <p className="save-error" role="alert">角色设置读取失败：{teamState.error.message}。目前仅显示初始模板参考，已停止角色写入；项目计划仍可使用。</p>}
             {teamState?.notice && <p className="role-settings-hint" role="status">{teamState.notice}</p>}
             <p className="page-lead">
               团队页展示当前项目的角色位、只读组织关系与手动角色设置；这里不产生调度或运行记录。
             </p>
             <TeamBoard roles={visibleTeam} activeRoleId={roleId} onSelect={selectRole} />
-          </>
+          </div>
         )}
 
         {page === 'workflow' && (
-          <>
+          <div className="page-scroll">
             <p className="page-lead">
               流程页只展示冻结的阶段顺序模板，整体“未运行”；没有真实执行记录、耗时或费用。
             </p>
             <WorkflowTemplate />
-          </>
+          </div>
         )}
 
         <footer className="board-foot">
@@ -852,7 +1036,9 @@ export default function App() {
                 : '点击任意角色卡，在右侧查看详情。'
               : page === 'workflow'
                 ? '阶段卡片只展开说明，不代表任何执行。'
-                : '对话页只编辑本机任务草稿，不发送、不生成回复。'}
+                : page === 'settings'
+                  ? '项目设置只写正式工作区文件；对话输入独立保留，不会随设置保存。'
+                  : '对话输入只保留本机未发送文字，不发送、不生成回复。'}
           </span>
           <span>初始模板来自 desktop/src/data/team.js；角色设置仅影响当前项目，不包含真实运行记录。</span>
         </footer>
