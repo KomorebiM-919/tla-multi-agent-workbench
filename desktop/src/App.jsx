@@ -24,7 +24,8 @@ import { createWorkspaceSaver } from './lib/workspace-saver.js'
 import { createRecoveryDrafts } from './lib/recovery-drafts.js'
 import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
 import { attemptPageChange } from './lib/page-navigation.js'
-import { isRoleDetailVisible, nextDynamicsMode, nextDynamicsOnToggle } from './lib/layout-state.js'
+import { isRoleDetailVisible } from './lib/layout-state.js'
+import { requestDynamicsChange } from './lib/dynamics-transition.js'
 
 const LIMITS = Object.freeze({
   name: MAX_NAME_LENGTH,
@@ -416,15 +417,24 @@ export default function App() {
     [page],
   )
 
-  const toggleDynamics = useCallback(() => {
-    // 打开 docked 会暂时取代角色详情，因此先走同一离开保护；收起不需要检查。
-    const editable = dynamics === 'hidden' ? teamControllerRef.current.mayLeave() : true
-    setDynamics(nextDynamicsOnToggle(dynamics, editable))
-  }, [dynamics])
+  const changeDynamics = useCallback(
+    (intent) => {
+      // Entering docked can replace the role detail, so every entry point shares
+      // the same unsaved-role guard. The guard runs outside the state updater
+      // because it publishes a notice; blocked transitions leave state untouched.
+      const result = requestDynamicsChange({
+        current: dynamics,
+        intent,
+        teamController: teamControllerRef.current,
+      })
+      if (!result.blocked) setDynamics(result.dynamics)
+    },
+    [dynamics],
+  )
 
-  const toggleDynamicsMode = useCallback(() => {
-    setDynamics((current) => nextDynamicsMode(current))
-  }, [])
+  const toggleDynamics = useCallback(() => changeDynamics('toggle'), [changeDynamics])
+
+  const toggleDynamicsMode = useCallback(() => changeDynamics('mode'), [changeDynamics])
 
   useEffect(() => {
     if (dynamics !== 'hidden') {

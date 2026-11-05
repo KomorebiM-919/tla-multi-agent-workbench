@@ -1,17 +1,26 @@
-# TLA 应用内置字体准备包
+# TLA 应用内置字体与许可说明
 
-用户已明确选择开源近似组合：Source Sans 3、Source Serif 4，中文使用思源黑体。此目录仅为Codex在D盘准备的原始资源，尚未写入E盘应用，不表示浏览器已实际使用这些字体。
+本目录随应用一起打包，包含 TLA 桌面界面使用的三份开源字体许可、字体来源清单与说明。字体文件本身位于 `src/assets/fonts/`，构建时由 Vite 复制到 `renderer-dist/assets/` 并带内容哈希。
 
 | 文件 | 字节 | 用途 |
 |---|---:|---|
 | SourceSans3VF-Upright.ttf.woff2 | 170188 | 界面西文/数字，可变字重 |
-| SourceSerif4Variable-Roman.ttf.woff2 | 429100 | 标题、TLA字标等西文衬线，不强制全界面衬线 |
+| SourceSerif4Variable-Roman.ttf.woff2 | 429100 | 标题、TLA 字标等西文衬线，不强制全界面衬线 |
 | SourceHanSansCN-VF.ttf.woff2 | 7711988 | 思源黑体官方简体中文子集，可变字重 |
 
-三份字体共8311276字节（约8.31 MB），没有自行裁剪、转换或改名内部字体信息。完整来源、固定提交、字节、Git blob SHA1和SHA256见font-manifest.json；每份均通过GitHub contents API的原始大小与blob身份比对，随后逐份回读SHA256一致。WOFF2魔数和头部声明长度已检查；未安装字体解析依赖，也未声称已经浏览器解码/排版通过。
+三份字体共 8311276 字节（约 8.31 MB），未自行裁剪、转码或改名内部字体信息。完整来源、固定提交、字节、Git blob SHA1 与 SHA256 见同目录的 `font-manifest.json`；三份字体与三份许可证已逐文件按 SHA-256 与本清单核对一致。
 
-随包三份LICENSE为各自官方来源的原文，OFL 1.1允许按条件随软件内置，整合时保留版权与许可。这些字体不是Anthropic Sans/Serif/Mono，不宣称视觉完全相同或获得Anthropic品牌授权。
+随包三份 LICENSE 为各自官方来源的原文，OFL 1.1 允许按条件随软件内置，应用保留版权与许可文本。这些字体不是 Anthropic Sans/Serif/Mono，不宣称视觉完全相同或获得 Anthropic 品牌授权。
 
-DSH应先回读manifest核对，再将字体拷入desktop/src/assets/fonts/，许可证和manifest放入desktop/public/licenses/fonts/或等价可随renderer-dist交付的位置。用本地@font-face加载，禁止CDN、系统字体安装、修改全局注册表或从Claude/DSH提取私有字体。不得为此安装字体框架、字体解析包或改npm锁文件。生产构建后确认字体与许可证真实存在，字体字节与本清单一致，file://资源路径可解析。
+## 关于 font-manifest.json 的准备状态字段
 
-仅UI字体资源已批准；若需要另外依赖、字体下载域名或商业字体采购，不包含在本包批准里。网络原始字体资源已全部备齐，后续正常无需再次下载。
+清单中的 `projectIntegrationComplete: false` 以及来源准备阶段的字段属于**历史记录**，描述的是字体资源最初在资料目录准备时的状态，不是当前应用的运行状态。当前版本已经把字体与许可复制进仓库并随构建产物交付；清单为保持原始字节与哈希一致而未改写。
+
+## 已验证与未验证
+
+- 已验证：字体与许可证随源码提交；生产构建输出三份带哈希 WOFF2 与 `licenses/fonts/`；CSS 仅通过本地 `@font-face` 相对路径引用，使用变量字重与 `font-display: swap`；字体、许可证字节与清单一致。
+- 未验证：Chromium 是否实际解码并应用了这些字体、各段文字最终命中哪一字重、以及窗口中的字形观感。需要真实窗口截图或字体检查工具才能确认，当前不把“已内置”当作“视觉验收通过”。
+
+## 使用约束
+
+字体只从应用内资源本地加载；不使用 CDN、npm 字体包、系统字体安装或注册表修改，也不从其他应用提取私有字体。新增字体或替换版本需要重新取得授权并更新清单与测试。
