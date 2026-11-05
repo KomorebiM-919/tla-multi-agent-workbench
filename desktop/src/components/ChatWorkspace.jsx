@@ -44,15 +44,12 @@ export default function ChatWorkspace({
 
   return (
     <section className="chat" aria-labelledby="chat-title">
-      <div className="chat-head">
-        <div>
-          <h2 id="chat-title">对话</h2>
-          <p className="chat-sub">当前项目的任务草稿保存在本机，草稿本身不会发送给任何模型。</p>
-        </div>
-        <span className="badge badge-template">未接入执行</span>
-      </div>
+      <h2 id="chat-title" className="visually-hidden">
+        对话
+      </h2>
 
       <div className="chat-stream" role="log" aria-label="对话记录">
+        <p className="chat-caption">任务草稿 · 仅保存在本机</p>
         <p className="chat-empty">
           还没有消息。当前版本不连接模型，也不会生成回复；在下方写下这个项目下一步要做什么，
           保存后重开可以继续编辑。
@@ -60,23 +57,23 @@ export default function ChatWorkspace({
       </div>
 
       <div className="composer">
-        <label className="field">
-          <span className="field-label">任务草稿</span>
+        <label className="composer-field">
+          <span className="visually-hidden">任务草稿</span>
           <textarea
-            className={fieldErrors.taskDraft ? 'draft-input is-invalid' : 'draft-input'}
-            rows={6}
+            className={fieldErrors.taskDraft ? 'composer-input is-invalid' : 'composer-input'}
+            rows={3}
             value={project.taskDraft}
             aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
-            placeholder="写下这个项目下一步要做什么。草稿只保存在本机，不会发送给任何模型。"
+            placeholder="描述这个项目下一步要推进的事，保存为任务草稿…"
             onChange={(event) => onChange('taskDraft', event.target.value)}
           />
-          <span className="field-meta">
-            <span>
-              {project.taskDraft.length} / {limits.taskDraft}
-            </span>
-            {fieldErrors.taskDraft && <span className="field-error">{fieldErrors.taskDraft}</span>}
-          </span>
         </label>
+        <span className="field-meta composer-meta">
+          <span>
+            {project.taskDraft.length} / {limits.taskDraft}
+          </span>
+          {fieldErrors.taskDraft && <span className="field-error">{fieldErrors.taskDraft}</span>}
+        </span>
 
         <div className="composer-actions">
           <button

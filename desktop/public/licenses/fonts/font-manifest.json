@@ -1,0 +1,87 @@
+{
+  "purpose": "Authorized app-local open font integration; not Anthropic proprietary fonts",
+  "assets": [
+    {
+      "file": "SourceSans3VF-Upright.ttf.woff2",
+      "family": "Source Sans 3",
+      "bytes": 170188,
+      "sha256": "5f16566f7a40d39b339ad26be151fa5a1ab1f0c2574c7a2e619765584a1acbd8",
+      "gitBlobSha1": "96cc9fd06ceb275ec3d6103ad97c5647212c88c5",
+      "repository": "https://github.com/adobe-fonts/source-sans",
+      "commit": "87b37a2daaed80fcb8e8ccb0085c4d72ddade12e",
+      "sourcePath": "WOFF2/VF/SourceSans3VF-Upright.ttf.woff2",
+      "sourceUrl": "https://raw.githubusercontent.com/adobe-fonts/source-sans/87b37a2daaed80fcb8e8ccb0085c4d72ddade12e/WOFF2/VF/SourceSans3VF-Upright.ttf.woff2",
+      "license": "SIL OFL 1.1",
+      "gitBlobVerified": true
+    },
+    {
+      "file": "SourceSerif4Variable-Roman.ttf.woff2",
+      "family": "Source Serif 4",
+      "bytes": 429100,
+      "sha256": "940a76eda1388de39d38c8e7a79bf6ea058a387faee0a9f33c8d25c6ba05e1be",
+      "gitBlobSha1": "cca344bfa7707992bf39271ee999e385c3727de2",
+      "repository": "https://github.com/adobe-fonts/source-serif",
+      "commit": "80d3f8894c09c937bebfa9011247d2e1c79fd6f4",
+      "sourcePath": "WOFF2/VAR/SourceSerif4Variable-Roman.ttf.woff2",
+      "sourceUrl": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/WOFF2/VAR/SourceSerif4Variable-Roman.ttf.woff2",
+      "license": "SIL OFL 1.1",
+      "gitBlobVerified": true
+    },
+    {
+      "file": "SourceHanSansCN-VF.ttf.woff2",
+      "family": "Source Han Sans CN",
+      "bytes": 7711988,
+      "sha256": "f971e3bff46f76b49e1d5510556c2297c618ec4b491a295a4e741cdd38257799",
+      "gitBlobSha1": "052b1aa5f1479c4aadbf40a6244aaffe5ba4c7c3",
+      "repository": "https://github.com/adobe-fonts/source-han-sans",
+      "commit": "a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2",
+      "sourcePath": "Variable/WOFF2/TTF/Subset/SourceHanSansCN-VF.ttf.woff2",
+      "sourceUrl": "https://raw.githubusercontent.com/adobe-fonts/source-han-sans/a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2/Variable/WOFF2/TTF/Subset/SourceHanSansCN-VF.ttf.woff2",
+      "license": "SIL OFL 1.1",
+      "gitBlobVerified": true
+    },
+    {
+      "file": "LICENSE-source-sans.md",
+      "family": "license",
+      "bytes": 4486,
+      "sha256": "56af9b9c6715597e458284a474dc118a50a4150e9d547c70f7b4a33c3e6a9328",
+      "gitBlobSha1": "22c601b82f29fc6bb801445098c9f23ffdca4f94",
+      "repository": "https://github.com/adobe-fonts/source-sans",
+      "commit": "87b37a2daaed80fcb8e8ccb0085c4d72ddade12e",
+      "sourcePath": "LICENSE.md",
+      "sourceUrl": "https://raw.githubusercontent.com/adobe-fonts/source-sans/87b37a2daaed80fcb8e8ccb0085c4d72ddade12e/LICENSE.md",
+      "license": "SIL OFL 1.1",
+      "gitBlobVerified": true
+    },
+    {
+      "file": "LICENSE-source-serif.md",
+      "family": "license",
+      "bytes": 4491,
+      "sha256": "c21d7293d87b6d7ab1d0229a2f55b77f33a7613a6a4e66f6693d68d7d8d09464",
+      "gitBlobSha1": "5871e1f3d1b3362453b3a1f6c493fbefdbd3dcf3",
+      "repository": "https://github.com/adobe-fonts/source-serif",
+      "commit": "80d3f8894c09c937bebfa9011247d2e1c79fd6f4",
+      "sourcePath": "LICENSE.md",
+      "sourceUrl": "https://raw.githubusercontent.com/adobe-fonts/source-serif/80d3f8894c09c937bebfa9011247d2e1c79fd6f4/LICENSE.md",
+      "license": "SIL OFL 1.1",
+      "gitBlobVerified": true
+    },
+    {
+      "file": "LICENSE-source-han-sans.txt",
+      "family": "license",
+      "bytes": 4463,
+      "sha256": "fcac737e761ec63dbfbdce11030a1780161920d80315edba9c8beff1c2bac5a2",
+      "gitBlobSha1": "3ff0ccaba06857bf292ade9a50f16a0f02b3b8d4",
+      "repository": "https://github.com/adobe-fonts/source-han-sans",
+      "commit": "a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2",
+      "sourcePath": "LICENSE.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/adobe-fonts/source-han-sans/a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2/LICENSE.txt",
+      "license": "SIL OFL 1.1",
+      "gitBlobVerified": true
+    }
+  ],
+  "originalFilesUnmodified": true,
+  "totalFontBytes": 8311276,
+  "systemFontInstallation": false,
+  "projectIntegrationComplete": false
+}

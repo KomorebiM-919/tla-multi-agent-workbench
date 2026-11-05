@@ -5,7 +5,7 @@ import TeamDynamics from './components/TeamDynamics.jsx'
 import TeamBoard from './components/TeamBoard.jsx'
 import WorkflowTemplate from './components/WorkflowTemplate.jsx'
 import RoleDetail from './components/RoleDetail.jsx'
-import { ROLES, TEAM_TEMPLATE_STATE } from './data/team.js'
+import { ROLES } from './data/team.js'
 import {
   MAX_DESCRIPTION_LENGTH,
   MAX_NAME_LENGTH,
@@ -24,6 +24,7 @@ import { createWorkspaceSaver } from './lib/workspace-saver.js'
 import { createRecoveryDrafts } from './lib/recovery-drafts.js'
 import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
 import { attemptPageChange } from './lib/page-navigation.js'
+import { isRoleDetailVisible, nextDynamicsMode, nextDynamicsOnToggle } from './lib/layout-state.js'
 
 const LIMITS = Object.freeze({
   name: MAX_NAME_LENGTH,
@@ -416,11 +417,13 @@ export default function App() {
   )
 
   const toggleDynamics = useCallback(() => {
-    setDynamics((current) => (current === 'hidden' ? 'sidebar' : 'hidden'))
-  }, [])
+    // 打开 docked 会暂时取代角色详情，因此先走同一离开保护；收起不需要检查。
+    const editable = dynamics === 'hidden' ? teamControllerRef.current.mayLeave() : true
+    setDynamics(nextDynamicsOnToggle(dynamics, editable))
+  }, [dynamics])
 
   const toggleDynamicsMode = useCallback(() => {
-    setDynamics((current) => (current === 'sidebar' ? 'floating' : 'sidebar'))
+    setDynamics((current) => nextDynamicsMode(current))
   }, [])
 
   useEffect(() => {
@@ -647,11 +650,15 @@ export default function App() {
   const canCancelActive = Boolean(
     activeProject && !savedIds.has(activeProject.id) && cancelBusyId !== activeProject.id,
   )
+  // 角色详情只属于团队页；对话/流程页释放右侧列。动态侧栏复用同一列，不额外开第四栏。
+  const dockedDynamics = dynamics === 'docked'
+  const showRoleDetail = isRoleDetailVisible({ page, roleId, dynamics })
+  const hasAux = dockedDynamics || showRoleDetail
 
   return (
     <>
       <div
-        className={role ? 'shell' : 'shell shell-no-detail'}
+        className={hasAux ? 'shell' : 'shell shell-no-aux'}
         inert={closeIssue ? true : undefined}
         aria-hidden={closeIssue ? 'true' : undefined}
       >
@@ -664,32 +671,27 @@ export default function App() {
         statusById={statusById}
         backupById={backupStates}
         appInfo={appInfo}
+        pages={PAGES}
+        page={page}
+        onChangePage={changePage}
       />
 
       <main className="board" aria-labelledby="board-title" tabIndex={-1}>
         <header className="board-head">
           <div className="board-head-text">
+            <p className="board-eyebrow">{activeProject ? '当前项目' : '本地工作区'}</p>
             <h1 id="board-title">
               {activeProject?.name.trim() || (activeProject ? '未命名项目' : '还没有项目')}
             </h1>
             <p className="board-sub">
-              本地项目与任务草稿只保存在本机，所有角色均未接入模型。
+              {page === 'team'
+                ? '团队角色只作为本地配置与只读组织模板，不产生调度或运行记录。'
+                : page === 'workflow'
+                  ? '阶段顺序模板整体未运行；没有真实执行记录、耗时或费用。'
+                  : '任务草稿只保存在本机；当前版本未接入执行，也不会生成回复。'}
             </p>
           </div>
           <div className="board-head-tools">
-            <nav className="board-tabs" aria-label="工作区页面">
-              {PAGES.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={page === item.id ? 'board-tab is-active' : 'board-tab'}
-                  aria-current={page === item.id ? 'page' : undefined}
-                  onClick={() => changePage(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
             <button
               type="button"
               className={dynamics === 'hidden' ? 'ghost dynamics-toggle' : 'ghost dynamics-toggle is-open'}
@@ -697,22 +699,11 @@ export default function App() {
               onClick={toggleDynamics}
               ref={dynamicsButtonRef}
             >
-              团队动态
+              团队动态 <span aria-hidden="true">{dynamics === 'hidden' ? '↗' : '×'}</span>
             </button>
-            <span className="badge badge-template">
-              {TEAM_TEMPLATE_STATE.label} / 手动设置 · {TEAM_TEMPLATE_STATE.detail}
-            </span>
+            <span className="badge badge-template">未接入执行</span>
           </div>
         </header>
-
-        <section className="notice" aria-label="当前状态说明">
-          <strong>状态说明</strong>
-          <p>
-            点“保存草稿”才会把当前项目写进本机 .local/tla-desktop/workspace.json；编辑过程中还会自动备份到
-            recovery.json，重开窗口时可以恢复。两者都不入库、不联网；备份不能保证断电或强制退出时零丢失，
-            正式保存仍以成功写入为准。当前版本不连接任何模型。
-          </p>
-        </section>
 
         {recoveryError && (
           <section className="notice notice-warn" role="alert">
@@ -846,14 +837,18 @@ export default function App() {
         <footer className="board-foot">
           <span>
             {page === 'team'
-              ? '点击任意角色卡，在右侧查看详情。'
-              : '对话页只编辑本机任务草稿，不发送、不生成回复。'}
+              ? dockedDynamics
+                ? '团队动态暂用右侧辅助区；收起后回到角色详情。'
+                : '点击任意角色卡，在右侧查看详情。'
+              : page === 'workflow'
+                ? '阶段卡片只展开说明，不代表任何执行。'
+                : '对话页只编辑本机任务草稿，不发送、不生成回复。'}
           </span>
           <span>初始模板来自 desktop/src/data/team.js；角色设置仅影响当前项目，不包含真实运行记录。</span>
         </footer>
       </main>
 
-      {role && (
+      {showRoleDetail && (
         <RoleDetail
           role={role}
           onClear={() => selectRole(null)}
@@ -868,9 +863,19 @@ export default function App() {
         />
       )}
 
-      {dynamics !== 'hidden' && (
+      {dockedDynamics && (
         <TeamDynamics
-          mode={dynamics}
+          mode="docked"
+          roles={visibleTeam}
+          onCollapse={() => setDynamics('hidden')}
+          onToggleMode={toggleDynamicsMode}
+          panelRef={dynamicsPanelRef}
+        />
+      )}
+
+      {dynamics === 'floating' && (
+        <TeamDynamics
+          mode="floating"
           roles={visibleTeam}
           onCollapse={() => setDynamics('hidden')}
           onToggleMode={toggleDynamicsMode}
@@ -882,7 +887,7 @@ export default function App() {
       {closeIssue && (
         <div className="modal-backdrop" role="presentation">
           <section
-            className="modal"
+            className="modal close-modal"
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="close-issue-title"
@@ -890,21 +895,40 @@ export default function App() {
             ref={closeDialogRef}
             onKeyDown={handleDialogKeyDown}
           >
-            <h2 id="close-issue-title">
-              {closeIssue.roleIssue ? '角色设置尚未处理' : closeIssue.timedOut ? '关闭前备份超时' : '恢复稿没有写完'}
-            </h2>
-            <p id="close-issue-detail">
+            <div className="modal-head">
+              <h2 id="close-issue-title">
+                {closeIssue.roleIssue
+                  ? '先处理角色设置'
+                  : closeIssue.timedOut
+                    ? '关闭请求已超时'
+                    : '备份没有完成'}
+              </h2>
+              <button
+                type="button"
+                className="modal-close"
+                aria-label="返回继续编辑"
+                onClick={() => setCloseIssue(null)}
+              >
+                ×
+              </button>
+            </div>
+            <p id="close-issue-detail" className="modal-lead">
               {closeIssue.roleIssue
-                ? '请先保存角色设置或取消编辑，再关闭窗口。角色表单不会写入项目恢复稿。'
+                ? '角色设置还没有保存。返回后可以保存，或取消编辑，再关闭窗口。'
                 : closeIssue.timedOut
-                ? '主进程等待恢复稿备份超过 2 秒，这次关闭请求已经作废；之后才到的确认不会再关闭窗口。'
-                : '关闭前需要把最新编辑备份到 recovery.json，但这次没有成功：'}
+                  ? '备份超过 2 秒仍未完成，这次关闭请求已经作废；迟到的确认不会再关闭窗口。'
+                  : '关闭前需要把最新编辑写进 recovery.json，这次没有成功。'}
             </p>
-            <p className="load-error-code">{closeIssue.message}</p>
-            <p>
+            {!closeIssue.roleIssue && closeIssue.message && (
+              <details className="modal-diagnostics">
+                <summary>查看备份诊断</summary>
+                <p className="load-error-code">{closeIssue.message}</p>
+              </details>
+            )}
+            <p className="modal-warning">
               {closeIssue.roleIssue
-                ? '仍然关闭会放弃未保存的角色改动，也可能丢失尚未备份的项目草稿；返回后可以继续编辑或重试保存。'
-                : '仍然关闭会丢失尚未备份的编辑；返回后可以继续编辑或重试保存。'}
+                ? '仍然关闭会放弃未保存的角色改动，也可能丢失尚未备份的项目草稿。'
+                : '仍然关闭会丢失尚未备份的编辑。'}
             </p>
             <div className="modal-actions">
               <button
@@ -925,6 +949,7 @@ export default function App() {
                 仍然关闭
               </button>
             </div>
+            <p className="modal-hint">Esc 或 × 只返回编辑，不会关闭窗口。</p>
           </section>
         </div>
       )}
