@@ -46,7 +46,7 @@ export default function ProjectNav({
                   <span className="nav-item-name">{project.name.trim() || '未命名项目'}</span>
                   <span className="nav-item-meta">
                     <span className={`chip chip-${status.tone}`}>{status.label}</span>
-                    {status.tone === 'dirty' && <span className="nav-item-note">仅本次会话</span>}
+                    {status.tone === 'dirty' && <span className="nav-item-note">尚未写入正式文件</span>}
                     {backupText && (
                       <span className={`backup backup-${backup.kind}`} title="恢复稿备份状态">
                         {backupText}
@@ -71,7 +71,7 @@ export default function ProjectNav({
       </nav>
 
       <p className="nav-note">
-        项目与任务草稿保存在本机工作区文件，未连接仓库或模型；未保存的修改只在本次会话里保留。
+        正式保存写入本机工作区文件，编辑中的内容会自动备份到恢复稿。未连接仓库或模型；备份不保证断电或强制退出时零丢失。
       </p>
 
       <div className="nav-foot">

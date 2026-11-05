@@ -70,6 +70,52 @@ export default function App() {
   const [savingProjectId, setSavingProjectId] = useState(null)
   const savingProjectIdRef = useRef(null)
   const closeRequestIdRef = useRef(0)
+  const closeDialogRef = useRef(null)
+  const closeSafeActionRef = useRef(null)
+  const closePreviousFocusRef = useRef(null)
+  const closeDialogOpen = closeIssue !== null
+
+  useEffect(() => {
+    if (!closeDialogOpen) return undefined
+    const previous = document.activeElement
+    closePreviousFocusRef.current = previous instanceof HTMLElement ? previous : null
+    // 关闭被拦下时把焦点放到安全选项，避免用户一路 Tab 直接落到“仍然关闭”。
+    const frame = requestAnimationFrame(() => closeSafeActionRef.current?.focus())
+    return () => {
+      cancelAnimationFrame(frame)
+      const target = closePreviousFocusRef.current
+      closePreviousFocusRef.current = null
+      if (target?.isConnected) target.focus()
+      else document.querySelector('.board')?.focus()
+    }
+  }, [closeDialogOpen])
+
+  // Escape 只收起提示回到编辑；强制关闭只能通过“仍然关闭”按钮显式触发。
+  const handleDialogKeyDown = useCallback((event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setCloseIssue(null)
+      return
+    }
+    if (event.key !== 'Tab') return
+    const dialog = closeDialogRef.current
+    if (!dialog) return
+    const focusable = [
+      ...dialog.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }, [])
 
   // 所有会话修改都走这里，确保“防抖备份拿到的是最新文本”，而不是某一次渲染的旧闭包。
   const applySession = useCallback((updater) => {
@@ -524,7 +570,12 @@ export default function App() {
   )
 
   return (
-    <div className="shell">
+    <>
+      <div
+        className="shell"
+        inert={closeIssue ? true : undefined}
+        aria-hidden={closeIssue ? 'true' : undefined}
+      >
       <ProjectNav
         projects={session.projects}
         activeId={session.activeProjectId}
@@ -536,7 +587,7 @@ export default function App() {
         appInfo={appInfo}
       />
 
-      <main className="board" aria-labelledby="board-title">
+      <main className="board" aria-labelledby="board-title" tabIndex={-1}>
         <header className="board-head">
           <div className="board-head-text">
             <h1 id="board-title">
@@ -554,9 +605,9 @@ export default function App() {
         <section className="notice" aria-label="当前状态说明">
           <strong>状态说明</strong>
           <p>
-            项目与任务草稿保存在本机工作区的 .local/tla-desktop/workspace.json，编辑中的内容会另外备份到
-            recovery.json；两者都不入库、不联网。正式保存仍需点“保存草稿”，未保存的修改只在本次会话里保留。
-            当前版本不连接任何模型。
+            点“保存草稿”才会把当前项目写进本机 .local/tla-desktop/workspace.json；编辑过程中还会自动备份到
+            recovery.json，重开窗口时可以恢复。两者都不入库、不联网；备份不能保证断电或强制退出时零丢失，
+            正式保存仍以成功写入为准。当前版本不连接任何模型。
           </p>
         </section>
 
@@ -656,8 +707,8 @@ export default function App() {
           <section className="empty-state" aria-label="没有项目">
             <h2>还没有项目</h2>
             <p>
-              取消新建后可以停在这里。新建的项目只存在本次会话，点“保存草稿”才会写进正式文件；
-              不会自动创建替代项目，也不会改动磁盘上的任何内容。
+              取消新建后可以停在这里。新建的项目先留在本次会话，并自动备份到恢复稿；
+              点“保存草稿”才会写进正式文件。不会自动创建替代项目，也不会改动磁盘上的其他内容。
             </p>
             <button type="button" className="primary" onClick={createProject}>
               新建项目
@@ -674,14 +725,23 @@ export default function App() {
       </main>
 
       <RoleDetail role={role} onClear={() => setRoleId(null)} />
+      </div>
 
       {closeIssue && (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal" role="alertdialog" aria-modal="true" aria-labelledby="close-issue-title">
+          <section
+            className="modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="close-issue-title"
+            aria-describedby="close-issue-detail"
+            ref={closeDialogRef}
+            onKeyDown={handleDialogKeyDown}
+          >
             <h2 id="close-issue-title">
               {closeIssue.timedOut ? '关闭前备份超时' : '恢复稿没有写完'}
             </h2>
-            <p>
+            <p id="close-issue-detail">
               {closeIssue.timedOut
                 ? '主进程等待恢复稿备份超过 2 秒，这次关闭请求已经作废；之后才到的确认不会再关闭窗口。'
                 : '关闭前需要把最新编辑备份到 recovery.json，但这次没有成功：'}
@@ -689,7 +749,12 @@ export default function App() {
             <p className="load-error-code">{closeIssue.message}</p>
             <p>仍然关闭会丢失尚未备份的编辑；返回后可以继续编辑或重试保存。</p>
             <div className="modal-actions">
-              <button type="button" className="primary" onClick={() => setCloseIssue(null)}>
+              <button
+                type="button"
+                className="primary"
+                ref={closeSafeActionRef}
+                onClick={() => setCloseIssue(null)}
+              >
                 返回继续编辑
               </button>
               <button
@@ -705,6 +770,6 @@ export default function App() {
           </section>
         </div>
       )}
-    </div>
+    </>
   )
 }
