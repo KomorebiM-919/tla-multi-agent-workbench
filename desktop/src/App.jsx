@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProjectNav from './components/ProjectNav.jsx'
 import ProjectEditor from './components/ProjectEditor.jsx'
 import TeamBoard from './components/TeamBoard.jsx'
+import WorkflowTemplate from './components/WorkflowTemplate.jsx'
 import RoleDetail from './components/RoleDetail.jsx'
 import { ROLES, TEAM_TEMPLATE_STATE } from './data/team.js'
 import {
@@ -753,6 +754,7 @@ export default function App() {
         {teamState?.status === 'error' && <p className="save-error" role="alert">角色设置读取失败：{teamState.error.message}。目前仅显示初始模板参考，已停止角色写入；项目草稿仍可使用。</p>}
         {teamState?.notice && <p className="role-settings-hint" role="status">{teamState.notice}</p>}
         <TeamBoard roles={visibleTeam} activeRoleId={roleId} onSelect={selectRole} />
+        <WorkflowTemplate />
 
         <footer className="board-foot">
           <span>点击任意角色卡，在右侧查看详情。</span>
