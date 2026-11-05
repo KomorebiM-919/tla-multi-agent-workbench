@@ -23,6 +23,7 @@ import {
 import { createWorkspaceSaver } from './lib/workspace-saver.js'
 import { createRecoveryDrafts } from './lib/recovery-drafts.js'
 import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
+import { attemptPageChange } from './lib/page-navigation.js'
 
 const LIMITS = Object.freeze({
   name: MAX_NAME_LENGTH,
@@ -404,10 +405,12 @@ export default function App() {
 
   const changePage = useCallback(
     (nextPage) => {
-      if (nextPage === page) return
-      // 离开团队页前复用角色未保存/保存中保护；被拦下时留在原页，表单仍可见。
-      if (page === 'team' && !teamControllerRef.current.mayLeave()) return
-      setPage(nextPage)
+      const result = attemptPageChange({
+        currentPage: page,
+        nextPage,
+        teamController: teamControllerRef.current,
+      })
+      if (result.changed) setPage(nextPage)
     },
     [page],
   )

@@ -1309,7 +1309,8 @@ button {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  /* 高于团队动态侧栏/浮窗（z-index: 30），关闭确认的文字与按钮始终可见可达。 */
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: center;
