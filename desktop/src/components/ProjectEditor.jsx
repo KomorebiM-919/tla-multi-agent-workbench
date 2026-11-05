@@ -15,6 +15,7 @@ function backupLabel(backupState) {
 }
 
 export default function ProjectEditor({
+  draftMode = 'full',
   project,
   fieldErrors,
   limits,
@@ -34,6 +35,7 @@ export default function ProjectEditor({
 }) {
   const status = describeProjectStatus({ dirty, saveState })
   const saving = saveState?.kind === 'saving'
+  const showDraft = draftMode !== 'meta'
   const invalid = Object.keys(fieldErrors).length > 0
   const saveDisabled = saving || blockedByOtherSave || cancelBusy || invalid || !dirty
   const statusText =
@@ -85,24 +87,28 @@ export default function ProjectEditor({
       </label>
 
       <div className="draft">
-        <div className="draft-head">
-          <h3>任务草稿</h3>
-          <span className="field-meta">
-            <span>
-              {project.taskDraft.length} / {limits.taskDraft}
-            </span>
-          </span>
-        </div>
-        <textarea
-          className={fieldErrors.taskDraft ? 'draft-input is-invalid' : 'draft-input'}
-          rows={9}
-          value={project.taskDraft}
-          aria-label="任务草稿"
-          aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
-          placeholder="写下这个项目下一步要做什么。草稿只保存在本机，不会发送给任何模型。"
-          onChange={(event) => onChange('taskDraft', event.target.value)}
-        />
-        {fieldErrors.taskDraft && <p className="field-error">{fieldErrors.taskDraft}</p>}
+        {showDraft && (
+          <>
+            <div className="draft-head">
+              <h3>任务草稿</h3>
+              <span className="field-meta">
+                <span>
+                  {project.taskDraft.length} / {limits.taskDraft}
+                </span>
+              </span>
+            </div>
+            <textarea
+              className={fieldErrors.taskDraft ? 'draft-input is-invalid' : 'draft-input'}
+              rows={9}
+              value={project.taskDraft}
+              aria-label="任务草稿"
+              aria-invalid={fieldErrors.taskDraft ? 'true' : undefined}
+              placeholder="写下这个项目下一步要做什么。草稿只保存在本机，不会发送给任何模型。"
+              onChange={(event) => onChange('taskDraft', event.target.value)}
+            />
+            {fieldErrors.taskDraft && <p className="field-error">{fieldErrors.taskDraft}</p>}
+          </>
+        )}
 
         <div className="draft-actions">
           <button

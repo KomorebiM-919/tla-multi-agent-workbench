@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProjectNav from './components/ProjectNav.jsx'
-import ProjectEditor from './components/ProjectEditor.jsx'
+import ChatWorkspace from './components/ChatWorkspace.jsx'
+import TeamDynamics from './components/TeamDynamics.jsx'
 import TeamBoard from './components/TeamBoard.jsx'
 import WorkflowTemplate from './components/WorkflowTemplate.jsx'
 import RoleDetail from './components/RoleDetail.jsx'
@@ -28,6 +29,12 @@ const LIMITS = Object.freeze({
   description: MAX_DESCRIPTION_LENGTH,
   taskDraft: MAX_TASK_DRAFT_LENGTH,
 })
+
+const PAGES = Object.freeze([
+  { id: 'chat', label: '对话' },
+  { id: 'team', label: '团队' },
+  { id: 'workflow', label: '流程' },
+])
 
 const BRIDGE_UNAVAILABLE = Object.freeze({
   code: 'BRIDGE_UNAVAILABLE',
@@ -68,6 +75,11 @@ export default function App() {
   const [cancelError, setCancelError] = useState(null)
   const [closeIssue, setCloseIssue] = useState(null)
   const [roleId, setRoleId] = useState(null)
+  const [page, setPage] = useState('chat')
+  const [dynamics, setDynamics] = useState('hidden')
+  const dynamicsButtonRef = useRef(null)
+  const dynamicsPanelRef = useRef(null)
+  const dynamicsWasOpenRef = useRef(false)
   const [appInfo, setAppInfo] = useState(null)
   const [savingProjectId, setSavingProjectId] = useState(null)
   const savingProjectIdRef = useRef(null)
@@ -390,6 +402,37 @@ export default function App() {
     setRoleId(nextRoleId)
   }, [])
 
+  const changePage = useCallback(
+    (nextPage) => {
+      if (nextPage === page) return
+      // 离开团队页前复用角色未保存/保存中保护；被拦下时留在原页，表单仍可见。
+      if (page === 'team' && !teamControllerRef.current.mayLeave()) return
+      setPage(nextPage)
+    },
+    [page],
+  )
+
+  const toggleDynamics = useCallback(() => {
+    setDynamics((current) => (current === 'hidden' ? 'sidebar' : 'hidden'))
+  }, [])
+
+  const toggleDynamicsMode = useCallback(() => {
+    setDynamics((current) => (current === 'sidebar' ? 'floating' : 'sidebar'))
+  }, [])
+
+  useEffect(() => {
+    if (dynamics !== 'hidden') {
+      dynamicsWasOpenRef.current = true
+      const frame = requestAnimationFrame(() => dynamicsPanelRef.current?.focus())
+      return () => cancelAnimationFrame(frame)
+    }
+    if (dynamicsWasOpenRef.current) {
+      dynamicsWasOpenRef.current = false
+      dynamicsButtonRef.current?.focus()
+    }
+    return undefined
+  }, [dynamics])
+
   const recoveryRows = useMemo(() => {
     if (!session) return []
     // 恢复候选不要求正式文件里已有这个项目：新建但从未保存的项目同样可能留下恢复稿。
@@ -605,7 +648,7 @@ export default function App() {
   return (
     <>
       <div
-        className="shell"
+        className={role ? 'shell' : 'shell shell-no-detail'}
         inert={closeIssue ? true : undefined}
         aria-hidden={closeIssue ? 'true' : undefined}
       >
@@ -630,9 +673,33 @@ export default function App() {
               本地项目与任务草稿只保存在本机，所有角色均未接入模型。
             </p>
           </div>
-          <span className="badge badge-template">
-            {TEAM_TEMPLATE_STATE.label} / 手动设置 · {TEAM_TEMPLATE_STATE.detail}
-          </span>
+          <div className="board-head-tools">
+            <nav className="board-tabs" aria-label="工作区页面">
+              {PAGES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={page === item.id ? 'board-tab is-active' : 'board-tab'}
+                  aria-current={page === item.id ? 'page' : undefined}
+                  onClick={() => changePage(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <button
+              type="button"
+              className={dynamics === 'hidden' ? 'ghost dynamics-toggle' : 'ghost dynamics-toggle is-open'}
+              aria-expanded={dynamics !== 'hidden'}
+              onClick={toggleDynamics}
+              ref={dynamicsButtonRef}
+            >
+              团队动态
+            </button>
+            <span className="badge badge-template">
+              {TEAM_TEMPLATE_STATE.label} / 手动设置 · {TEAM_TEMPLATE_STATE.detail}
+            </span>
+          </div>
         </header>
 
         <section className="notice" aria-label="当前状态说明">
@@ -714,66 +781,99 @@ export default function App() {
           </section>
         )}
 
-        {activeProject ? (
-          <ProjectEditor
-            project={activeProject}
-            fieldErrors={fieldErrors}
-            limits={LIMITS}
-            dirty={dirtyIds.has(activeProject.id)}
-            saveState={saveStates[activeProject.id]}
-            backupState={backupStates[activeProject.id]}
-            blockedByOtherSave={savingProjectId !== null && savingProjectId !== activeProject.id}
-            canCancel={canCancelActive}
-            cancelBusy={cancelBusyId === activeProject.id}
-            cancelConfirm={cancelConfirmId === activeProject.id}
-            cancelError={cancelConfirmId === activeProject.id ? cancelError : null}
-            onChange={updateActiveProject}
-            onSave={saveActiveProject}
-            onCancel={() => requestCancel(activeProject)}
-            onCancelConfirm={() => void performCancel(activeProject.id)}
-            onCancelDismiss={() => {
-              setCancelConfirmId(null)
-              setCancelError(null)
-            }}
-          />
-        ) : (
-          <section className="empty-state" aria-label="没有项目">
-            <h2>还没有项目</h2>
-            <p>
-              取消新建后可以停在这里。新建的项目先留在本次会话，并自动备份到恢复稿；
-              点“保存草稿”才会写进正式文件。不会自动创建替代项目，也不会改动磁盘上的其他内容。
-            </p>
-            <button type="button" className="primary" onClick={createProject}>
-              新建项目
-            </button>
-          </section>
+        {page === 'chat' && (
+          activeProject ? (
+            <ChatWorkspace
+              project={activeProject}
+              fieldErrors={fieldErrors}
+              limits={LIMITS}
+              dirty={dirtyIds.has(activeProject.id)}
+              saveState={saveStates[activeProject.id]}
+              backupState={backupStates[activeProject.id]}
+              blockedByOtherSave={savingProjectId !== null && savingProjectId !== activeProject.id}
+              canCancel={canCancelActive}
+              cancelBusy={cancelBusyId === activeProject.id}
+              cancelConfirm={cancelConfirmId === activeProject.id}
+              cancelError={cancelConfirmId === activeProject.id ? cancelError : null}
+              onChange={updateActiveProject}
+              onSave={saveActiveProject}
+              onCancel={() => requestCancel(activeProject)}
+              onCancelConfirm={() => void performCancel(activeProject.id)}
+              onCancelDismiss={() => {
+                setCancelConfirmId(null)
+                setCancelError(null)
+              }}
+            />
+          ) : (
+            <section className="empty-state" aria-label="没有项目">
+              <h2>还没有项目</h2>
+              <p>
+                取消新建后可以停在这里。新建的项目先留在本次会话，并自动备份到恢复稿；
+                点“保存任务草稿”才会写进正式文件。不会自动创建替代项目，也不会改动磁盘上的其他内容。
+              </p>
+              <button type="button" className="primary" onClick={createProject}>
+                新建项目
+              </button>
+            </section>
+          )
         )}
 
-        {teamState?.status === 'unsaved' && <p className="role-settings-hint">先保存当前项目信息，即可编辑本项目的角色设置。</p>}
-        {teamState?.status === 'loading' && <p className="role-settings-hint" role="status">正在读取本项目角色设置…</p>}
-        {teamState?.status === 'error' && <p className="save-error" role="alert">角色设置读取失败：{teamState.error.message}。目前仅显示初始模板参考，已停止角色写入；项目草稿仍可使用。</p>}
-        {teamState?.notice && <p className="role-settings-hint" role="status">{teamState.notice}</p>}
-        <TeamBoard roles={visibleTeam} activeRoleId={roleId} onSelect={selectRole} />
-        <WorkflowTemplate />
+        {page === 'team' && (
+          <>
+            {teamState?.status === 'unsaved' && <p className="role-settings-hint">先保存当前项目信息，即可编辑本项目的角色设置。</p>}
+            {teamState?.status === 'loading' && <p className="role-settings-hint" role="status">正在读取本项目角色设置…</p>}
+            {teamState?.status === 'error' && <p className="save-error" role="alert">角色设置读取失败：{teamState.error.message}。目前仅显示初始模板参考，已停止角色写入；项目草稿仍可使用。</p>}
+            {teamState?.notice && <p className="role-settings-hint" role="status">{teamState.notice}</p>}
+            <p className="page-lead">
+              团队页展示当前项目的角色位、只读组织关系与手动角色设置；这里不产生调度或运行记录。
+            </p>
+            <TeamBoard roles={visibleTeam} activeRoleId={roleId} onSelect={selectRole} />
+          </>
+        )}
+
+        {page === 'workflow' && (
+          <>
+            <p className="page-lead">
+              流程页只展示冻结的阶段顺序模板，整体“未运行”；没有真实执行记录、耗时或费用。
+            </p>
+            <WorkflowTemplate />
+          </>
+        )}
 
         <footer className="board-foot">
-          <span>点击任意角色卡，在右侧查看详情。</span>
+          <span>
+            {page === 'team'
+              ? '点击任意角色卡，在右侧查看详情。'
+              : '对话页只编辑本机任务草稿，不发送、不生成回复。'}
+          </span>
           <span>初始模板来自 desktop/src/data/team.js；角色设置仅影响当前项目，不包含真实运行记录。</span>
         </footer>
       </main>
 
-      <RoleDetail
-        role={role}
-        onClear={() => selectRole(null)}
-        canEdit={teamProjectSaved && teamState?.projectId === teamProjectId && teamState?.status === 'ready'}
-        editor={teamState?.editor}
-        notice={teamState?.editor ? teamState.notice : null}
-        noticeSeq={teamState?.noticeSeq ?? 0}
-        onEdit={() => teamControllerRef.current.edit(roleId)}
-        onFieldChange={(field, value) => teamControllerRef.current.update(field, value)}
-        onSave={() => teamControllerRef.current.save()}
-        onCancel={() => teamControllerRef.current.cancel()}
-      />
+      {role && (
+        <RoleDetail
+          role={role}
+          onClear={() => selectRole(null)}
+          canEdit={teamProjectSaved && teamState?.projectId === teamProjectId && teamState?.status === 'ready'}
+          editor={teamState?.editor}
+          notice={teamState?.editor ? teamState.notice : null}
+          noticeSeq={teamState?.noticeSeq ?? 0}
+          onEdit={() => teamControllerRef.current.edit(roleId)}
+          onFieldChange={(field, value) => teamControllerRef.current.update(field, value)}
+          onSave={() => teamControllerRef.current.save()}
+          onCancel={() => teamControllerRef.current.cancel()}
+        />
+      )}
+
+      {dynamics !== 'hidden' && (
+        <TeamDynamics
+          mode={dynamics}
+          roles={visibleTeam}
+          onCollapse={() => setDynamics('hidden')}
+          onToggleMode={toggleDynamicsMode}
+          panelRef={dynamicsPanelRef}
+        />
+      )}
       </div>
 
       {closeIssue && (
