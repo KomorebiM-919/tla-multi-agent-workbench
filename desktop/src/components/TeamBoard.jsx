@@ -4,7 +4,7 @@ export default function TeamBoard({ roles, activeRoleId, onSelect }) {
   return (
     <section className="team" aria-labelledby="team-title">
       <div className="team-head">
-        <h2 id="team-title">初始团队模板</h2>
+        <h2 id="team-title">项目团队</h2>
         <span className="team-count">{roles.length} 个角色位</span>
       </div>
       <div className="team-grid">

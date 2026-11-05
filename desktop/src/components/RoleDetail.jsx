@@ -1,3 +1,5 @@
+import RoleEditor from './RoleEditor.jsx'
+
 function DetailRow({ label, children }) {
   return (
     <div className="detail-row">
@@ -7,7 +9,7 @@ function DetailRow({ label, children }) {
   )
 }
 
-export default function RoleDetail({ role, onClear }) {
+export default function RoleDetail({ role, onClear, canEdit, editor, onEdit, onFieldChange, onSave, onCancel }) {
   if (!role) {
     return (
       <aside className="detail" aria-label="角色详情">
@@ -36,11 +38,15 @@ export default function RoleDetail({ role, onClear }) {
 
       <div className="detail-badges">
         <span className={isHuman ? 'chip chip-human' : 'chip chip-quiet'}>
-          {isHuman ? '人类角色' : '模板角色'}
+          {isHuman ? '人类角色' : 'AI角色'}
         </span>
         <span className="chip chip-model">{role.model}</span>
       </div>
 
+      {role.modelRef && <p className="role-settings-hint">计划模型：{role.modelRef.provider} / {role.modelRef.model} · 仅标签，未连接</p>}
+      {!isHuman && !editor && <button type="button" className="ghost" disabled={!canEdit} onClick={onEdit}>编辑角色设置</button>}
+      {!isHuman && !canEdit && <p className="role-settings-hint">仅已正式保存且角色设置可读取的项目可编辑。</p>}
+      {editor && editor.draft.roleId === role.id && <RoleEditor editor={editor} onChange={onFieldChange} onSave={onSave} onCancel={onCancel} />}
       <p className="detail-summary">{role.summary}</p>
 
       <dl className="detail-list">
@@ -52,7 +58,7 @@ export default function RoleDetail({ role, onClear }) {
       </dl>
 
       <p className="detail-note">
-        以上内容为初始团队模板中的职责说明，未接入任何模型，也不代表当前有任务在运行。
+        角色名称与职责可按项目设置；输入、输出与边界是初始模板参考，不改变执行权限。所有模型均未连接，不代表有任务在运行。
       </p>
     </aside>
   )

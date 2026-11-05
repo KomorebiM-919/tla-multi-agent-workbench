@@ -1,7 +1,7 @@
 # TLA Desktop（V0.3 首批桌面壳）
 
 独立桌面子工程，不改变仓库根 `package.json`（V0.2 observer 包）与冻结内核。当前交付“能启动、能看、边界诚实”的桌面壳，
-并支持**本机多项目与任务草稿**：项目导航、项目编辑、初始团队模板、角色详情四块内容，**不连接任何模型**。
+并支持**本机多项目、任务草稿和按项目手动角色设置**。模型标签只记录计划分工，**不连接任何模型**。
 
 ## 目录
 
@@ -13,8 +13,9 @@ desktop/
     security.mjs        # 页面地址与 IPC 调用方的信任判定（纯函数，可单测）
     workspace-store.mjs # 工作区文件的校验、读取与原子保存（不依赖 Electron，可真实文件测试）
     recovery-store.mjs  # 恢复稿 recovery.json 的校验、保存、放弃与版本水位（同样可真实文件测试）
+    team-settings-store.mjs # 独立角色设置、目标角色合并与原子写入
     preload.cjs         # 沙箱预加载：只有 tla.getAppInfo / loadWorkspace / saveWorkspace / 恢复稿与关闭握手
-    ipc-channels.mjs    # 主进程使用的 IPC 白名单（八个 handler 通道 + 关闭请求/超时两个事件）
+    ipc-channels.mjs    # 主进程使用的 IPC 白名单（十个 handler 通道 + 关闭请求/超时两个事件）
   scripts/
     build-renderer.mjs  # 渲染层构建（含受限沙箱下的 exec 兼容）
     before-build.cjs    # 告知 electron-builder：依赖树由外部处理
@@ -23,6 +24,8 @@ desktop/
     lib/workspace-editing.js # 会话副本、dirty 判定、状态与字段校验（纯函数）
     lib/workspace-saver.js   # 保存协调：单请求在途、baseline 同步更新、失败释放
     lib/recovery-drafts.js   # 恢复稿协调：防抖、写入顺序、清理与放弃（定时器可注入）
+    lib/team-settings.js     # 主进程与前端共用的纯角色数据契约
+    lib/team-settings-controller.js # 角色表单、请求身份、保存与关闭保护
     components/         # 项目导航、项目编辑、团队卡片、角色详情
     data/team.js        # 初始团队模板（唯一数据源）
     styles.css          # 暖白简洁样式
@@ -220,9 +223,10 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
 - 预加载脚本只暴露冻结的 `window.tla.getAppInfo()`、`loadWorkspace()`、`saveWorkspace(workspace)`，
   以及 `loadRecovery()`、`saveRecovery(snapshot)`、`discardRecovery({ projectId, revision })`、
   `onCloseRequest(callback)`、`onCloseTimeout(callback)`、`confirmClose(result)`、`forceClose()`；
+  另有 `loadTeamSettings(projectId)`、`saveRoleSettings(projectId, setting)`；
   不暴露 `ipcRenderer` 本体、通用 `on` / `send`、任意文件读写或 shell。
-- 主进程只注册八个 handler 通道（`tla:app-info`、`tla:workspace-load`、`tla:workspace-save`、
-  `tla:recovery-load`、`tla:recovery-save`、`tla:recovery-discard`、`tla:close-confirm`、`tla:close-force`），
+- 主进程只注册十个 handler 通道（`tla:app-info`、`tla:workspace-load`、`tla:workspace-save`、
+  `tla:recovery-load`、`tla:recovery-save`、`tla:recovery-discard`、`tla:team-load`、`tla:team-save-role`、`tla:close-confirm`、`tla:close-force`），
   主→渲染事件只有关闭请求 `tla:close-request` 与超时提示 `tla:close-timeout`。每个 handler 都先用
   `electron/security.mjs` 校验：
   调用方必须是主窗口的 `webContents`、主 frame，且页面地址与应用页面（或开发服务器地址）完全相等。
@@ -232,9 +236,33 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
   拒绝所有权限申请（摄像头、麦克风、通知等）。
 - 渲染层带 CSP：`default-src 'self'`，脚本仅允许同源文件。
 
+## 按项目手动角色设置
+
+先保存项目信息，再点AI角色的“编辑角色设置”，可修改名称、定位、职责摘要和详细职责，
+以及计划供应商/模型标签。标签同时留空表示未指定，填一项会报错；所有模型仍是**未连接**，
+没有API Key、接口地址、连接测试、账号扫描或任何模型请求。人类总控制不可改成AI，六个稳定角色位不增删排序。
+输入/输出/边界仍是初始模板参考，不产生执行权限。
+
+- 文件固定为 `<workspace>\.local\tla-desktop\team-settings.json`，独立schemaVersion=1，
+  不改变workspace.json或recovery.json。每个正式项目最多五个AI角色覆盖条目，缺少的角色复用唯一初始模板；
+  缺文件只读默认、不主动建文件。设置按项目隔离，保存仅合并目标角色，其他角色/项目保留。
+- 校验项目确实已正式保存、五个AI roleId白名单、未知字段、重复项与512KiB总上限。
+  名称60、定位20、摘要500、职责2000、供应商80、模型160字符；不截断。
+  坏JSON、未知版本或读取失败不覆盖原文件；项目草稿仍可使用。
+- 同目录唯一临时文件写入、fsync后rename，不先删旧文件；请求串行。加载和保存结果绑定项目/角色身份，
+  角色保存时不允许重复提交或修改表单，失败保留文字并可重试。
+- 角色表单不自动进入项目恢复稿。未保存编辑时先保存或取消，才能切换项目/角色。
+  正常关闭遇到角色脏编辑或保存中，会立即中止本次关闭并显示准确提示；返回保留表单，
+  只有明确点“仍然关闭”才放弃。角色处理完成后继续沿用原项目草稿关闭刷新。
+- 主进程复用 `src/data/team.js` 和纯数据契约 `src/lib/team-settings.js`，打包白名单仅补这两个模块，
+  不包含整个src或新增运行时依赖。本批未重新打包，实际桌面交互仍需用户验收。
+
+本批自动测试107例通过（原88+角色存储/状态及真实IPC隔离联动19），其中Electron使用替身，
+不将此结果称为真实窗口验收。实际角色编辑、切换和关闭提示由用户从正常桌面入口确认。
+
 ## 首批不做的事
 
 聊天、智能分工、API 接入、自动替补、余额/用量展示、真实仓库读取、登录与审批流均未实现；
 项目管理也只做了本机新建、改名、切换与草稿保存——不删除已保存项目（只能取消从未落盘的新建项目）、
-不导入导出、不编辑角色、不绑定模型，也没有自动保存或云端同步。
+不导入导出、不添加/删除/排序角色。角色职责和计划模型可手动记录，但没有真实连接、模型调用或云端同步；正式项目保存仍为手动，恢复稿另外自动备份。
 界面上不出现任何伪造的回复、余额或“运行中”状态。

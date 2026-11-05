@@ -31,7 +31,9 @@
     "files": [
       "electron/**/*",
       "renderer-dist/**/*",
-      "package.json"
+      "package.json",
+      "src/data/team.js",
+      "src/lib/team-settings.js"
     ],
     "win": {
       "target": [

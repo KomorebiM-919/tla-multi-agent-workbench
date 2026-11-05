@@ -3,6 +3,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createWorkspaceStore } from '../electron/workspace-store.mjs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { IPC_CHANNELS, IPC_CHANNEL_LIST } from '../electron/ipc-channels.mjs'
@@ -112,6 +114,8 @@ test('主进程只注册白名单内的通道，且拒绝不受信任的调用�
         ['RECOVERY_DISCARD', recoveryDiscard, { projectId: 'project-a', revision: 2 }],
         ['CLOSE_CONFIRM', closeConfirm, { requestId: 1, ok: true }],
         ['CLOSE_FORCE', closeForce, undefined],
+        ['TEAM_LOAD', getIpcHandler(IPC_CHANNELS.TEAM_LOAD), 'default-project'],
+        ['TEAM_SAVE_ROLE', getIpcHandler(IPC_CHANNELS.TEAM_SAVE_ROLE), 'default-project'],
       ]) {
         await assert.rejects(
           async () => handler(event, args),
@@ -196,5 +200,60 @@ test('主进程只注册白名单内的通道，且拒绝不受信任的调用�
   } finally {
     closeAllWindows()
     await removeTempDir(appDataDirectory)
+  }
+})
+
+
+test('团队IPC在隔离应用根真实保存，只写目标角色且保留项目与恢复文件', async () => {
+  const directory = await makeTempDir()
+  try {
+    const desktopRoot = path.join(directory, 'desktop')
+    const files = [
+      'electron/main.mjs', 'electron/diagnostics.mjs', 'electron/security.mjs',
+      'electron/workspace-store.mjs', 'electron/recovery-store.mjs',
+      'electron/team-settings-store.mjs', 'electron/ipc-channels.mjs',
+      'src/data/team.js', 'src/lib/team-settings.js', 'package.json',
+    ]
+    for (const relative of files) {
+      const destination = path.join(desktopRoot, relative)
+      await mkdir(path.dirname(destination), { recursive: true })
+      await copyFile(path.join(here, '..', relative), destination)
+    }
+    const localDirectory = path.join(directory, '.local', 'tla-desktop')
+    const workspaceFile = path.join(localDirectory, 'workspace.json')
+    const recoveryFile = path.join(localDirectory, 'recovery.json')
+    const teamFile = path.join(localDirectory, 'team-settings.json')
+    await createWorkspaceStore({ filePath: workspaceFile }).save({
+      schemaVersion: 1, activeProjectId: 'project-a',
+      projects: [{ id: 'project-a', name: '测试项目', description: '', taskDraft: '项目正文保持' }],
+    })
+    await writeFile(recoveryFile, '{"schemaVersion":1,"projects":[]}')
+    const workspaceBefore = await readFile(workspaceFile)
+    const recoveryBefore = await readFile(recoveryFile)
+    const logDirectory = path.join(directory, 'app-data', 'TLA', 'logs')
+    getState().windows.length = 0
+    configure({ appDataDirectory: path.join(directory, 'app-data'), logsDirectory: logDirectory,
+      lockAcquired: true, loadFails: false, emitReadyToShow: true, emitLoadEvents: true, whenReadyFails: false })
+    await import(pathToFileURL(path.join(desktopRoot, 'electron', 'main.mjs')).href)
+    await waitForLog(path.join(logDirectory, 'main.log'), 'step=window-created')
+    const win = getState().windows[0]
+    const event = trustedEvent(win, { url: pathToFileURL(path.join(desktopRoot, 'renderer-dist', 'index.html')).href })
+    const load = getIpcHandler(IPC_CHANNELS.TEAM_LOAD)
+    const save = getIpcHandler(IPC_CHANNELS.TEAM_SAVE_ROLE)
+    assert.equal((await load(event, 'project-a')).source, 'default')
+    assert.equal(existsSync(teamFile), false)
+    const setting = { roleId: 'deepseek-dev', name: '本项目开发', badge: '实现', summary: '只写目标角色', duty: '依据批准范围', modelRef: { provider: '示例', model: 'planned-model' } }
+    assert.equal((await save(event, 'project-a', setting)).ok, true)
+    assert.deepEqual((await load(event, 'project-a')).settings, [setting])
+    const teamBeforeInvalid = await readFile(teamFile)
+    assert.equal((await save(event, 'project-a', { ...setting, roleId: 'user' })).ok, false)
+    assert.equal((await load(event, 'missing-project')).error.code, 'PROJECT_NOT_SAVED')
+    assert.deepEqual(await readFile(teamFile), teamBeforeInvalid)
+    assert.deepEqual(await readFile(workspaceFile), workspaceBefore)
+    assert.deepEqual(await readFile(recoveryFile), recoveryBefore)
+    await getIpcHandler(IPC_CHANNELS.CLOSE_FORCE)(event)
+  } finally {
+    closeAllWindows()
+    await removeTempDir(directory)
   }
 })

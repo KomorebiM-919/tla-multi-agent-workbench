@@ -20,6 +20,7 @@ import {
 } from './lib/workspace-editing.js'
 import { createWorkspaceSaver } from './lib/workspace-saver.js'
 import { createRecoveryDrafts } from './lib/recovery-drafts.js'
+import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
 
 const LIMITS = Object.freeze({
   name: MAX_NAME_LENGTH,
@@ -74,6 +75,20 @@ export default function App() {
   const closeSafeActionRef = useRef(null)
   const closePreviousFocusRef = useRef(null)
   const closeDialogOpen = closeIssue !== null
+  const [teamState, setTeamState] = useState(null)
+  const teamControllerRef = useRef(null)
+  if (!teamControllerRef.current) {
+    teamControllerRef.current = createTeamSettingsController({
+      load: (projectId) => window.tla?.loadTeamSettings?.(projectId) ?? Promise.resolve({ ok: false, error: BRIDGE_UNAVAILABLE }),
+      save: (projectId, setting) => window.tla?.saveRoleSettings?.(projectId, setting) ?? Promise.resolve({ ok: false, error: BRIDGE_UNAVAILABLE }),
+      onChange: setTeamState,
+    })
+  }
+  const teamProjectId = session?.activeProjectId ?? null
+  const teamProjectSaved = savedIds.has(teamProjectId)
+  useEffect(() => {
+    void teamControllerRef.current.selectProject(teamProjectId, teamProjectSaved)
+  }, [teamProjectId, teamProjectSaved])
 
   useEffect(() => {
     if (!closeDialogOpen) return undefined
@@ -279,8 +294,16 @@ export default function App() {
   const handleCloseRequest = useCallback(async (payload) => {
     const requestId = payload?.requestId ?? 0
     closeRequestIdRef.current = requestId
-    const result = await recoveryRef.current.flush()
     const api = window.tla
+    const roleCloseGuard = () => abortRoleCloseIfNeeded({
+      controller: teamControllerRef.current,
+      requestId,
+      confirmClose: (result) => api?.confirmClose?.(result),
+      onBlocked: (problem) => setCloseIssue({ requestId, roleIssue: true, timedOut: false, message: problem.message, errors: [] }),
+    })
+    if (await roleCloseGuard()) return
+    const result = await recoveryRef.current.flush()
+    if (await roleCloseGuard()) return
     if (result.ok) {
       try {
         await api?.confirmClose?.({ requestId, ok: true })
@@ -358,7 +381,13 @@ export default function App() {
     [activeProject],
   )
 
-  const role = useMemo(() => ROLES.find((item) => item.id === roleId) ?? null, [roleId])
+  const visibleTeam = teamState?.projectId === teamProjectId ? teamState.roles : ROLES
+  const role = visibleTeam.find((item) => item.id === roleId) ?? null
+  const selectRole = useCallback((nextRoleId) => {
+    if (!teamControllerRef.current.mayLeave()) return
+    teamControllerRef.current.cancel()
+    setRoleId(nextRoleId)
+  }, [])
 
   const recoveryRows = useMemo(() => {
     if (!session) return []
@@ -393,6 +422,7 @@ export default function App() {
 
   const selectProject = useCallback(
     (projectId) => {
+      if (!teamControllerRef.current.mayLeave()) return
       applySession((current) => (current ? { ...current, activeProjectId: projectId } : current))
       setRoleId(null)
       setCancelConfirmId(null)
@@ -402,6 +432,7 @@ export default function App() {
   )
 
   const createProject = useCallback(() => {
+    if (!teamControllerRef.current.mayLeave()) return
     const current = sessionRef.current
     if (!current || current.projects.length >= MAX_PROJECTS) return
     const draft = createDraftProject(current.projects)
@@ -428,6 +459,7 @@ export default function App() {
 
   const restoreRecovery = useCallback(
     (entry) => {
+      if (!teamControllerRef.current.mayLeave()) return
       setRecoveryActionError(null)
       const current = sessionRef.current
       if (!current) return
@@ -598,7 +630,7 @@ export default function App() {
             </p>
           </div>
           <span className="badge badge-template">
-            {TEAM_TEMPLATE_STATE.label} · {TEAM_TEMPLATE_STATE.detail}
+            {TEAM_TEMPLATE_STATE.label} / 手动设置 · {TEAM_TEMPLATE_STATE.detail}
           </span>
         </header>
 
@@ -716,15 +748,28 @@ export default function App() {
           </section>
         )}
 
-        <TeamBoard roles={ROLES} activeRoleId={roleId} onSelect={setRoleId} />
+        {teamState?.status === 'unsaved' && <p className="role-settings-hint">先保存当前项目信息，即可编辑本项目的角色设置。</p>}
+        {teamState?.status === 'loading' && <p className="role-settings-hint" role="status">正在读取本项目角色设置…</p>}
+        {teamState?.status === 'error' && <p className="save-error" role="alert">角色设置读取失败：{teamState.error.message}。目前仅显示初始模板参考，已停止角色写入；项目草稿仍可使用。</p>}
+        {teamState?.notice && <p className="role-settings-hint" role="status">{teamState.notice}</p>}
+        <TeamBoard roles={visibleTeam} activeRoleId={roleId} onSelect={selectRole} />
 
         <footer className="board-foot">
           <span>点击任意角色卡，在右侧查看详情。</span>
-          <span>模板数据来自 desktop/src/data/team.js，不包含真实运行记录。</span>
+          <span>初始模板来自 desktop/src/data/team.js；角色设置仅影响当前项目，不包含真实运行记录。</span>
         </footer>
       </main>
 
-      <RoleDetail role={role} onClear={() => setRoleId(null)} />
+      <RoleDetail
+        role={role}
+        onClear={() => selectRole(null)}
+        canEdit={teamProjectSaved && teamState?.projectId === teamProjectId && teamState?.status === 'ready'}
+        editor={teamState?.editor}
+        onEdit={() => teamControllerRef.current.edit(roleId)}
+        onFieldChange={(field, value) => teamControllerRef.current.update(field, value)}
+        onSave={() => teamControllerRef.current.save()}
+        onCancel={() => teamControllerRef.current.cancel()}
+      />
       </div>
 
       {closeIssue && (
@@ -739,10 +784,12 @@ export default function App() {
             onKeyDown={handleDialogKeyDown}
           >
             <h2 id="close-issue-title">
-              {closeIssue.timedOut ? '关闭前备份超时' : '恢复稿没有写完'}
+              {closeIssue.roleIssue ? '角色设置尚未处理' : closeIssue.timedOut ? '关闭前备份超时' : '恢复稿没有写完'}
             </h2>
             <p id="close-issue-detail">
-              {closeIssue.timedOut
+              {closeIssue.roleIssue
+                ? '请先保存角色设置或取消编辑，再关闭窗口。角色表单不会写入项目恢复稿。'
+                : closeIssue.timedOut
                 ? '主进程等待恢复稿备份超过 2 秒，这次关闭请求已经作废；之后才到的确认不会再关闭窗口。'
                 : '关闭前需要把最新编辑备份到 recovery.json，但这次没有成功：'}
             </p>

@@ -8,6 +8,8 @@ export const IPC_CHANNELS = Object.freeze({
   RECOVERY_LOAD: 'tla:recovery-load',
   RECOVERY_SAVE: 'tla:recovery-save',
   RECOVERY_DISCARD: 'tla:recovery-discard',
+  TEAM_LOAD: 'tla:team-load',
+  TEAM_SAVE_ROLE: 'tla:team-save-role',
   CLOSE_CONFIRM: 'tla:close-confirm',
   CLOSE_FORCE: 'tla:close-force',
   // 主进程 → 渲染层的关闭请求与超时提示；不注册 handler，只作为事件通道。

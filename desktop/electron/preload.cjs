@@ -10,6 +10,8 @@ const WORKSPACE_SAVE_CHANNEL = 'tla:workspace-save'
 const RECOVERY_LOAD_CHANNEL = 'tla:recovery-load'
 const RECOVERY_SAVE_CHANNEL = 'tla:recovery-save'
 const RECOVERY_DISCARD_CHANNEL = 'tla:recovery-discard'
+const TEAM_LOAD_CHANNEL = 'tla:team-load'
+const TEAM_SAVE_ROLE_CHANNEL = 'tla:team-save-role'
 const CLOSE_REQUEST_CHANNEL = 'tla:close-request'
 const CLOSE_TIMEOUT_CHANNEL = 'tla:close-timeout'
 const CLOSE_CONFIRM_CHANNEL = 'tla:close-confirm'
@@ -29,6 +31,8 @@ const api = Object.freeze({
   loadRecovery: () => ipcRenderer.invoke(RECOVERY_LOAD_CHANNEL),
   saveRecovery: (snapshot) => ipcRenderer.invoke(RECOVERY_SAVE_CHANNEL, snapshot),
   discardRecovery: (request) => ipcRenderer.invoke(RECOVERY_DISCARD_CHANNEL, request),
+  loadTeamSettings: (projectId) => ipcRenderer.invoke(TEAM_LOAD_CHANNEL, projectId),
+  saveRoleSettings: (projectId, setting) => ipcRenderer.invoke(TEAM_SAVE_ROLE_CHANNEL, projectId, setting),
   // 只订阅关闭请求与超时这两个事件，不暴露通用 on/send。
   onCloseRequest: (callback) => subscribe(CLOSE_REQUEST_CHANNEL, callback),
   onCloseTimeout: (callback) => subscribe(CLOSE_TIMEOUT_CHANNEL, callback),

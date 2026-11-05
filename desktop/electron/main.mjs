@@ -7,6 +7,7 @@ import { createDiagnostics } from './diagnostics.mjs'
 import { isAllowedPage, isTrustedSender } from './security.mjs'
 import { createWorkspaceStore, resolveWorkspaceFilePath } from './workspace-store.mjs'
 import { createRecoveryStore, resolveRecoveryFilePath } from './recovery-store.mjs'
+import { createTeamSettingsStore, resolveTeamSettingsFilePath } from './team-settings-store.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DESKTOP_ROOT = path.resolve(__dirname, '..')
@@ -18,6 +19,10 @@ const workspaceStore = createWorkspaceStore({ filePath: WORKSPACE_FILE })
 // 恢复稿与正式工作区同目录但完全分开：正式保存失败或还没保存时，编辑内容仍能留一份。
 const RECOVERY_FILE = resolveRecoveryFilePath(DESKTOP_ROOT)
 const recoveryStore = createRecoveryStore({ filePath: RECOVERY_FILE })
+const teamSettingsStore = createTeamSettingsStore({
+  filePath: resolveTeamSettingsFilePath(DESKTOP_ROOT),
+  loadWorkspace: () => workspaceStore.load(),
+})
 const APP_URL = pathToFileURL(RENDERER_ENTRY).href
 const DEV_SERVER_URL = (process.env.TLA_DEV_SERVER_URL ?? '').replace(/\/+$/, '')
 const PAGE_URL = DEV_SERVER_URL || APP_URL
@@ -330,6 +335,28 @@ function registerIpc() {
     } catch (error) {
       const info = workspaceErrorInfo(error)
       log('recovery-discard-failed', { projectId: request?.projectId, code: info.code })
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TEAM_LOAD, async (event, projectId) => {
+    assertTrustedSender(event, IPC_CHANNELS.TEAM_LOAD)
+    try {
+      return { ok: true, ...await teamSettingsStore.load(projectId) }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('team-load-failed', { code: info.code })
+      return { ok: false, error: info }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.TEAM_SAVE_ROLE, async (event, projectId, setting) => {
+    assertTrustedSender(event, IPC_CHANNELS.TEAM_SAVE_ROLE)
+    try {
+      return { ok: true, ...await teamSettingsStore.saveRole(projectId, setting) }
+    } catch (error) {
+      const info = workspaceErrorInfo(error)
+      log('team-save-failed', { code: info.code })
       return { ok: false, error: info }
     }
   })
