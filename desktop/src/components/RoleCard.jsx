@@ -19,7 +19,7 @@ export default function RoleCard({ role, active, onSelect }) {
       <span className="role-card-summary">{role.summary}</span>
       <span className="role-card-foot">
         <span className={isHuman ? 'chip chip-human' : 'chip chip-quiet'}>
-          {isHuman ? '人类角色' : '模板'}
+          {isHuman ? '人类角色' : 'AI角色'}
         </span>
         <span className="role-card-model">{role.model}</span>
       </span>

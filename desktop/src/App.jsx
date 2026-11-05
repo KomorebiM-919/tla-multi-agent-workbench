@@ -795,7 +795,11 @@ export default function App() {
                 : '关闭前需要把最新编辑备份到 recovery.json，但这次没有成功：'}
             </p>
             <p className="load-error-code">{closeIssue.message}</p>
-            <p>仍然关闭会丢失尚未备份的编辑；返回后可以继续编辑或重试保存。</p>
+            <p>
+              {closeIssue.roleIssue
+                ? '仍然关闭会放弃未保存的角色改动，也可能丢失尚未备份的项目草稿；返回后可以继续编辑或重试保存。'
+                : '仍然关闭会丢失尚未备份的编辑；返回后可以继续编辑或重试保存。'}
+            </p>
             <div className="modal-actions">
               <button
                 type="button"

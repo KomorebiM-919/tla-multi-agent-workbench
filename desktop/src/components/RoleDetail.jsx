@@ -36,7 +36,7 @@ export default function RoleDetail({ role, onClear, canEdit, editor, notice, onE
         </button>
       </header>
 
-      {notice && <p className="role-local-notice" role="alert">{notice}。请在下方保存角色设置或取消编辑。</p>}
+      {notice && <p className="role-local-notice" role="alert">{notice}</p>}
       <div className="detail-badges">
         <span className={isHuman ? 'chip chip-human' : 'chip chip-quiet'}>
           {isHuman ? '人类角色' : 'AI角色'}

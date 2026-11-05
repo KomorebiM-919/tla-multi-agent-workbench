@@ -112,6 +112,46 @@ test('角色保存失败保留表单并释放在途保护，可重试', async ()
   assert.equal((await team.save()).status, 'saved')
 })
 
+test('保存响应返回其他角色时拒绝应用，保留表单并可重试', async () => {
+  let responseRole = 'mimo-frontend'
+  const team = setup({ save: async (_id, setting) => result(responseRole === setting.roleId ? setting : { ...setting, roleId: responseRole }) })
+  await team.selectProject('project-a', true)
+  const before = structuredClone(team.getState().roles)
+  team.edit('deepseek-dev')
+  team.update('name', '项目A开发')
+  assert.equal((await team.save()).status, 'failed')
+  assert.equal(team.getState().editor.busy, false)
+  assert.equal(team.getState().editor.draft.name, '项目A开发')
+  assert.match(team.getState().editor.error.message, /不一致/)
+  assert.deepEqual(team.getState().roles, before, '异常响应不能改动任何角色')
+  assert.equal(team.closeBlocker().code, 'ROLE_UNSAVED', '在途保护必须释放')
+  responseRole = 'deepseek-dev'
+  assert.equal((await team.save()).status, 'saved')
+  assert.equal(team.getState().roles.find((role) => role.id === 'deepseek-dev').name, '项目A开发')
+})
+
+test('保存响应结构非法时拒绝应用，状态不被污染且可重试', async () => {
+  let malformed = true
+  const team = setup({
+    save: async (_id, setting) => malformed
+      ? { ok: true, setting: { ...setting, extra: '不应存在' }, savedAt: '2026-11-05T04:00:00.000Z' }
+      : result(setting),
+  })
+  await team.selectProject('project-a', true)
+  const before = structuredClone(team.getState().roles)
+  team.edit('mimo-frontend')
+  team.update('badge', '前端接口')
+  assert.equal((await team.save()).status, 'failed')
+  assert.equal(team.getState().editor.busy, false)
+  assert.equal(team.getState().editor.draft.badge, '前端接口')
+  assert.match(team.getState().editor.error.message, /不完整/)
+  assert.deepEqual(team.getState().roles, before, '非法载荷不能改动任何角色')
+  assert.equal(team.closeBlocker().code, 'ROLE_UNSAVED')
+  malformed = false
+  assert.equal((await team.save()).status, 'saved')
+  assert.equal(team.getState().roles.find((role) => role.id === 'mimo-frontend').badge, '前端接口')
+})
+
 test('脏角色关闭提示明确中止，取消编辑后原关闭流程可继续', async () => {
   const team = setup()
   await team.selectProject('project-a', true)

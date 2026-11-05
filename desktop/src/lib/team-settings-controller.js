@@ -1,5 +1,5 @@
 // Small state owner for one visible project's role form; async replies are bound to project/request identity.
-import { mergeTeamRoles, roleToDraft, draftToRoleSetting, isRoleDraftDirty, ROLE_DRAFT_FIELDS } from './team-settings.js'
+import { mergeTeamRoles, roleToDraft, draftToRoleSetting, isRoleDraftDirty, validateRoleSetting, TeamSettingsError, ROLE_DRAFT_FIELDS } from './team-settings.js'
 
 const errorInfo = (error) => ({ code: error?.code ?? 'TEAM_SETTINGS_FAILED', message: error?.message ?? '角色设置操作失败' })
 
@@ -19,7 +19,7 @@ export function createTeamSettingsController({ load, save, onChange = () => {} }
   let state = { projectId: null, status: 'unsaved', roles: mergeTeamRoles(), editor: null, error: null, notice: '', savedAt: null }
   function emit(patch) { state = { ...state, ...patch }; onChange(state) }
   function closeBlocker() {
-    if (inFlight) return { code: 'ROLE_SAVE_PENDING', message: '角色设置正在保存，请完成后再关闭窗口' }
+    if (inFlight) return { code: 'ROLE_SAVE_PENDING', message: '角色设置正在保存，请等待保存完成后再关闭窗口' }
     if (state.editor && isRoleDraftDirty(state.editor.draft, state.editor.original)) return { code: 'ROLE_UNSAVED', message: '角色设置尚未保存，请先保存角色设置或取消编辑' }
     return null
   }
@@ -72,8 +72,15 @@ export function createTeamSettingsController({ load, save, onChange = () => {} }
       const result = await save(projectId, setting)
       if (!result?.ok) throw result?.error ?? new Error('角色设置没有保存成功')
       if (state.projectId !== projectId || state.editor?.draft.roleId !== roleId) return { status: 'stale' }
+      let savedSetting
+      try { savedSetting = validateRoleSetting(result.setting) } catch (error) {
+        throw new TeamSettingsError('INVALID_RESPONSE', `保存返回的角色设置不完整：${error?.message ?? '格式不符'}。表单已保留，请重试。`)
+      }
+      if (savedSetting.roleId !== roleId) {
+        throw new TeamSettingsError('ROLE_RESPONSE_MISMATCH', '保存返回的角色与请求不一致，表单已保留，请重试。')
+      }
       // Merge only the saved role; do not replace another role with a form's older baseline.
-      const overrides = state.roles.filter((role) => role.kind === 'agent').map((role) => role.id === roleId ? result.setting : draftToRoleSetting(roleToDraft(role)))
+      const overrides = state.roles.filter((role) => role.kind === 'agent').map((role) => role.id === roleId ? savedSetting : draftToRoleSetting(roleToDraft(role)))
       emit({ roles: mergeTeamRoles(overrides), editor: null, notice: '角色设置已保存；模型仍未连接', savedAt: result.savedAt ?? null })
       return { status: 'saved' }
     } catch (error) {
