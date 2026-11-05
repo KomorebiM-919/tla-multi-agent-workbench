@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | V0.1 | `feat/v0.1-three-agent-mvp`（`b2b48ab`） | 主仓库工作树 `<repo>`（当前检出该分支） | 未合并；归档标签 `archive/v0.1-verbatim` |
 | V0.2 | `feat/v0.2-component-reuse` | `<repo>\..\workspaces\v0.2-component-reuse` | 开发中，**未验收** |
-| V0.3 | `feat/v0.3-desktop-ui`（基线 `release/v1.0-minimal`，`95d4e7d`） | 独立仓库 `<active-workspace>`（旧 C 盘仓库保留，不再开发） | 首批桌面壳 + 本地项目/任务草稿开发中，完整 V0.3 **未验收** |
+| V0.3 | `feat/v0.3-desktop-ui`（基线 `release/v1.0-minimal`，`95d4e7d`） | 独立仓库 `<active-workspace>`（旧 C 盘仓库保留，不再开发） | 首批桌面壳、本地项目/草稿、手动角色设置与只读组织/工作流模板开发中，完整 V0.3 **未验收** |
 
 ### 2.1 V0.3 的工作区例外与迁移（2026-11-04 人工批准，一次性）
 
