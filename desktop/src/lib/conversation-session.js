@@ -84,6 +84,57 @@ export function unretainedMessage(reason) {
 }
 
 /**
+ * Applies an explicit restore through the same retention path as typing.
+ * The restored text has to become the newest retained revision; only changing
+ * the composer would leave the old candidate on disk and label it as saved.
+ */
+export function applyConversationRestore({
+  conversation,
+  recovery,
+  project,
+  saved,
+  candidate,
+  currentText,
+  confirmed = false,
+  limit,
+}) {
+  const decision = restoreConversationCandidate({
+    currentText,
+    candidateText: candidate?.text,
+    confirmed,
+  })
+  if (!decision.apply) return { applied: false, needsConfirmation: true }
+  const recorded = recordConversationEdit({
+    conversation,
+    recovery,
+    project,
+    saved,
+    text: decision.text,
+    limit,
+  })
+  return {
+    applied: true,
+    retained: recorded.retained,
+    reason: recorded.reason,
+    text: decision.text,
+  }
+}
+
+/**
+ * A partially completed cancel deletes the project's recovery identity first.
+ * If the conversation discard then fails, the project stays on screen but its
+ * identity must be re-registered (or the close must be blocked), otherwise the
+ * text becomes an orphan on the next launch. Discard keeps its revision
+ * watermark, so this new draft is written above the deleted revision.
+ */
+export function restoreProjectIdentity({ recovery, project }) {
+  if (!recovery || !project) return false
+  recovery.noteEdit(project)
+  return true
+}
+
+
+/**
  * Close barrier: keep flushing both classes until neither has pending work, or
  * return the unfinished state. Bounded — never retries forever, never treats a
  * local ok as a promise that nothing changed while waiting for the other one.
@@ -92,6 +143,7 @@ export async function flushBeforeClose({
   recovery,
   conversation,
   unretained = {},
+  getUnretained,
   maxRounds = CLOSE_BARRIER_ROUNDS,
 }) {
   const errors = []
@@ -114,7 +166,10 @@ export async function flushBeforeClose({
         },
       })
     } else {
-      for (const [projectId, item] of Object.entries(unretained ?? {})) {
+      // Read the live state after the barrier: text can become unretained while
+      // we were waiting for the other store, and a pre-wait snapshot would hide it.
+      const latestUnretained = typeof getUnretained === 'function' ? getUnretained() : unretained
+      for (const [projectId, item] of Object.entries(latestUnretained ?? {})) {
         if (!item) continue
         errors.push({
           projectId,

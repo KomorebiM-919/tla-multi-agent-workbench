@@ -29,11 +29,12 @@ import {
 } from './lib/conversation-drafts.js'
 import { createTeamSettingsController, abortRoleCloseIfNeeded } from './lib/team-settings-controller.js'
 import {
+  applyConversationRestore,
   flushBeforeClose,
   indexCandidates,
   initialConversationTexts,
   recordConversationEdit,
-  restoreConversationCandidate,
+  restoreProjectIdentity,
   unretainedMessage,
 } from './lib/conversation-session.js'
 import { attemptPageChange } from './lib/page-navigation.js'
@@ -421,6 +422,8 @@ export default function App() {
       recovery: recoveryRef.current,
       conversation: conversationRef.current,
       unretained: conversationUnretainedRef.current,
+      // 最终判断读取最新对象：等待期间的新输入可能把合法文字变成未保留。
+      getUnretained: () => conversationUnretainedRef.current,
     })
     if (await roleCloseGuard()) return
     if (result.ok) {
@@ -623,22 +626,27 @@ export default function App() {
     (projectId, confirmed = false) => {
       const candidate = conversationCandidates[projectId]
       if (!candidate || !candidate.text) return { applied: false }
-      const decision = restoreConversationCandidate({
+      const project = sessionRef.current?.projects.find((item) => item.id === projectId)
+      if (!project) return { applied: false }
+      const result = applyConversationRestore({
+        conversation: conversationRef.current,
+        recovery: recoveryRef.current,
+        project,
+        saved: savedIdsRef.current.has(projectId),
+        candidate,
         currentText: conversationTextsRef.current[projectId] ?? '',
-        candidateText: candidate.text,
         confirmed,
+        limit: MAX_CONVERSATION_TEXT_LENGTH,
       })
-      if (!decision.apply) return { applied: false, needsConfirmation: true }
-      setConversationText(projectId, decision.text)
-      setConversationStates((states) => ({
-        ...states,
-        [projectId]: {
-          kind: 'saved',
-          backedUpAt: candidate.updatedAt ?? null,
-          restored: true,
-        },
-      }))
-      return { applied: true }
+      if (!result.applied) return result
+      setConversationText(projectId, result.text)
+      // 恢复走真实保留路径：状态由协调器写回 saving/saved，不在写入前标“已保留”。
+      const nextUnretained = { ...conversationUnretainedRef.current }
+      if (result.retained) delete nextUnretained[projectId]
+      else nextUnretained[projectId] = { text: result.text, reason: result.reason }
+      conversationUnretainedRef.current = nextUnretained
+      setConversationUnretained(nextUnretained)
+      return result
     },
     [conversationCandidates, setConversationText],
   )
@@ -750,7 +758,15 @@ export default function App() {
         // 取消新建必须同时清掉未发送文字；任一步失败都保留项目，方便重试。
         const conversationResult = await conversationRef.current.discard(projectId)
         if (!conversationResult.ok) {
-          setCancelError(conversationResult.error.message)
+          const project = current.projects.find((item) => item.id === projectId)
+          // 第一步已经删除了恢复稿；此时必须把项目身份补回，否则关闭后只剩孤儿文字。
+          const restored = restoreProjectIdentity({
+            recovery: recoveryRef.current,
+            project,
+          })
+          setCancelError(restored
+            ? `${conversationResult.error.message} 已重新登记项目恢复身份，修好后可以重试取消。`
+            : `${conversationResult.error.message} 项目恢复身份未能补回，正常关闭会被阻止。`)
           return
         }
         if (savedIdsRef.current.has(projectId)) {
