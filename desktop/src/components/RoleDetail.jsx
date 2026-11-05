@@ -9,7 +9,7 @@ function DetailRow({ label, children }) {
   )
 }
 
-export default function RoleDetail({ role, onClear, canEdit, editor, notice, onEdit, onFieldChange, onSave, onCancel }) {
+export default function RoleDetail({ role, onClear, canEdit, editor, notice, noticeSeq, onEdit, onFieldChange, onSave, onCancel }) {
   if (!role) {
     return (
       <aside className="detail" aria-label="角色详情">
@@ -23,6 +23,12 @@ export default function RoleDetail({ role, onClear, canEdit, editor, notice, onE
   }
 
   const isHuman = role.kind === 'human'
+  // 只有编辑器正对应当前角色时才显示快捷操作，避免对人类角色或别的角色误触发保存。
+  const editorForRole = Boolean(editor && editor.draft.roleId === role.id)
+  const saving = editorForRole && editor.busy
+  const message = saving
+    ? '角色设置正在保存，请等待完成；窗口关闭会暂时被拦截。'
+    : notice || (editorForRole && editor.error ? '角色设置没有保存成功，请重试。' : '')
 
   return (
     <aside className="detail" aria-label={`角色详情：${role.name}`}>
@@ -36,7 +42,27 @@ export default function RoleDetail({ role, onClear, canEdit, editor, notice, onE
         </button>
       </header>
 
-      {notice && <p className="role-local-notice" role="alert">{notice}</p>}
+      {message && (
+        <div
+          key={notice ? `blocked-${noticeSeq}` : 'notice'}
+          className={notice ? 'role-local-notice is-attention' : 'role-local-notice'}
+        >
+          <p className="role-local-message" role="alert">{message}</p>
+          {editorForRole && editor.error && !saving && (
+            <p className="role-local-error" role="alert">保存失败：{editor.error.message}</p>
+          )}
+          {editorForRole && (
+            <div className="role-local-actions">
+              <button type="button" className="primary" disabled={saving} onClick={onSave}>
+                {saving ? '保存中…' : '保存角色设置'}
+              </button>
+              <button type="button" className="ghost" disabled={saving} onClick={onCancel}>
+                取消编辑
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="detail-badges">
         <span className={isHuman ? 'chip chip-human' : 'chip chip-quiet'}>
           {isHuman ? '人类角色' : 'AI角色'}

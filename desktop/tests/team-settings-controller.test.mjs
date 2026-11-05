@@ -168,3 +168,21 @@ test('脏角色关闭提示明确中止，取消编辑后原关闭流程可继�
   assert.equal(await abortRoleCloseIfNeeded(options), false)
   assert.equal(confirmations.length, 1, '不阻拦时由原项目草稿关闭流程处理')
 })
+
+test('每次真正被拦截才推进 noticeSeq，打字与解除不重启动画', async () => {
+  const team = setup()
+  await team.selectProject('project-a', true)
+  team.edit('deepseek-dev')
+  team.update('summary', '有未保存内容')
+  const startSeq = team.getState().noticeSeq
+  assert.equal(team.mayLeave(), false)
+  const firstBlock = team.getState().noticeSeq
+  assert.equal(firstBlock, startSeq + 1)
+  team.update('summary', '继续打字')
+  assert.equal(team.getState().noticeSeq, firstBlock, '打字只清空提示，不重新触发脉冲')
+  assert.equal(team.mayLeave(), false)
+  assert.equal(team.getState().noticeSeq, firstBlock + 1, '再次被拦截时允许重新提醒')
+  team.cancel()
+  assert.equal(team.mayLeave(), true)
+  assert.equal(team.getState().noticeSeq, firstBlock + 1, '解除拦截不改动序号')
+})

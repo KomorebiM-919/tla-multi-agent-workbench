@@ -16,7 +16,7 @@ export async function abortRoleCloseIfNeeded({ controller, requestId, confirmClo
 export function createTeamSettingsController({ load, save, onChange = () => {} }) {
   let request = 0
   let inFlight = false
-  let state = { projectId: null, status: 'unsaved', roles: mergeTeamRoles(), editor: null, error: null, notice: '', savedAt: null }
+  let state = { projectId: null, status: 'unsaved', roles: mergeTeamRoles(), editor: null, error: null, notice: '', noticeSeq: 0, savedAt: null }
   function emit(patch) { state = { ...state, ...patch }; onChange(state) }
   function closeBlocker() {
     if (inFlight) return { code: 'ROLE_SAVE_PENDING', message: '角色设置正在保存，请等待保存完成后再关闭窗口' }
@@ -25,7 +25,8 @@ export function createTeamSettingsController({ load, save, onChange = () => {} }
   }
   function mayLeave() {
     const blocked = closeBlocker()
-    if (blocked) { emit({ notice: blocked.message }); return false }
+    // noticeSeq 只在真正被拦截时递增：提示区域可重新提醒一次，但打字不会重启动画。
+    if (blocked) { emit({ notice: blocked.message, noticeSeq: state.noticeSeq + 1 }); return false }
     return true
   }
   async function selectProject(projectId, saved) {

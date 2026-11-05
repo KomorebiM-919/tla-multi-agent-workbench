@@ -1412,4 +1412,63 @@ button {
   outline-offset: 2px;
 }
 
-.role-local-notice { position: sticky; top: 0; z-index: 2; padding: 12px; border: 1px solid var(--accent-line); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); }
+.role-local-notice {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* 每次被真正拦截时重新播放一次柔和填充脉冲；打字不会重启动画。 */
+.role-local-notice.is-attention {
+  animation: role-notice-pulse 900ms ease-out 1;
+}
+
+@keyframes role-notice-pulse {
+  0% {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  55% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: var(--surface);
+    border-color: var(--accent-line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-local-notice.is-attention {
+    animation: none;
+    border-color: var(--accent);
+    border-left-width: 3px;
+    background: var(--accent-soft);
+  }
+}
+
+.role-local-message {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.role-local-error {
+  margin: 0;
+  color: #8c2f21;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.role-local-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
