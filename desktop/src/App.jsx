@@ -765,6 +765,7 @@ export default function App() {
         onClear={() => selectRole(null)}
         canEdit={teamProjectSaved && teamState?.projectId === teamProjectId && teamState?.status === 'ready'}
         editor={teamState?.editor}
+        notice={teamState?.editor ? teamState.notice : null}
         onEdit={() => teamControllerRef.current.edit(roleId)}
         onFieldChange={(field, value) => teamControllerRef.current.update(field, value)}
         onSave={() => teamControllerRef.current.save()}

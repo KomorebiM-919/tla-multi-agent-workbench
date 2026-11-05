@@ -9,7 +9,7 @@ function DetailRow({ label, children }) {
   )
 }
 
-export default function RoleDetail({ role, onClear, canEdit, editor, onEdit, onFieldChange, onSave, onCancel }) {
+export default function RoleDetail({ role, onClear, canEdit, editor, notice, onEdit, onFieldChange, onSave, onCancel }) {
   if (!role) {
     return (
       <aside className="detail" aria-label="角色详情">
@@ -36,6 +36,7 @@ export default function RoleDetail({ role, onClear, canEdit, editor, onEdit, onF
         </button>
       </header>
 
+      {notice && <p className="role-local-notice" role="alert">{notice}。请在下方保存角色设置或取消编辑。</p>}
       <div className="detail-badges">
         <span className={isHuman ? 'chip chip-human' : 'chip chip-quiet'}>
           {isHuman ? '人类角色' : 'AI角色'}
